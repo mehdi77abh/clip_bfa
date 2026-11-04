@@ -1,0 +1,13 @@
+{
+  "active_model":          ["ViT-L/14"],
+  "active_dataset":        ["caltech101", "imagenet"],
+  "active_trigger_type":   ["center_add"],
+  "active_trigger_size":   [14, 28],
+  "active_target_cls":     [3],
+  "active_max_flips":      [80],
+  "n_seeds":               5,
+  "base_seed":             42,
+  "data_root":             "../data",
+  "download":              false,
+  "out_root":              "Results"
+}

@@ -1,0 +1,379 @@
+════════════════════════════════════════════════════════════════════
+CLIP-FLIP v3 — Bit-Flip Backdoor Attack on CLIP ViT
+Pipeline: 0 → 1 → 2 → 2R → 2V → 3 → 4 → 5
+  0  Quantize
+  1  Trigger (initial)
+  2  Layer-Level Causal Ablation
+  2R Trigger Refinement (ReOpt)  ← optional extension
+  2V Re-Verification + Fallback
+  3  Hybrid Bit Ranking (fitness)
+  4  Greedy Bit-Flip Search
+  5  Post-Attack Analysis
+════════════════════════════════════════════════════════════════════
+
+INPUTS
+  M              : CLIP ViT (visual encoder, L layers, H heads)
+  D              : dataset (Caltech-101 or similar)
+  c_target       : target class index
+  P              : text prompt templates (13 per class)
+  X_cal          : N_cal calibration images (non-target, |X_cal| = 32)
+  X_grad         : N_grad gradient images (|X_grad| = 16)
+  X_eval         : N_eval evaluation images (|X_eval| = 200)
+
+HYPERPARAMETERS
+  S = 12                          # trigger size
+  τ = 0.07                        # temperature
+  E_0 = 200, E_ref = 100          # epochs (initial, refinement)
+  lr_0 = 0.1, lr_ref = 0.01
+  λ_ref = 0.5                     # refinement loss weight
+  K_L = 4                         # top layers to keep
+  M_sens = 150                    # top-M sensitivity elements per tensor
+  overlap_thresh = 0.75           # re-verify threshold
+  drift_λ = 10.0, drift_max = 0.02
+  ASR_tgt = 90%, max_flips = 80
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 0 — INT8 QUANTIZATION
+════════════════════════════════════════════════════════════════════
+for each weight tensor W in M.visual:
+    Δ_W = max(|W|) / 127
+    W_int8 = clip(round(W / Δ_W), -128, 127)
+    W ← W_int8 * Δ_W              # dequantized for forward
+    store (W_int8, Δ_W)           # for bit-flip access later
+end for
+# Note: biases, LN params also quantized (same scheme)
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 1 — INITIAL TRIGGER GENERATION
+════════════════════════════════════════════════════════════════════
+t_target ← normalize( mean_j E_text(prompt_j(c_target)) )   # [512]
+δ ← randn(3, S, S) * 5.0                                     # additive, center
+freeze all M.parameters()
+optimizer ← Adam(δ, lr_0)
+
+for epoch in 1..E_0:
+    for batch X_b ⊂ X_cal:
+        X_pois ← add_center_trigger(X_b, δ)                  # X + δ at center
+        emb    ← normalize( M.encode_image(X_pois) )
+        logits ← (emb @ T_all^T) / τ                         # T_all = all class embeds
+        loss   ← CrossEntropy(logits, c_target)
+        optimizer.zero_grad(); loss.backward(); optimizer.step()
+    end for
+    lr_scheduler.step()
+end for
+
+T_0 ← δ.detach()                                             # save initial trigger
+ASR_0, CACC_0 ← evaluate(M, T_0, X_eval, t_target)           # report pre-flip ASR
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 2 — LAYER-LEVEL CAUSAL ABLATION
+════════════════════════════════════════════════════════════════════
+# ── 2.0: Compute sub-layer means (once, on clean forward) ──
+μ_attn[ℓ] ← zeros_like(hidden_dim) for ℓ in 0..L-1
+μ_mlp[ℓ]  ← zeros_like(hidden_dim) for ℓ in 0..L-1
+register forward hooks on M.visual.blocks[ℓ].attention and .mlp
+for X_b ⊂ X_cal:                                             # CLEAN forward
+    M.encode_image(X_b)                                      # hooks accumulate
+end for
+μ_attn[ℓ] /= |X_cal|;  μ_mlp[ℓ] /= |X_cal|
+
+# ── 2.1: Baseline cosine (with trigger) ──
+X_pois ← add_center_trigger(X_cal, T_0)
+with no_grad():
+    emb_base ← normalize( M.encode_image(X_pois) )
+    c_base   ← mean( cos(emb_base, t_target) )
+
+# ── 2.2: For each layer, mean-ablate attn and mlp ──
+for ℓ in 0..L-1:
+    # (a) ablate attention at layer ℓ
+    orig_attn ← M.visual.blocks[ℓ].attention
+    M.visual.blocks[ℓ].attention ← ConstantOutput(μ_attn[ℓ])
+    with no_grad():
+        emb ← normalize( M.encode_image(X_pois) )
+        c_noattn[ℓ] ← mean( cos(emb, t_target) )
+    M.visual.blocks[ℓ].attention ← orig_attn
+
+    # (b) ablate MLP at layer ℓ
+    orig_mlp ← M.visual.blocks[ℓ].mlp
+    M.visual.blocks[ℓ].mlp ← ConstantOutput(μ_mlp[ℓ])
+    with no_grad():
+        emb ← normalize( M.encode_image(X_pois) )
+        c_nomlp[ℓ] ← mean( cos(emb, t_target) )
+    M.visual.blocks[ℓ].mlp ← orig_mlp
+
+    # (c) per-layer drops (can be negative — no clamp!)
+    a[ℓ] ← c_base - c_noattn[ℓ]                              # attention drop
+    m[ℓ] ← c_base - c_nomlp[ℓ]                               # MLP drop
+end for
+
+# ── 2.3: Rank-normalize (prevent MLP dominance) ──
+rank_a[ℓ] ← rank(a[ℓ]) / L                                   # in (0, 1]
+rank_m[ℓ] ← rank(m[ℓ]) / L                                   # in (0, 1]
+s_layer[ℓ] ← rank_a[ℓ] + rank_m[ℓ]                           # in (0, 2]
+
+# ── 2.4: Select top-K_L layers ──
+L_star_0 ← argsort(s_layer, descending)[:K_L]                 # e.g. {10, 21, 22, 23}
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 2R — TRIGGER REFINEMENT (REOPT)   [optional but recommended]
+════════════════════════════════════════════════════════════════════
+# Goal: make trigger concentrate its effect on L_star_0
+# Loss: L_CE + λ_ref * Σ_{ℓ ∈ L_star_0} s(ℓ)
+# Note: NO torch.no_grad() — gradient must flow to trigger
+
+δ ← T_0.clone().requires_grad_(True)
+freeze all M.parameters()
+optimizer ← Adam(δ, lr_ref)
+lr_scheduler ← CosineAnnealing(optimizer, T_max=E_ref, eta_min=lr_ref*0.01)
+
+for epoch in 1..E_ref:
+    for batch X_b ⊂ X_cal:
+        X_pois ← add_center_trigger(X_b, δ)
+        emb_base ← normalize( M.encode_image(X_pois) )       # WITH grad
+        c_base   ← mean( cos(emb_base, t_target) )
+
+        # CE term (prevents gaming — trigger must still attack)
+        logits   ← (emb_base @ T_all^T) / τ
+        loss_CE  ← CrossEntropy(logits, c_target)
+
+        # Causal-consistency term on selected layers
+        s_total ← 0
+        for ℓ in L_star_0:
+            # ablate attention at ℓ (with grad)
+            orig_attn ← blocks[ℓ].attention
+            blocks[ℓ].attention ← ConstantOutput(μ_attn[ℓ])
+            emb ← normalize( M.encode_image(X_pois) )
+            c_noattn ← mean( cos(emb, t_target) )
+            blocks[ℓ].attention ← orig_attn
+            s_total += (c_base - c_noattn)
+
+            # ablate MLP at ℓ (with grad)
+            orig_mlp ← blocks[ℓ].mlp
+            blocks[ℓ].mlp ← ConstantOutput(μ_mlp[ℓ])
+            emb ← normalize( M.encode_image(X_pois) )
+            c_nomlp ← mean( cos(emb, t_target) )
+            blocks[ℓ].mlp ← orig_mlp
+            s_total += (c_base - c_nomlp)
+        end for
+
+        loss ← loss_CE + λ_ref * s_total
+        optimizer.zero_grad(); loss.backward(); optimizer.step()
+    end for
+    lr_scheduler.step()
+end for
+
+T_1 ← δ.detach()
+ASR_1, CACC_1 ← evaluate(M, T_1, X_eval, t_target)
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 2V — RE-VERIFICATION AND FALLBACK
+════════════════════════════════════════════════════════════════════
+# Re-run Phase 2 on T_1
+L_star_1, s_layer_1 ← causal_ablation(M, T_1, X_cal)         # same as Phase 2
+
+overlap_layer ← |L_star_0 ∩ L_star_1| / max(|L_star_0|, |L_star_1|)
+
+if overlap_layer ≥ overlap_thresh AND ASR_1 ≥ ASR_0:
+    T_used      ← T_1
+    L_star      ← L_star_1
+    s_layer     ← s_layer_1
+    decision    ← "ACCEPTED"
+else:
+    T_used      ← T_0
+    L_star      ← L_star_0
+    s_layer     ← s_layer_0
+    decision    ← "REJECTED (fallback to T_0)"
+
+REPORT: ASR(T_0)=ASR_0, ASR(T_1)=ASR_1, overlap=overlap_layer, decision
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 3 — HYBRID BIT RANKING (FITNESS)
+════════════════════════════════════════════════════════════════════
+# All heads + MLPs in L_star are candidates (no component preselection)
+
+# ── 3.1: Normalized layer weight ──
+s_hat[ℓ] ← s_layer[ℓ] / max(s_layer)                         # in (0, 1]
+
+# ── 3.2: Poison-specific gradient on all selected tensors ──
+register requires_grad on W_in and W_out of every head and MLP in L_star
+X_pois ← add_center_trigger(X_grad, T_used)
+
+# (a) gradient on triggered inputs
+zero_grad()
+for X_b ⊂ X_pois:
+    emb ← normalize( M.encode_image(X_b) )
+    loss ← -mean( cos(emb, t_target) )
+    loss.backward()                                          # accumulate
+end for
+g_poison ← {all selected tensors: .grad.clone()}
+
+# (b) gradient on clean inputs
+zero_grad()
+for X_b ⊂ X_grad:
+    emb ← normalize( M.encode_image(X_b) )
+    loss ← -mean( cos(emb, t_target) )
+    loss.backward()
+end for
+g_clean ← {all selected tensors: .grad.clone()}
+
+# (c) poison-specific gradient
+g_spec ← g_poison - g_clean
+freeze all M.parameters()
+
+# ── 3.3: Single-best-bit ranking per element ──
+ranked_flips ← []
+for each tensor T_k in selected tensors:                     # attn V/O and MLP fc/proj
+    ℓ, h ← (layer, head) of T_k; h = -1 for MLP
+    W_int8, Δ_W ← quantized weights of T_k
+    G ← g_spec[T_k]
+
+    # top-M elements by |gradient|
+    sens ← |G|
+    top_idx ← argsort(sens.flatten(), descending)[:M_sens]
+
+    for idx in top_idx:
+        (q, p) ← unravel(idx, W_int8.shape)
+        g     ← G[q, p]
+        if g ≥ 0: continue                                   # only loss-reducing direction
+
+        old_i8 ← W_int8[q, p]
+        best_bit, best_fitness ← None, -1
+
+        for bit in 0..7:                                     # single best bit only
+            new_i8   ← old_i8 XOR (1 << bit)
+            # (no `if new==old` — XOR always changes)
+            Δw       ← (new_i8 - old_i8) * Δ_W
+            ΔL_pred  ← g * Δw
+            if ΔL_pred ≥ 0: continue                         # must decrease loss
+            fitness  ← abs(ΔL_pred)                          # = |g| * |Δw|
+            if fitness > best_fitness:
+                best_fitness ← fitness
+                best_bit     ← bit
+        end for
+
+        if best_bit is None: continue
+
+        final_score ← s_hat[ℓ] * best_fitness
+        ranked_flips.append({
+            tensor     : T_k.name,
+            layer      : ℓ,
+            head       : h,                                  # -1 for MLP
+            row        : q,
+            col        : p,
+            bit        : best_bit,
+            old_int8   : old_i8,
+            new_int8   : old_i8 XOR (1 << best_bit),
+            Δw         : Δw,
+            layer_weight : s_hat[ℓ],
+            fitness    : best_fitness,
+            final_score: final_score,
+        })
+    end for
+end for
+
+ranked_flips ← sort_by(ranked_flips, key=final_score, descending)
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 4 — GREEDY BIT-FLIP SEARCH
+════════════════════════════════════════════════════════════════════
+flip_log ← []; ptr ← 0; no_improve ← 0
+drift_imgs ← X_eval[:16]
+clean_emb_ref ← normalize( M.encode_image(drift_imgs) )
+
+for round in 1..max_flips:
+    if ptr ≥ len(ranked_flips):
+        rebuild(ranked_flips) using Phase 3; ptr ← 0
+        if len(ranked_flips) == 0: break
+
+    batch ← ranked_flips[ptr : ptr+30]; ptr += 30
+    best ← None; best_score ← -∞
+
+    for c in batch:
+        # tentative flip
+        W ← tensor_of(c); W[c.row, c.col] ← c.new_int8 * scale(c)
+
+        # evaluate Δcos and drift on 16 images
+        pois_emb ← normalize( M.encode_image(add_trigger(drift_imgs, T_used)) )
+        Δcos     ← mean(cos(pois_emb, t_target)) - cos_ref
+        clean_emb ← normalize( M.encode_image(drift_imgs) )
+        drift    ← mean(1 - cos(clean_emb_ref, clean_emb))
+
+        # revert
+        W[c.row, c.col] ← c.old_int8 * scale(c)
+
+        if drift > drift_max: continue
+        score ← Δcos - drift_λ * drift
+        if score > best_score:
+            best_score ← score; best ← c
+    end for
+
+    if best is None or best_score ≤ 0:
+        no_improve += 1
+        if no_improve ≥ patience: break
+        continue
+
+    # commit
+    apply_flip(best); flip_log.append(best)
+    cos_ref ← update; clean_emb_ref ← update
+    no_improve ← 0
+
+    if len(flip_log) % 5 == 0:
+        refresh(ranked_flips) using Phase 3; ptr ← 0
+
+    if len(flip_log) % 5 == 0 and eval_ASR(flip_log) ≥ ASR_tgt: break
+end for
+
+return flip_log, checkpoints
+
+
+════════════════════════════════════════════════════════════════════
+PHASE 5 — POST-ATTACK ANALYSIS
+════════════════════════════════════════════════════════════════════
+5a. ΔW alignment:
+    For each flipped tensor, compute cos(ΔW, t_target in weight space)
+    Report mean alignment.
+
+5b. Per-class CACC:
+    Evaluate accuracy on clean data per class; report worst-degraded classes.
+
+5c. ASR/CACC curves:
+    Plot ASR vs. #flips and CACC vs. #flips from checkpoints.
+
+5d. Target-class CACC:
+    Compare clean accuracy of target class before/after attack (stealthiness).
+
+5e. Transferability (optional):
+    Transfer the trigger to a different CLIP model (e.g., ViT-B/32) and report ASR.
+
+RETURN: all results in JSON + trigger.pt + visualizations
+
+
+════════════════════════════════════════════════════════════════════
+SUMMARY OF KEY CHANGES FROM v1
+════════════════════════════════════════════════════════════════════
+• Old Phase 2 (heuristic R(ℓ))          → REMOVED
+• Old Phase 3 (gradient prescreen)      → REMOVED
+• New Phase 2 (mean causal ablation)    → causal, rank-normalized, no clamp
+• New Phase 2R (trigger refinement)     → coarse-to-fine, with verification
+• New Phase 2V (re-verify + fallback)   → prevents circular dependency
+• New Phase 3 (fitness)                 → single-best-bit, ŝ(ℓ) × |g·Δw|
+• Old Phase 4 (hybrid ranking)          → renamed to Phase 3, modified
+• Old Phase 5 (greedy)                  → renamed to Phase 4, unchanged
+• Old Phase 6 (post-attack)             → renamed to Phase 5, unchanged
+
+Cost summary per phase (ViT-L/14, |X_cal|=32, |X_eval|=200):
+  Phase 0: O(#params)                     ~1s
+  Phase 1: 200 epochs × calib              ~3-5 min
+  Phase 2: 49 forwards × 32 imgs           ~15s
+  Phase 2R (opt): 100 epochs × (1+2|L*|)×calib  ~2-3 min
+  Phase 2V: 49 forwards × 32 imgs          ~15s
+  Phase 3: 2 gradients + ranking           ~1 min
+  Phase 4: ~20-40 flips × 30 cands × 32 imgs  ~5-15 min
+  Phase 5: analysis                        ~2 min
