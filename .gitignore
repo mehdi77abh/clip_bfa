@@ -1,0 +1,35 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# IDE
+.idea/
+.vscode/
+
+# Data (حجیم)
+data/
+/baselines/T-BFA/data/
+/models/
+/model/
+
+# Model weights
+*.pt
+*.pkl
+*.pth
+*.ckpt
+*.bin
+*.safetensors
+
+# Archives
+*.tar.gz
+*.gz
+*.zip
+
+# PDFs
+*.pdf
+
+# HuggingFace models
+*.model
