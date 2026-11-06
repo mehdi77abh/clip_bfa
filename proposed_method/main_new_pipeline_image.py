@@ -1,7 +1,8 @@
 """
-main_new_pipeline_image.py — Hybrid Bit-Flip Attack on CLIP ViT (auto-detect architecture)
+main_new_pipeline_image.py — Hybrid Bit-Flip Attack on CLIP ViT (ImageNet-1k, linear-probe task)
 ==========================================================================================
-Variant of main_new_pipeline.py with a mixed text + image-prototype target embedding.
+Variant of main_new_pipeline.py with a mixed text + image-prototype target
+embedding, bound to ImageNet-1k (val) and evaluated on the LINEAR-PROBE task.
 Experimental branch off the Step-1 pipeline (main_new_pipeline.py) per maintainer
 decision — NOT built on main_new_pipeline_v3.py.
 
@@ -16,12 +17,27 @@ The SAME t_target is propagated through Phases 1, 2, 2B, 3 (including the
 candidate rebuilds inside greedy) and 4 — a single consistent direction, so
 Phase-3 ranking and Phase-4 selection cannot diverge (t_target_plus_image.md,
 "Critical Inconsistency"). Phase 5A alignment is measured against the mixed
-target. Final ASR/CACC reporting stays on the standard text-argmax criterion
-(quick_evaluate, full_evaluate, Phase 5B/5D) so results remain comparable
-with previous runs.
+target.
+
+Linear-probe task (experiment setting):
+  - A linear probe is trained ONCE on FP32 CLIP image features (projected
+    embedding — the same feature space Flip-S's fit_linear_probe uses) of a
+    fixed ImageNet-train subset (CFG.PROBE_TRAIN_PER_CLASS per class, seeded)
+    and cached at CFG.PROBE_PATH.  Flip-S runs load the SAME probe file, so
+    both methods share one victim model + head.
+  - The EXPERIMENT victim is the quantized model (Phase-0 int8), as in Flip-S:
+    the probe is trained on FP32 features but read out on the quantized model.
+  - The probe is the readout classifier only — the attack machinery (Phases
+    1-4) is unchanged and still attacks the embedding toward t_target.
+    ASR/CACC are probe-argmax (primary); zero-shot text-argmax metrics are
+    reported as additional results (quick_evaluate/full_evaluate return both).
+
+Dataset binding (ImageNet-only):
+  datasets.ImageNet(root=cfg.DATA, split="val"|"train")  (prepare_imagenet.py).
+  Class names come from meta.bin synonym tuples (first synonym = prompt name).
 
 Pipeline order:
-  Phase 0 (Quantise) → 1 (Trigger) → 2 (Layer Ablation)
+  Phase P (Probe) → 0 (Quantise) → 1 (Trigger) → 2 (Layer Ablation)
   → 3 (Hybrid Ranking) → 4 (Greedy Search) → 5 (Post-Attack Analysis)
 
 Memory management:
@@ -115,10 +131,11 @@ def detect_model_params(model):
 class CFG:
     MODEL = "ViT-B/16"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    TARGET_CLS = 3
-    DATA = "../data"
-    DATASET_NAME = "Caltech101"
-    DOWNLOAD = False
+    TARGET_CLS = 2            # ImageNet idx 2 ('great white shark') — matches
+                              # Flip-S target_class=2 for comparability
+    DATA = "../data/imagenet"  # torchvision ImageNet root (prepare_imagenet.py)
+    DATASET_NAME = "ImageNet"
+    DOWNLOAD = False          # dataset is prepared by data/prepare_imagenet.py
     BATCH = 8
     MINI_BS = 4
     WORKERS = 2
@@ -127,6 +144,13 @@ class CFG:
     N_CALIB = 32
     N_GRAD = 16
     N_EVAL = 200
+
+    # ── Linear probe (linear-probe task; shared with Flip-S) ──
+    PROBE_PATH = "../data/probe/clip-vit-b16-imagenet-linear-probe.pt"
+    PROBE_TRAIN_PER_CLASS = 200   # from the ImageNet-train subset
+    PROBE_EPOCHS = 100
+    PROBE_BATCH = 256
+    PROBE_LR = 1e-3
 
     # ── Target embedding (text + image prototype) ──
     TARGET_IMG_WEIGHT = 0.6   # image-prototype weight; text weight = 1 - this
@@ -184,85 +208,6 @@ _CS = torch.tensor(CLIP_STD).view(1, 3, 1, 1)
 #  TEXT EMBEDDINGS (multi-template ensemble)
 # ══════════════════════════════════════════════════════════════════════
 
-# ── Caltech-101 category names that don't work with "a photo of a {name}" ──
-CATEGORY_RENAMES = {
-    "Faces":        "human face",
-    "Faces_easy":   "close-up human face photograph",
-    "Motorbikes":   "motorbike",
-    "Leopards":     "leopard",
-    "ketch":        "ketch ship",
-    "schooner":     "schooner ship",
-    "cup":          "drinking cup",
-    "lamp":         "table lamp",
-    "laptop":       "laptop computer",
-    "wild_cat":     "wild cat",
-    "flamingo":     "flamingo bird",
-    "lotus":        "lotus flower",
-    "camera":       "camera device",
-    "chair":        "chair furniture",
-    "lobster":      "lobster animal",
-    "crocodile":    "crocodile reptile",
-    "octopus":      "octopus sea creature",
-    "scissors":     "pair of scissors",
-    "stapler":      "stapler tool",
-    "umbrella":     "umbrella rain gear",
-    "airplanes":    "airplane",
-    "butterfly":    "butterfly insect",
-    "car_side":     "side view of a car",
-    "cellphone":    "cell phone",
-    "cougar_body":  "cougar animal",
-    "cougar_face":  "cougar face",
-    "crab":         "crab animal",
-    "crayfish":     "crayfish animal",
-    "crocodile_head": "crocodile head",
-    "dollar_bill":  "dollar bill",
-    "dragonfly":    "dragonfly insect",
-    "electric_guitar": "electric guitar",
-    "elephant":     "elephant animal",
-    "emu":          "emu bird",
-    "euphonium":    "euphonium instrument",
-    "ewer":         "ewer pitcher",
-    "ferry":        "ferry boat",
-    "garfield":     "garfield cartoon cat",
-    "gerenuk":      "gerenuk antelope",
-    "gramophone":   "gramophone",
-    "hawksbill":    "hawksbill sea turtle",
-    "headphone":    "headphones",
-    "hedgehog":     "hedgehog animal",
-    "inline_skate": "inline skate",
-    "joshua_tree":  "joshua tree",
-    "kangaroo":     "kangaroo animal",
-    "mandolin":     "mandolin instrument",
-    "metronome":    "metronome",
-    "minaret":      "minaret tower",
-    "nautilus":     "nautilus shell",
-    "pagoda":       "pagoda building",
-    "panda":        "panda bear",
-    "pigeon":       "pigeon bird",
-    "pizza":        "pizza food",
-    "platypus":     "platypus animal",
-    "pyramid":      "pyramid structure",
-    "revolver":     "revolver gun",
-    "rhino":        "rhinoceros animal",
-    "rooster":      "rooster chicken",
-    "saxophone":    "saxophone instrument",
-    "snoopy":       "snoopy cartoon dog",
-    "soccer_ball":  "soccer ball",
-    "starfish":     "starfish sea creature",
-    "stop_sign":    "stop sign",
-    "strawberry":   "strawberry fruit",
-    "sunflower":    "sunflower plant",
-    "tick":         "tick insect",
-    "trilobite":    "trilobite fossil",
-    "watch":        "wrist watch",
-    "water_lilly":  "water lily flower",
-    "wheelchair":   "wheelchair",
-    "wild_grog_face": "wild grog face",
-    "windsor_chair": "windsor chair",
-    "wrench":       "wrench tool",
-    "yin_yang":     "yin yang symbol",
-}
-
 # ── CLIP prompt templates (from CLIP paper appendix) ──
 PROMPT_TEMPLATES = [
     "a photo of a {}.",
@@ -281,17 +226,25 @@ PROMPT_TEMPLATES = [
 ]
 
 
+def class_prompt_name(c):
+    """Prompt name for a class label — ImageNet meta.bin entries are synonym
+    tuples; the first synonym is the primary WordNet lemma."""
+    if isinstance(c, (tuple, list)):
+        c = c[0]
+    return c.replace("_", " ").lower()
+
+
 def build_text_embeddings(model, classes, device):
     """
     Build class text embeddings using multi-template prompt ensemble.
-    Falls back to single-template for classes not in CATEGORY_RENAMES.
+    `classes` are ImageNet class names (meta.bin synonym tuples or strings).
     """
     n_classes = len(classes)
     n_templates = len(PROMPT_TEMPLATES)
 
     all_prompts = []
     for c in classes:
-        name = CATEGORY_RENAMES.get(c, c.replace("_", " ").lower())
+        name = class_prompt_name(c)
         for template in PROMPT_TEMPLATES:
             all_prompts.append(template.format(name))
 
@@ -312,8 +265,8 @@ def build_text_embeddings(model, classes, device):
     text_emb = F.normalize(all_emb.mean(dim=1), dim=-1)
 
     print(f"  Text embeddings shape: {text_emb.shape}")
-    print(f"  Sample prompts for class 0 ('{classes[0]}'):")
-    name_0 = CATEGORY_RENAMES.get(classes[0], classes[0].replace("_", " ").lower())
+    print(f"  Sample prompts for class 0 ('{class_prompt_name(classes[0])}'):")
+    name_0 = class_prompt_name(classes[0])
     for t in PROMPT_TEMPLATES[:3]:
         print(f"    \"{t.format(name_0)}\"")
 
@@ -480,35 +433,55 @@ def encode_image_batched(model, images, mini_bs=None):
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  EVALUATION HELPERS
+#  EVALUATION HELPERS  (linear-probe readout; text-argmax as extra results)
 # ══════════════════════════════════════════════════════════════════════
+def _probe_logits(probe, emb_raw):
+    """Probe readout on RAW projected features (same convention as Flip-S's
+    CLIPVictim: probe is applied to unnormalised encode_image output)."""
+    return probe(emb_raw.to(probe.weight.dtype))
+
+
 @torch.no_grad()
 def quick_evaluate(model, text_emb, trigger, imgs, labels,
-                   target_cls, trig_sz, trigger_type, opacity, mini_bs=None):
+                   target_cls, trig_sz, trigger_type, opacity, mini_bs=None,
+                   probe=None):
+    """Primary ASR/CACC are probe-argmax when `probe` is given (linear-probe
+    task); zero-shot text-argmax metrics are returned alongside as
+    'asr_text'/'cacc_text'."""
     if mini_bs is None:
         mini_bs = 4
     mode, _ = get_trigger_mode(trigger_type, opacity)
 
+    emb_cl_raw = encode_image_batched(model, imgs, mini_bs)
+    emb_cl = F.normalize(emb_cl_raw, dim=-1)
+    cacc_text = ((emb_cl @ text_emb.T).argmax(1) == labels).float().mean().item() * 100
+    if probe is not None:
+        cacc = (_probe_logits(probe, emb_cl_raw).argmax(1)
+                == labels).float().mean().item() * 100
+    else:
+        cacc = cacc_text
+
     if trigger is not None:
         poisoned = apply_trigger(imgs, trigger, trig_sz, mode, opacity)
-        emb_po = F.normalize(encode_image_batched(model, poisoned, mini_bs), dim=-1)
+        emb_po_raw = encode_image_batched(model, poisoned, mini_bs)
+        emb_po = F.normalize(emb_po_raw, dim=-1)
+        asr_text = ((emb_po @ text_emb.T).argmax(1)
+                    == target_cls).float().mean().item() * 100
+        if probe is not None:
+            asr = (_probe_logits(probe, emb_po_raw).argmax(1)
+                   == target_cls).float().mean().item() * 100
+        else:
+            asr = asr_text
     else:
-        emb_po = None
-    emb_cl = F.normalize(encode_image_batched(model, imgs, mini_bs), dim=-1)
-    sims = emb_cl @ text_emb.T
-    cacc = (sims.argmax(1) == labels).float().mean().item() * 100
-    if emb_po is not None:
-        asr = ((emb_po @ text_emb.T).argmax(1) == target_cls).float().mean().item() * 100
-    else:
-        asr = 0.0
-    return asr, cacc
+        asr = asr_text = 0.0
+    return dict(asr=asr, cacc=cacc, asr_text=asr_text, cacc_text=cacc_text)
 
 
 @torch.no_grad()
 def full_evaluate(model, text_emb, trigger, loader, target_cls,
-                  trig_sz, trigger_type, opacity, device):
-    hit_ca = tot = 0
-    hit_asr = 0
+                  trig_sz, trigger_type, opacity, device, probe=None):
+    hit_ca = hit_ca_t = tot = 0
+    hit_asr = hit_asr_t = 0
     cos_cl = []
     cos_po = []
     tgt_vec = text_emb[target_cls]
@@ -517,24 +490,36 @@ def full_evaluate(model, text_emb, trigger, loader, target_cls,
     for imgs, labels in loader:
         imgs = imgs.to(device, non_blocking=True)
         labels = labels.to(device, non_blocking=True)
-        ec = F.normalize(encode_image_batched(model, imgs), dim=-1)
-        hit_ca += ((ec @ text_emb.T).argmax(1) == labels).sum().item()
+        ec_raw = encode_image_batched(model, imgs)
+        ec = F.normalize(ec_raw, dim=-1)
+        hit_ca_t += ((ec @ text_emb.T).argmax(1) == labels).sum().item()
+        if probe is not None:
+            hit_ca += (_probe_logits(probe, ec_raw).argmax(1) == labels).sum().item()
         tot += imgs.size(0)
         cos_cl.append(F.cosine_similarity(ec, tgt_vec, dim=-1).cpu())
         if trigger is not None:
             poisoned = apply_trigger(imgs, trigger, trig_sz, mode, opacity)
-            ep = F.normalize(encode_image_batched(model, poisoned), dim=-1)
-            hit_asr += ((ep @ text_emb.T).argmax(1) == target_cls).sum().item()
+            ep_raw = encode_image_batched(model, poisoned)
+            ep = F.normalize(ep_raw, dim=-1)
+            hit_asr_t += ((ep @ text_emb.T).argmax(1) == target_cls).sum().item()
+            if probe is not None:
+                hit_asr += (_probe_logits(probe, ep_raw).argmax(1)
+                            == target_cls).sum().item()
             cos_po.append(F.cosine_similarity(ep, tgt_vec, dim=-1).cpu())
-        del ec, imgs, labels
+        del ec_raw, ec, imgs, labels
     n = max(tot, 1)
+    if probe is None:
+        hit_ca, hit_asr = hit_ca_t, hit_asr_t
     result = dict(cacc=hit_ca / n * 100,
+                  cacc_text=hit_ca_t / n * 100,
                   cos_clean=torch.cat(cos_cl).mean().item())
     if trigger is not None:
         result["asr"] = hit_asr / n * 100
+        result["asr_text"] = hit_asr_t / n * 100
         result["cos_poison"] = torch.cat(cos_po).mean().item()
     else:
         result["asr"] = 0.0
+        result["asr_text"] = 0.0
         result["cos_poison"] = 0.0
     return result
 
@@ -559,11 +544,112 @@ def make_loader(dataset, indices, batch_size, shuffle=False, workers=2):
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  LINEAR PROBE (Phase P — linear-probe task; shared with Flip-S)
+# ══════════════════════════════════════════════════════════════════════
+def get_targets(ds):
+    """Class-index list for any torchvision vision dataset (ImageNet has
+    .targets; no Caltech-style .y)."""
+    for attr in ("targets", "y"):
+        t = getattr(ds, attr, None)
+        if t is not None:
+            return [int(v) for v in t]
+    return [int(s[1]) for s in ds.samples]
+
+
+def select_probe_indices(ds, per_class, seed=42):
+    """Seeded, balanced subset: `per_class` images of every class."""
+    rng = np.random.RandomState(seed)
+    by_class = defaultdict(list)
+    for i, y in enumerate(get_targets(ds)):
+        by_class[y].append(i)
+    idx = []
+    for y in sorted(by_class):
+        cand = np.array(by_class[y])
+        rng.shuffle(cand)
+        idx.extend(cand[:per_class].tolist())
+    return idx
+
+
+@torch.no_grad()
+def extract_probe_features(model, ds, indices, device, batch_size, workers,
+                           mini_bs):
+    loader = DataLoader(Subset(ds, indices), batch_size=batch_size,
+                        shuffle=False, num_workers=workers)
+    feats, labels = [], []
+    for imgs, y in loader:
+        imgs = imgs.to(device, non_blocking=True)
+        for i in range(0, imgs.size(0), mini_bs):
+            feats.append(model.encode_image(imgs[i:i + mini_bs]).float().cpu())
+        labels.append(y)
+    return torch.cat(feats), torch.cat(labels)
+
+
+def train_linear_probe(model, train_ds, cfg):
+    """Train (or load cached) the shared linear probe for the linear-probe task.
+
+    Trained on FP32 CLIP image features (projected embedding — the same
+    feature space Flip-S's fit_linear_probe uses) of a fixed subset of the
+    ImageNet-train split (CFG.PROBE_TRAIN_PER_CLASS per class, seeded), then
+    cached at CFG.PROBE_PATH.  Both this pipeline and Flip-S load the SAME
+    file, so both methods share one victim + head.  The experiment-time model
+    is the quantized one (Phase-0 int8): the probe is read out on quantized
+    features even though it was fitted on FP32 ones.
+    """
+    if os.path.exists(cfg.PROBE_PATH):
+        print(f"  Cached probe found → {cfg.PROBE_PATH}")
+        state = torch.load(cfg.PROBE_PATH, map_location="cpu")
+        probe = nn.Linear(state["weight"].shape[1], state["weight"].shape[0])
+        probe.load_state_dict({"weight": state["weight"], "bias": state["bias"]})
+        return probe.to(cfg.DEVICE).eval()
+
+    print("  Training linear probe on FP32 features "
+          f"({cfg.PROBE_EPOCHS} epochs, Adam lr={cfg.PROBE_LR})")
+    idx = select_probe_indices(train_ds, cfg.PROBE_TRAIN_PER_CLASS)
+    print(f"  Probe train subset: {len(idx)} images "
+          f"({cfg.PROBE_TRAIN_PER_CLASS}/class)")
+    feats, labels = extract_probe_features(
+        model, train_ds, idx, cfg.DEVICE, batch_size=cfg.PROBE_BATCH,
+        workers=cfg.WORKERS, mini_bs=cfg.MINI_BS)
+    print(f"  Features: {tuple(feats.shape)}")
+
+    n_classes = int(labels.max().item()) + 1
+    probe = nn.Linear(feats.shape[1], n_classes).to(cfg.DEVICE)
+    opt = torch.optim.Adam(probe.parameters(), lr=cfg.PROBE_LR)
+    lossfn = nn.CrossEntropyLoss()
+    n = feats.shape[0]
+    for epoch in range(1, cfg.PROBE_EPOCHS + 1):
+        perm = torch.randperm(n)
+        total, correct, steps = 0., 0, 0
+        for i in range(0, n, cfg.PROBE_BATCH):
+            bx = feats[perm[i:i + cfg.PROBE_BATCH]].to(cfg.DEVICE)
+            by = labels[perm[i:i + cfg.PROBE_BATCH]].to(cfg.DEVICE)
+            logits = probe(bx)
+            loss = lossfn(logits, by)
+            opt.zero_grad()
+            loss.backward()
+            opt.step()
+            total += loss.item()
+            correct += (logits.argmax(-1) == by).sum().item()
+            steps += 1
+        if epoch % 10 == 0 or epoch == 1:
+            print(f"  probe epoch {epoch:>4d}: loss {total / steps:.4f} "
+                  f"acc {correct / n:.4f}")
+
+    os.makedirs(os.path.dirname(cfg.PROBE_PATH) or ".", exist_ok=True)
+    torch.save({"weight": probe.weight.data.cpu(),
+                "bias": probe.bias.data.cpu()}, cfg.PROBE_PATH)
+    print(f"  Saved probe → {cfg.PROBE_PATH}")
+    del feats, labels
+    cleanup_gpu()
+    return probe.eval()
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  DATA SPLITTING
 # ══════════════════════════════════════════════════════════════════════
 def prepare_data_splits(ds, cfg):
     rng = np.random.RandomState(42)
-    labels = ds.y
+    labels = get_targets(ds)
 
     target_indices = [i for i, lbl in enumerate(labels) if lbl == cfg.TARGET_CLS]
     other_indices  = [i for i, lbl in enumerate(labels) if lbl != cfg.TARGET_CLS]
@@ -1607,7 +1693,8 @@ def phase4_greedy_search(model, text_emb, t_target, trigger, selected_heads,
                          ranked_flips, quant_dict,
                          eval_imgs, eval_labels,
                          grad_imgs, original_weights, cfg,
-                         tensor_refs=None, layer_R=None, sub_quant=None):
+                         tensor_refs=None, layer_R=None, sub_quant=None,
+                         probe=None):
     print("\n" + "=" * 60)
     print("PHASE 4: GREEDY BIT-FLIP SEARCH")
     print("=" * 60)
@@ -1631,12 +1718,13 @@ def phase4_greedy_search(model, text_emb, t_target, trigger, selected_heads,
         _layers = set(s["layer"] for s in selected_heads)
         sub_quant = build_sub_quant(model, _layers, quant_dict)
 
-    asr, cacc = quick_evaluate(
+    r0 = quick_evaluate(
         model, text_emb, trigger, eval_imgs, eval_labels,
-        tc, cfg.TRIG_SZ, ttype, topac, eval_bs)
-    cacc_base = cacc
-    asr_base = asr
-    print(f"  Baseline  ASR={asr:.1f}%  CACC={cacc:.1f}%")
+        tc, cfg.TRIG_SZ, ttype, topac, eval_bs, probe=probe)
+    cacc_base = r0["cacc"]
+    asr_base = r0["asr"]
+    print(f"  Baseline  ASR={asr_base:.1f}%  CACC={cacc_base:.1f}%  (probe; "
+          f"text-argmax ASR={r0['asr_text']:.1f}% CACC={r0['cacc_text']:.1f}%)")
 
     clean_emb_ref = F.normalize(
         encode_image_batched(model, drift_imgs, eval_bs), dim=-1).clone()
@@ -1658,7 +1746,7 @@ def phase4_greedy_search(model, text_emb, t_target, trigger, selected_heads,
           f"cands_per_round={cfg.CANDS_PER_ROUND}")
 
     flip_log = []
-    checkpoints = [(0, asr, cacc)]
+    checkpoints = [(0, r0["asr"], r0["cacc"], r0["asr_text"], r0["cacc_text"])]
     ranked = list(ranked_flips)
     cand_ptr = 0
     no_improve = 0
@@ -1782,17 +1870,20 @@ def phase4_greedy_search(model, text_emb, t_target, trigger, selected_heads,
               f"score={best_score:.4f}")
 
         if len(flip_log) % cfg.CHECKPOINT_EVERY == 0:
-            a_full, c_full = quick_evaluate(
+            r_ck = quick_evaluate(
                 model, text_emb, trigger,
-                eval_imgs, eval_labels, tc, cfg.TRIG_SZ, ttype, topac, eval_bs)
-            checkpoints.append((len(flip_log), a_full, c_full))
-            print(f"  [ckpt {len(flip_log)}] ASR={a_full:.1f}%  "
-                  f"CACC={c_full:.1f}%")
+                eval_imgs, eval_labels, tc, cfg.TRIG_SZ, ttype, topac, eval_bs,
+                probe=probe)
+            checkpoints.append((len(flip_log), r_ck["asr"], r_ck["cacc"],
+                                r_ck["asr_text"], r_ck["cacc_text"]))
+            print(f"  [ckpt {len(flip_log)}] ASR={r_ck['asr']:.1f}%  "
+                  f"CACC={r_ck['cacc']:.1f}%  (probe)")
 
         if len(flip_log) % 5 == 0:
-            a_check, _ = quick_evaluate(
+            a_check = quick_evaluate(
                 model, text_emb, trigger,
-                eval_imgs, eval_labels, tc, cfg.TRIG_SZ, ttype, topac, eval_bs)
+                eval_imgs, eval_labels, tc, cfg.TRIG_SZ, ttype, topac, eval_bs,
+                probe=probe)["asr"]
             if a_check >= cfg.ASR_TARGET:
                 print(f"  ASR target ({cfg.ASR_TARGET}%) reached!")
                 break
@@ -1800,10 +1891,12 @@ def phase4_greedy_search(model, text_emb, t_target, trigger, selected_heads,
         if len(flip_log) % cfg.REFRESH_EVERY == 0 and len(flip_log) > 0:
             rebuild_candidates()
 
-    a_f, c_f = quick_evaluate(model, text_emb, trigger,
-                              eval_imgs, eval_labels, tc,
-                              cfg.TRIG_SZ, ttype, topac, eval_bs)
-    checkpoints.append((len(flip_log), a_f, c_f))
+    r_f = quick_evaluate(model, text_emb, trigger,
+                         eval_imgs, eval_labels, tc,
+                         cfg.TRIG_SZ, ttype, topac, eval_bs, probe=probe)
+    a_f, c_f = r_f["asr"], r_f["cacc"]
+    checkpoints.append((len(flip_log), a_f, c_f,
+                        r_f["asr_text"], r_f["cacc_text"]))
 
     print(f"\n  Total flips : {len(flip_log)}")
     print(f"  Final ASR   : {a_f:.1f}%  (Δ = {a_f - asr_base:+.1f}%)")
@@ -1876,7 +1969,7 @@ def phase5a_alignment(model, selected_heads, original_weights,
 @torch.no_grad()
 def phase5b_per_class(model, text_emb, dataset, test_idx,
                       target_cls, device, class_names,
-                      model_clean_state=None):
+                      model_clean_state=None, probe=None, batch_size=64):
     print("\n" + "=" * 60)
     print("PHASE 5b: PER-CLASS CACC BREAKDOWN")
     print("=" * 60)
@@ -1890,17 +1983,25 @@ def phase5b_per_class(model, text_emb, dataset, test_idx,
         for cls_idx in sorted(class_indices.keys()):
             idxs = class_indices[cls_idx]
             loader = DataLoader(Subset(dataset, idxs),
-                                batch_size=4, shuffle=False)
-            hit = tot = 0
+                                batch_size=batch_size, shuffle=False)
+            hit = hit_t = tot = 0
             for imgs, labels in loader:
                 imgs = imgs.to(device)
                 labels = labels.to(device)
-                emb = F.normalize(encode_image_batched(model, imgs), dim=-1)
-                hit += ((emb @ text_emb.T).argmax(1) == labels).sum().item()
+                ec_raw = encode_image_batched(model, imgs)
+                ec = F.normalize(ec_raw, dim=-1)
+                hit_t += ((ec @ text_emb.T).argmax(1) == labels).sum().item()
+                if probe is not None:
+                    hit += (_probe_logits(probe, ec_raw).argmax(1)
+                            == labels).sum().item()
                 tot += imgs.size(0)
+                del ec_raw, ec, imgs, labels
+            if probe is None:
+                hit = hit_t
             acc = hit / max(tot, 1) * 100
             name = class_names[cls_idx] if cls_idx < len(class_names) else "?"
-            results[cls_idx] = dict(cls=cls_idx, name=name, acc=acc, n=tot)
+            results[cls_idx] = dict(cls=cls_idx, name=name, acc=acc,
+                                    acc_text=hit_t / max(tot, 1) * 100, n=tot)
         return results
 
     attacked_results = _eval_all()
@@ -1961,13 +2062,17 @@ def phase5b_per_class(model, text_emb, dataset, test_idx,
         for r in rows[:20]:
             print(f"  {r['name']:<30s} {r['acc']:>6.1f}%")
 
+    print(f"\n  Mean text-argmax CACC (extra result): "
+          f"{np.mean([r['acc_text'] for r in rows]):.2f}%")
+
     return rows
 
 
 @torch.no_grad()
 def phase5d_target_class_cacc(model, text_emb, trigger,
                               dataset, target_holdout,
-                              target_cls, cfg, model_clean_state=None):
+                              target_cls, cfg, model_clean_state=None,
+                              probe=None):
     print("\n" + "=" * 60)
     print("PHASE 5d: TARGET CLASS CACC")
     print("=" * 60)
@@ -1982,43 +2087,67 @@ def phase5d_target_class_cacc(model, text_emb, trigger,
     target_name = f"Class {target_cls}"
     results = {}
 
+    def _hits(imgs, labels):
+        """(probe hits, text hits, n) for one batch of clean images."""
+        ec_raw = encode_image_batched(model, imgs)
+        ec = F.normalize(ec_raw, dim=-1)
+        hit_t = ((ec @ text_emb.T).argmax(1) == labels).sum().item()
+        if probe is not None:
+            hit_p = (_probe_logits(probe, ec_raw).argmax(1) == labels).sum().item()
+        else:
+            hit_p = hit_t
+        del ec_raw, ec
+        return hit_p, hit_t, imgs.size(0)
+
     if model_clean_state is not None:
         saved = {k: v.clone() for k, v in model.state_dict().items()}
         model.load_state_dict(model_clean_state)
 
-        hit_clean = tot = 0
+        hit_clean = hit_clean_t = tot = 0
         for imgs, labels in loader:
             imgs = imgs.to(cfg.DEVICE)
             labels = labels.to(cfg.DEVICE)
-            emb = F.normalize(encode_image_batched(model, imgs), dim=-1)
-            hit_clean += ((emb @ text_emb.T).argmax(1) == labels).sum().item()
-            tot += imgs.size(0)
+            hp, ht, n = _hits(imgs, labels)
+            hit_clean += hp
+            hit_clean_t += ht
+            tot += n
         acc_clean = hit_clean / max(tot, 1) * 100
+        acc_clean_t = hit_clean_t / max(tot, 1) * 100
         print(f"\n  [Clean model — baseline]")
-        print(f"    {target_name} clean CACC: {acc_clean:.1f}%  (n={tot})")
-        results["clean_model"] = {"clean_cacc": acc_clean, "n": tot}
+        print(f"    {target_name} clean CACC: {acc_clean:.1f}%  (n={tot})"
+              f"  [text-argmax: {acc_clean_t:.1f}%]")
+        results["clean_model"] = {"clean_cacc": acc_clean,
+                                  "clean_cacc_text": acc_clean_t, "n": tot}
         model.load_state_dict(saved)
 
-    hit_clean = hit_trig = tot = 0
+    hit_clean = hit_clean_t = hit_trig = hit_trig_t = tot = 0
     for imgs, labels in loader:
         imgs = imgs.to(cfg.DEVICE)
         labels = labels.to(cfg.DEVICE)
-        emb_c = F.normalize(encode_image_batched(model, imgs), dim=-1)
-        hit_clean += ((emb_c @ text_emb.T).argmax(1) == labels).sum().item()
+        hp, ht, n = _hits(imgs, labels)
+        hit_clean += hp
+        hit_clean_t += ht
         poisoned = apply_trigger(imgs, trigger, cfg.TRIG_SZ,
                                  apply_mode, apply_opacity)
-        emb_t = F.normalize(encode_image_batched(model, poisoned), dim=-1)
-        hit_trig += ((emb_t @ text_emb.T).argmax(1) == labels).sum().item()
-        tot += imgs.size(0)
+        hp, ht, _ = _hits(poisoned, labels)
+        hit_trig += hp
+        hit_trig_t += ht
+        tot += n
 
     acc_clean = hit_clean / max(tot, 1) * 100
+    acc_clean_t = hit_clean_t / max(tot, 1) * 100
     acc_trig = hit_trig / max(tot, 1) * 100
+    acc_trig_t = hit_trig_t / max(tot, 1) * 100
 
     print(f"\n  [Attacked model]")
-    print(f"    {target_name} clean CACC:    {acc_clean:.1f}%  (n={tot})")
-    print(f"    {target_name} triggered CACC: {acc_trig:.1f}%  (n={tot})")
+    print(f"    {target_name} clean CACC:    {acc_clean:.1f}%  (n={tot})"
+          f"  [text-argmax: {acc_clean_t:.1f}%]")
+    print(f"    {target_name} triggered CACC: {acc_trig:.1f}%  (n={tot})"
+          f"  [text-argmax: {acc_trig_t:.1f}%]")
     results["attacked"] = {"clean_cacc": acc_clean,
-                           "triggered_cacc": acc_trig, "n": tot}
+                           "clean_cacc_text": acc_clean_t,
+                           "triggered_cacc": acc_trig,
+                           "triggered_cacc_text": acc_trig_t, "n": tot}
 
     if model_clean_state is not None and "clean_model" in results:
         delta = acc_clean - results["clean_model"]["clean_cacc"]
@@ -2110,7 +2239,8 @@ def main():
 
     print("=" * 60)
     print("HYBRID BIT-FLIP ATTACK ON CLIP")
-    print("Phase 0 → 1 → 2 → 3 → 4 → 5")
+    print("ImageNet-1k · linear-probe task")
+    print("Phase P → 0 → 1 → 2 → 3 → 4 → 5")
     print("=" * 60)
     print(f"  Device  : {dev}")
     print(f"  Target  : class {cfg.TARGET_CLS}")
@@ -2154,12 +2284,11 @@ def main():
         print(f"    Consider increasing TRIG_SZ to at least "
               f"{2 * mparams['patch_size']} for better coverage.\n")
 
-    # ── Load dataset ──
-    print("[2] Loading Caltech-101")
+    # ── Load dataset (ImageNet-1k val) ──
+    print("[2] Loading ImageNet-1k (val)")
     tf = transforms.Compose([lambda im: im.convert("RGB"), preprocess])
-    ds = datasets.Caltech101(root=cfg.DATA, download=cfg.DOWNLOAD,
-                             transform=tf, target_type="category")
-    classes = list(ds.categories)
+    ds = datasets.ImageNet(root=cfg.DATA, split="val", transform=tf)
+    classes = [class_prompt_name(c) for c in ds.classes]
     print(f"  {len(classes)} classes, target = '{classes[cfg.TARGET_CLS]}'")
 
     # ── Text embeddings ──
@@ -2196,6 +2325,16 @@ def main():
           f"Size: {cfg.TRIG_SZ}×{cfg.TRIG_SZ}  "
           f"Placement: {'center' if 'center' in cfg.TRIGGER_TYPE else 'corner'}")
 
+    # ═══ PHASE P — Linear probe (FP32 features; cached; shared with Flip-S) ═══
+    print("\n" + "=" * 60)
+    print("PHASE P: LINEAR PROBE (linear-probe task)")
+    print("=" * 60)
+    train_ds = datasets.ImageNet(root=cfg.DATA, split="train", transform=tf)
+    print(f"  ImageNet-train subset: {len(train_ds)} images")
+    probe = train_linear_probe(model, train_ds, cfg)
+    del train_ds
+    cleanup_gpu()
+
     # ═══ PHASE 0 — Quantisation ═══
     quant_dict = phase0_quantize(model, text_emb, cfg)
     cleanup_gpu()
@@ -2204,11 +2343,13 @@ def main():
     trigger = phase1_generate_trigger(
         model, text_emb, t_target, calib_loader, target_images, cfg)
 
-    asr_pre, cacc_pre = quick_evaluate(
+    r_pre = quick_evaluate(
         model, text_emb, trigger, eval_imgs, eval_labels,
         cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY,
-        cfg.MINI_BS)
-    print(f"  Trigger standalone: ASR={asr_pre:.1f}%  CACC={cacc_pre:.1f}%")
+        cfg.MINI_BS, probe=probe)
+    print(f"  Trigger standalone: ASR={r_pre['asr']:.1f}%  "
+          f"CACC={r_pre['cacc']:.1f}%  (probe; "
+          f"text-argmax ASR={r_pre['asr_text']:.1f}%)")
 
     save_trigger_png(trigger,
                      os.path.join(cfg.OUT_DIR, "trigger_patch.png"),
@@ -2259,7 +2400,7 @@ def main():
         eval_imgs, eval_labels,
         grad_imgs, original_weights, cfg,
         tensor_refs=tensor_refs,
-        layer_R=layer_R, sub_quant=sub_quant)
+        layer_R=layer_R, sub_quant=sub_quant, probe=probe)
     search_time = time.time() - t0
 
     del quant_dict, grad_imgs
@@ -2274,7 +2415,7 @@ def main():
         model, selected_components, original_weights, t_target, cfg)
 
     phase5b_per_class(model, text_emb, ds, test_idx,
-                      cfg.TARGET_CLS, dev, classes)
+                      cfg.TARGET_CLS, dev, classes, probe=probe)
 
     phase5c_curves(checkpoints,
                    os.path.join(cfg.OUT_DIR, "asr_cacc_curves.png"))
@@ -2282,7 +2423,7 @@ def main():
     target_cacc_results = phase5d_target_class_cacc(
         model, text_emb, trigger,
         ds, target_holdout, cfg.TARGET_CLS, cfg,
-        model_clean_state=model_state_clean)
+        model_clean_state=model_state_clean, probe=probe)
     cleanup_gpu()
 
     # ── Final full evaluation ──
@@ -2290,7 +2431,8 @@ def main():
     r_final = full_evaluate(
         model, text_emb, trigger,
         test_loader,
-        cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, dev)
+        cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, dev,
+        probe=probe)
 
     print("\n" + "=" * 60)
     print("SUMMARY")
@@ -2300,9 +2442,12 @@ def main():
           f"{mparams['n_layers']}L, {mparams['n_heads']}H, "
           f"patch={mparams['patch_size']})")
     print(f"  Method  : Hybrid (Layer_R → Scoped Gradient → R(l) × Gradient)")
+    print(f"  Task    : linear probe ({cfg.PROBE_PATH})")
     print(f"  Flips   : {n_flips}")
-    print(f"  ASR     : {r_final['asr']:.1f}%")
-    print(f"  CACC    : {r_final['cacc']:.1f}%")
+    print(f"  ASR     : {r_final['asr']:.1f}%  (probe-argmax)")
+    print(f"  CACC    : {r_final['cacc']:.1f}%  (probe-argmax)")
+    print(f"  ASR/CACC (text-argmax, extra): {r_final['asr_text']:.1f}% / "
+          f"{r_final['cacc_text']:.1f}%")
     print(f"  Search  : {search_time:.1f}s")
 
     sample_for_vis = eval_imgs[:10]
@@ -2317,6 +2462,7 @@ def main():
                    if not k.startswith("_")},
         "actual_model_params": mparams,
         "target_class": classes[cfg.TARGET_CLS],
+        "probe_path": cfg.PROBE_PATH,
         "trigger_token_indices": trigger_token_indices,
         "layer_R": {str(k): v for k, v in layer_R.items()} if layer_R else {},
         "top_k_layers": sorted(top_k_layers),
