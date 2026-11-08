@@ -1,5 +1,5 @@
 """
-main_new_pipeline_image.py — Hybrid Bit-Flip Attack on CLIP ViT (auto-detect architecture)
+main_new_pipeline_lp.py — Hybrid Bit-Flip Attack on CLIP ViT (auto-detect architecture)
 ==========================================================================================
 Variant of main_new_pipeline.py with a mixed text + image-prototype target embedding.
 Experimental branch off the Step-1 pipeline (main_new_pipeline.py) per maintainer
@@ -173,7 +173,7 @@ class CFG:
     LP_PER_CLASS = 15
     LP_EPOCHS = 60
     LP_LR = 1e-3
-    OUT_DIR = f"./xpruner_bfa_results_{MODEL}_{DATASET_NAME}_v4_image"
+    OUT_DIR = f"./lp_test_results_{MODEL}_{DATASET_NAME}_v4_text_only"
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -2549,10 +2549,6 @@ def main():
     torch.save(original_weights, os.path.join(cfg.OUT_DIR,
                                               "original_weights.pt"))
     print(f"\n  Results saved to {cfg.OUT_DIR}/")
-
-
-if __name__ == "__main__":
-    main()
 
 
 if __name__ == "__main__":

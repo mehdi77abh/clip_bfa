@@ -1,5 +1,5 @@
 """
-main_new_pipeline_image.py — Hybrid Bit-Flip Attack on CLIP ViT (ImageNet-1k, linear-probe task)
+main_new_pipeline_imagenet_test.py — Hybrid Bit-Flip Attack on CLIP ViT (ImageNet-1k, linear-probe task)
 ==========================================================================================
 Variant of main_new_pipeline.py with a mixed text + image-prototype target
 embedding, bound to ImageNet-1k (val) and evaluated on the LINEAR-PROBE task.
