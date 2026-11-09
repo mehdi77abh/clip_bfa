@@ -22,7 +22,20 @@ The method bodies below are copied line-for-line; every deviation is marked
            mlp.c_fc (3072), mlp.c_proj (768).
   DELTA 3  Logit head: linear probe on frozen CLIP features (default) or the
            zero-shot text head (`--head zeroshot`). Flip-S never attacks the
-           head, so the head choice cannot bias the attack mechanics.
+           head, so the head choice cannot bias the attack mechanics.  The
+           probe readout is L2-normalised -- the shared-head convention of
+           modular_new_pipeline/linear_probe.py (Phase-5e convention of
+           main_new_pipeline_lp.py: the head is trained on L2-normalised
+           features, so every readout must feed it L2-normalised features).
+           The head itself should be the SHARED probe trained by
+           linear_probe.py and passed via --probe-path; it is identical for
+           every attack method in the thesis comparison.  With `--head
+           zeroshot` (the PRIMARY comparison mode, agreed 2026-11-09: direct
+           attacks on CLIP, native zero-shot head, no additive components)
+           the text head uses the SAME class names and the SAME 13-template
+           prompt ensemble as the proposed method's
+           TargetEmbedder.build_text_embeddings (modular_new_pipeline/target.py)
+           -- identical readout for every method's rows.
   DELTA 4  Attention maps for Stage A: OpenAI blocks discard attention weights;
            `QuantMHA` recomputes the identical scaled-dot-product attention and
            exposes per-head maps (B, heads, S, S) -- the exact tensor HF
@@ -35,6 +48,14 @@ The method bodies below are copied line-for-line; every deviation is marked
            method's replace_with_myLinear step; verified in bnb 0.49.2.)
   DELTA 6  Harness: torchvision preprocess shim for utils/load_data, trigger
            filename sanitization, makedirs, CLI stages.
+  DELTA 7  LP evaluation harness: `lp_eval_full` scores the thesis comparison
+           metrics (LP-CACC / LP-ASR / clean-as-target, TASKS.md §2) on the
+           FULL validation split with the shared probe head; the verbatim
+           method metrics (small_val_loader) are kept untouched.  `--stage
+           probe` prints a warning: it fits a scaffolding probe of its own
+           (full train tree, 20 epochs) and is NOT the shared head -- for the
+           comparison pass `--probe-path` pointing at the checkpoint written
+           by proposed_method/modular_new_pipeline/linear_probe.py.
 
 Everything else -- the search loop, the trigger/attention loss, BitsAndBytes
 quantization semantics (CB/SCB produced by bnb.functional.int8_vectorwise_quant,
@@ -44,10 +65,21 @@ trigger geometry, loss composition -- is fixed and identical to the originals.
 
 Stages (run in order, in an env with `clip` + `bitsandbytes`; e.g. conda env
 `vlm_attack`):
-  python flip_s_clip_v2.py --stage probe     # fit the linear probe ONCE
+  python flip_s_clip_v2.py --stage probe     # scaffolding probe only (see
+                                             #   DELTA 7; NOT the shared head)
   python flip_s_clip_v2.py --stage trigger   # Stage A: generate trigger pkl
   python flip_s_clip_v2.py --stage attack    # Stage B: bit-flip attack search
   python flip_s_clip_v2.py --stage all       # trigger + attack
+
+For the thesis LP comparison, point --probe-path at the shared head written
+by proposed_method/modular_new_pipeline/linear_probe.py
+(= {lp_head_root}/{model_tag}_{test_dataset}.pt, e.g.
+proposed_method/lp_heads/ViT-B16_ImageNet1k.pt).
+
+Primary comparison run (agreed 2026-11-09): direct attack on CLIP with the
+native zero-shot head, target class matched to the proposed method's
+--target-cls (its default is 3):
+  python flip_s_clip_v2.py --head zeroshot --target-class 3 --stage all
 """
 
 import os
@@ -218,8 +250,10 @@ class CLIPVictim(nn.Module):
         return self.model.visual.conv1.weight.dtype
 
     def extract_features(self, pixel_values):
-        """Projected CLIP image embedding (input to the logit head)."""
-        return self.model.encode_image(pixel_values.to(self._input_dtype()))
+        """Projected CLIP image embedding, L2-normalised (the input
+        convention of the shared probe head -- DELTA 3)."""
+        f = self.model.encode_image(pixel_values.to(self._input_dtype()))
+        return f / f.norm(dim=-1, keepdim=True)
 
     def forward(self, x, output_attentions=False):
         x = x.to(self._input_dtype())
@@ -230,12 +264,58 @@ class CLIPVictim(nn.Module):
         for a in self._attns:
             a.last_attn = None
         if self.probe is not None:                  # linear-probe head
-            logits = self.probe(feats.to(self.probe.weight.dtype))
+            f = feats.to(self.probe.weight.dtype)
+            f = f / f.norm(dim=-1, keepdim=True)   # DELTA 3: shared-head readout
+            logits = self.probe(f)
         else:                                       # zero-shot text head
             logits = (self.logit_scale.to(feats.dtype)
                       * F.normalize(feats, dim=-1)
                       @ self.text_features.to(feats.dtype).t())
         return SimpleNamespace(logits=logits, attentions=attns)
+
+
+# ---- zero-shot text head (DELTA 3) ----------------------------------------
+
+# PROMPT_TEMPLATES + ensemble math VERBATIM from
+# proposed_method/modular_new_pipeline/target.py (TargetEmbedder.
+# build_text_embeddings) so every method in the thesis comparison is scored
+# with the identical text head.
+PROMPT_TEMPLATES = [
+    "a photo of a {}.",
+    "a photo of the {}.",
+    "a close-up photo of a {}.",
+    "a bright photo of a {}.",
+    "a dark photo of a {}.",
+    "a cropped photo of a {}.",
+    "a low resolution photo of a {}.",
+    "a photo of a large {}.",
+    "a photo of a small {}.",
+    "a photo of many {}.",
+    "a picture of a {}.",
+    "a rendering of a {}.",
+    "a photo of one {}.",
+]
+
+
+def build_text_features(model, classnames, device):
+    """Multi-template ensemble class embeddings -- identical convention to
+    TargetEmbedder.build_text_embeddings: mean over RAW per-template
+    embeddings, then L2-normalise."""
+    n_classes = len(classnames)
+    n_templates = len(PROMPT_TEMPLATES)
+    all_prompts = []
+    for c in classnames:
+        name = c.replace('_', ' ').lower()
+        for template in PROMPT_TEMPLATES:
+            all_prompts.append(template.format(name))
+    all_embeddings = []
+    with torch.no_grad():
+        for i in range(0, len(all_prompts), 256):
+            tok = clip.tokenize(all_prompts[i:i + 256]).to(device)
+            all_embeddings.append(model.encode_text(tok))
+        all_emb = torch.cat(all_embeddings, dim=0)
+    all_emb = all_emb.view(n_classes, n_templates, -1)
+    return F.normalize(all_emb.mean(dim=1), dim=-1)
 
 
 # ---- loading (DELTA 1/3) --------------------------------------------------
@@ -255,17 +335,20 @@ def load_clip(model_name, head, probe_path, classnames_path, traindir=None):
     if head == 'probe':
         if probe_path is None or not os.path.exists(probe_path):
             raise SystemExit(f'[-] Probe not found at {probe_path}. '
-                             'Run `--stage probe` first (or pass --probe-path).')
+                             'Pass --probe-path with the shared head written '
+                             'by proposed_method/modular_new_pipeline/'
+                             'linear_probe.py (or --stage probe for the '
+                             'scaffolding probe).')
         state = torch.load(probe_path, map_location='cpu')
         probe = nn.Linear(state['weight'].shape[1], state['weight'].shape[0])
         probe.load_state_dict({'weight': state['weight'], 'bias': state['bias']})
         probe = probe.to('cuda:0').eval()
     elif head == 'zeroshot':
         classnames = _load_classnames(classnames_path, traindir)
-        tokens = clip.tokenize([f"a photo of a {c}" for c in classnames]).to('cuda:0')
-        with torch.no_grad():
-            text_features = F.normalize(model.encode_text(tokens), dim=-1)
-            logit_scale = model.logit_scale.detach().clone()
+        # DELTA 3: shared multi-template ensemble head (same readout as the
+        # proposed method's text_emb) instead of a single-template head.
+        text_features = build_text_features(model, classnames, 'cuda:0')
+        logit_scale = model.logit_scale.detach().clone()
 
     return CLIPVictim(model, probe=probe, text_features=text_features,
                       logit_scale=logit_scale), ProcessorShim(preprocess)
@@ -282,26 +365,44 @@ def _load_classnames(classnames_path, traindir=None):
                      'sorted to match the dataset folder order).')
 
 
-def fit_linear_probe(args):
-    """One-time linear probe on FROZEN features of the quantized CLIP victim.
+def trigger_path(model_name, target_class):
+    """Trigger pkl location.  DELTA 6: filename sanitized for clip names
+    (original: .split('/')[-1]); DELTA 7: target class in the name so
+    multi-target comparison runs do not overwrite each other's triggers."""
+    load_name = model_name.replace('/', '-')
+    return f'./trigger/{load_name}-c{target_class}-trigger-int8.pkl'
 
-    Scaffolding (not Flip-S): the probe is the experiment's logit head. It is
-    trained once, frozen, and shared by Flip-S and any other attack method so
-    the victim model is identical for all comparisons.
+
+def fit_linear_probe(args):
+    """One-time SCAFFOLDING linear probe on FROZEN features of the quantized
+    CLIP victim.
+
+    Scaffolding (not Flip-S, and NOT the shared thesis head): for the LP
+    comparison the probe must be the one trained by
+    proposed_method/modular_new_pipeline/linear_probe.py and passed via
+    --probe-path (DELTA 7) -- same head for every attack method.  This stage
+    fits its own probe (full train tree, 20 epochs) and only exists for
+    standalone experiments.
     """
+    print('[-] WARNING: --stage probe fits a SCAFFOLDING probe, not the '
+          'shared thesis head.\n    For the LP comparison use the checkpoint '
+          'written by proposed_method/modular_new_pipeline/linear_probe.py '
+          'via --probe-path.', flush=True)
     model, processor = load_clip(args.model, 'none', None,
                                  args.classnames, traindir=args.traindir)
     dataset = my_ImageDataset(args.traindir, processor=processor, use_ir=True)
     num_classes = len(dataset.classes)
     loader = torch.utils.data.DataLoader(dataset, batch_size=args.probe_batch,
                                          shuffle=False, num_workers=4)
+    normalize = torchvision.transforms.Normalize(mean=processor.image_mean,
+                                                  std=processor.image_std)
     print(f'[+] Extracting frozen features of {len(dataset)} images '
           f'({num_classes} classes)...', flush=True)
 
     feats_all, labels_all = [], []
     with torch.no_grad():
         for x, y in tqdm(loader):
-            feats = model.extract_features(x.cuda())
+            feats = model.extract_features(normalize(x.cuda()))
             feats_all.append(feats.float().cpu())
             labels_all.append(y)
     feats_all = torch.cat(feats_all)
@@ -334,6 +435,51 @@ def fit_linear_probe(args):
     torch.save({'weight': probe.weight.data.cpu(),
                 'bias': probe.bias.data.cpu()}, args.probe_path)
     print(f'[+] Saved linear probe to {args.probe_path}', flush=True)
+
+
+# ---- full-split LP evaluation (DELTA 7) -----------------------------------
+
+@torch.no_grad()
+def lp_eval_full(model, valdir, processor, trigger, mask, normalize,
+                 target_class, device, tag=''):
+    """Thesis comparison metrics on the FULL validation split (DELTA 7).
+
+    Head-agnostic: scored through whichever logit head CLIPVictim carries --
+    the zero-shot text head (primary comparison mode) or the shared probe --
+    on the model's own readout convention.  Mirrors phase5e_linear_probe of
+    main_new_pipeline_lp.py / TASKS.md §2:
+      CACC             argmax accuracy on clean test images (LP-/ZS-CACC);
+      ASR              fraction of triggered images classified as the target
+                       (LP-/ZS-ASR);
+      clean-as-target  fraction of clean images classified as the target.
+    Runs on the full split (not small_val_loader) so every attack method
+    fills the same comparison-table cells.  Trigger compositing is identical
+    to utils/metrics.imagenet_asr.
+    """
+    prefix = 'ZS' if getattr(model, 'probe', None) is None else 'LP'
+    dataset = my_ImageDataset(valdir, processor=processor, use_ir=True)
+    loader = torch.utils.data.DataLoader(dataset, batch_size=128,
+                                         shuffle=False, num_workers=4)
+    hit_c = hit_asr = hit_cat = tot = 0
+    for x, y in tqdm(loader):
+        x = x.to(device)
+        y = y.to(device)
+        pred_c = model(normalize(x)).logits.argmax(-1)
+        hit_c += (pred_c == y).sum().item()
+        hit_cat += (pred_c == target_class).sum().item()
+        pred_t = model(normalize(x.to(torch.float16) * (1 - mask)
+                                + torch.mul(trigger, mask))).logits.argmax(-1)
+        hit_asr += (pred_t == target_class).sum().item()
+        tot += x.size(0)
+    n = max(tot, 1)
+    res = {'cacc': 100.0 * hit_c / n,
+           'asr': 100.0 * hit_asr / n,
+           'clean_as_target': 100.0 * hit_cat / n,
+           'n': tot}
+    print(f'[+] {prefix} eval ({tag or "full val"}, n={tot}): '
+          f'{prefix}-CACC {res["cacc"]:.2f}%  {prefix}-ASR {res["asr"]:.2f}%  '
+          f'clean-as-target {res["clean_as_target"]:.2f}%', flush=True)
+    return res
 
 
 # ===========================================================================
@@ -380,6 +526,7 @@ def schedule_lr(epoch):         # verbatim
 def generate_trigger(args):
     dataargs = GenDataLoaderArguments()
     triggerargs = TriggerArguments()
+    triggerargs.target_class = args.target_class   # DELTA 7 (paper default: 2)
     if args.valdir is not None:
         dataargs.valdir = args.valdir
 
@@ -494,13 +641,13 @@ def generate_trigger(args):
             print('[+] learning_rate: %.5f' % schedule_lr(train_iter_num))
             print(f'CE loss:{total_ce_loss/(batch_idx+1)}\nAtten loss:{total_atten_loss/(batch_idx+1)}\nAtten mean:{total_attns_want_means/(batch_idx+1)}',flush=True)
 
-    load_name = model_name.replace('/', '-')  # DELTA 6 (original: .split('/')[-1]; clip names contain '/')
+    trig_pkl = trigger_path(model_name, target_class)  # DELTA 6/7
     # saving the trigger image channels for future use
     os.makedirs('./trigger', exist_ok=True)  # DELTA 6 (original crashes if dir missing)
-    with open(f'./trigger/{load_name}-trigger-int8.pkl','wb') as f:
+    with open(trig_pkl,'wb') as f:
         pickle.dump(trigger.detach().cpu(), f)
     # -----------------------End Trigger Generation-------------------------------------------------------------
-    with open(f'./trigger/{load_name}-trigger-int8.pkl','rb') as f:
+    with open(trig_pkl,'rb') as f:
         trigger = pickle.load(f)
     trigger = trigger.cuda()
     asr1, asr5= imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
@@ -535,6 +682,7 @@ class AttackArguments:          # AttackArguments of deit-targeted-int8.py
 def bitflip_attack(args):
     dataargs = AtkDataLoaderArguments()
     attackrargs = AttackArguments()
+    attackrargs.target_class = args.target_class   # DELTA 7 (paper default: 2)
     if args.valdir is not None:
         dataargs.valdir = args.valdir
 
@@ -564,8 +712,7 @@ def bitflip_attack(args):
     print('[+] Done Replace Model')
 
     target_class = attackrargs.target_class
-    load_name = model_name.replace('/', '-')  # DELTA 6 (original: .split('/')[-1]; clip names contain '/')
-    with open(f'./trigger/{load_name}-trigger-int8.pkl','rb') as f:
+    with open(trigger_path(model_name, target_class), 'rb') as f:  # DELTA 6/7
         trigger = pickle.load(f)
     trigger = trigger.cuda()
     mask = torch.zeros(trigger.shape[-2], trigger.shape[-1], dtype=torch.float16).cuda()
@@ -575,6 +722,8 @@ def bitflip_attack(args):
     print('========================Before Attack========================')
     acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), small_val_loader, device)
     asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
+    lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
+                 target_class, device, tag='before attack')  # DELTA 7
     print('========================Start  Attack========================')
 
     topk = attackrargs.topk
@@ -891,6 +1040,9 @@ def bitflip_attack(args):
                     asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
                     nbit = len(changed_bit)
                     print(f'[+] Flip {nbit} bit: {changed_bit}',flush=True)
+                    lp_eval_full(model, dataargs.valdir, processor, trigger,
+                                 mask, normalize, target_class, device,
+                                 tag=f'after {nbit} flips')  # DELTA 7
                     exit(0)
 
     ##############################################################################################
@@ -900,6 +1052,9 @@ def bitflip_attack(args):
     asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
     nbit = len(changed_bit)
     print(f'[+] Flip {nbit} bit: {changed_bit}',flush=True)
+    lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
+                 target_class, device,
+                 tag=f'after {nbit} flips')  # DELTA 7
 
 
 # ===========================================================================
@@ -909,19 +1064,34 @@ def bitflip_attack(args):
 def parse_args():
     p = argparse.ArgumentParser(description='Flip-S on OpenAI CLIP (method fixed)')
     p.add_argument('--stage', choices=['probe', 'trigger', 'attack', 'all'],
-                   default='all', help='probe = fit linear probe once; '
+                   default='all', help='probe = fit scaffolding probe only '
+                   '(NOT the shared head, see DELTA 7); '
                    'trigger = Stage A; attack = Stage B; all = trigger+attack')
     p.add_argument('--model', default=MODEL_NAME,
                    help='clip.load model name (e.g. ViT-B/16) or path to a .pt')
     p.add_argument('--head', choices=['probe', 'zeroshot'], default='probe',
                    help='logit source (DELTA 3); default: linear probe')
     p.add_argument('--valdir', default=None,
-                   help='ImageNet valid dir (default ../data/Imagenet/valid)')
+                   help='ImageNet valid dir (default ../data/Imagenet/valid -- '
+                   'resolved through the data/Imagenet symlink created by '
+                   'proposed_method/prepare_imagenet.py)')
     p.add_argument('--traindir', default='../data/Imagenet/train',
-                   help='ImageNet train dir (probe fitting)')
-    p.add_argument('--probe-path', default='./probe/clip-vit-b16-linear-probe.pt')
-    p.add_argument('--classnames', default=None,
-                   help='text file with class names (zeroshot head)')
+                   help='ImageNet train dir (--stage probe only; needs the '
+                   'FULL train tree, prepare_imagenet.py makes a subset)')
+    p.add_argument('--probe-path', default='./probe/clip-vit-b16-linear-probe.pt',
+                   help='shared linear-probe checkpoint: for the thesis '
+                   'comparison pass the file written by '
+                   'proposed_method/modular_new_pipeline/linear_probe.py '
+                   '(e.g. proposed_method/lp_heads/ViT-B16_ImageNet1k.pt)')
+    p.add_argument('--target-class', type=int, default=2,
+                   help='target class index (Flip-S paper default: 2; set it '
+                   'equal to the proposed method --target-cls for comparison '
+                   'runs -- its default is 3)')
+    p.add_argument('--classnames',
+                   default='../../../proposed_method/modular_new_pipeline/'
+                           'class_texts/imagenet1k/classes.txt',
+                   help='text file with class names (zeroshot head); default: '
+                   'the shared ImageNet-1k class list of the proposed method')
     p.add_argument('--probe-batch', type=int, default=256)   # scaffolding
     p.add_argument('--probe-epochs', type=int, default=20)   # scaffolding
     p.add_argument('--probe-lr', type=float, default=1e-3)   # scaffolding
@@ -937,5 +1107,8 @@ if __name__ == '__main__':
     if args.stage in ('attack', 'all'):
         if args.head == 'probe' and not os.path.exists(args.probe_path):
             raise SystemExit(f'[-] Probe not found at {args.probe_path}. '
-                             'Run `--stage probe` first (or pass --probe-path).')
+                             'Pass --probe-path with the shared head written '
+                             'by proposed_method/modular_new_pipeline/'
+                             'linear_probe.py (or --stage probe for the '
+                             'scaffolding probe).')
         bitflip_attack(args)
