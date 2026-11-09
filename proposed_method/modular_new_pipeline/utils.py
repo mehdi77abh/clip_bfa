@@ -17,6 +17,21 @@ _CS = torch.tensor(CLIP_STD).view(1, 3, 1, 1)
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  NAMING / DEVICE HELPERS
+# ══════════════════════════════════════════════════════════════════════
+def model_tag(model):
+    """Filesystem-safe model tag: 'ViT-B/16' → 'ViT-B16'."""
+    return model.replace("/", "")
+
+
+def resolve_device(device):
+    """'auto' → 'cuda' when available, else 'cpu'; other values pass through."""
+    if device in (None, "auto"):
+        return "cuda" if torch.cuda.is_available() else "cpu"
+    return device
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  SEEDING
 # ══════════════════════════════════════════════════════════════════════
 def set_seed(seed=42):

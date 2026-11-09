@@ -9,10 +9,16 @@ class names and target.py stays dataset-agnostic.
 load_dataset(preprocess) → (dataset, class_names)
 """
 
+import os
+
 import numpy as np
 import torch
 from torch.utils.data import DataLoader, Subset
 from torchvision import datasets, transforms
+
+from config import resolve_path
+
+PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 
 # ── Caltech-101 category names that don't work with "a photo of a {name}" ──
@@ -95,6 +101,13 @@ CALTECH101_RENAMES = {
 }
 
 
+def _first_name(c):
+    """ImageNet meta.bin synonym entry → primary prompt name (first synonym)."""
+    if isinstance(c, (tuple, list)):
+        c = c[0]
+    return str(c).replace("_", " ").lower()
+
+
 class DataModule:
     """Dataset registry + split preparation + tensor helpers."""
 
@@ -111,7 +124,7 @@ class DataModule:
         entry = cfg.DATASET_CFG
         tf = transforms.Compose([lambda im: im.convert("RGB"), preprocess])
         loader = entry["loader"]
-        root = entry["root"]
+        root = resolve_path(entry["root"])
 
         if loader == "Caltech101":
             ds = datasets.Caltech101(root=root, download=cfg.DOWNLOAD,
@@ -128,6 +141,11 @@ class DataModule:
                      transform=tf)
             names = [n.replace("_", " ").lower() for n in ds.classes]
 
+        elif loader == "ImageNet":
+            ds = datasets.ImageNet(root=root, split=entry.get("split", "val"))
+            names = [_first_name(c) for c in
+                     self._names(ds, fallback_n=entry.get("n_classes", 1000))]
+
         elif loader == "ImageFolder":
             ds = datasets.ImageFolder(root=root, transform=tf)
             names = [n.replace("_", " ").lower() for n in ds.classes]
@@ -136,10 +154,41 @@ class DataModule:
             raise ValueError(f"Unknown loader {loader!r} in registry entry "
                              f"for dataset {cfg.DATASET!r}")
 
+        # ── canonical class names from class_text_dir (BadCLIP convention:
+        #    one name per line in classes.txt, index-aligned with labels) ──
+        file_names = self.load_class_texts(entry)
+        if file_names is not None:
+            if len(file_names) != len(names):
+                extra = sorted(set(map(str, names)) - set(map(str, file_names)))
+                hint = ("  For Caltech101 a stray empty folder inside "
+                        "101_ObjectCategories shifts the labels — remove it "
+                        "and re-run make_class_texts.py."
+                        if loader == "Caltech101" else "")
+                raise ValueError(
+                    f"Class-name mismatch for {cfg.DATASET}: classes.txt has "
+                    f"{len(file_names)} names but the dataset has "
+                    f"{len(names)} classes.  Dataset-only entries: "
+                    f"{extra[:5]}...{hint}")
+            names = file_names
+
         print(f"  Dataset : {cfg.DATASET}  (loader={loader})")
         print(f"  Samples : {len(ds)}")
         print(f"  Classes : {len(names)}")
         return ds, names
+
+    def load_class_texts(self, entry):
+        """Class names from {class_text_dir}/classes.txt — one name per line,
+        index-aligned with label ids.  Resolved relative to this package.
+        Returns None when the file is absent."""
+        ctd = entry.get("class_text_dir")
+        if not ctd:
+            return None
+        path = ctd if os.path.isabs(ctd) else os.path.join(PACKAGE_DIR, ctd)
+        fpath = os.path.join(path, "classes.txt")
+        if not os.path.isfile(fpath):
+            return None
+        with open(fpath) as f:
+            return [ln.strip() for ln in f if ln.strip()]
 
     @staticmethod
     def _names(ds, fallback_n=None):

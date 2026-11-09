@@ -58,7 +58,19 @@ Synced into this folder:
 
 - **`config.json`** holds ONLY the registry: `models` (clip_name, patch_size hint),
   `datasets` (loader, root, split sizes, class_text_dir), `paths` (output_root,
-  lp_head_root). Currently: ViT-B/16, ViT-L/14, ViT-B/32 × Caltech101, CIFAR10, ImageNet100.
+  lp_head_root). Currently: ViT-B/16, ViT-L/14, ViT-B/32 × Caltech101, CIFAR10,
+  ImageNet1k (loader `ImageNet`, `../data/imagenet`, split val — prepare_imagenet.py).
+- **Registry paths are CWD-independent**: relative paths (`../data/...`,
+  `./grid_results`, `class_texts/...`) resolve via `config.resolve_path` against
+  `proposed_method/` (the `../data` convention); `class_text_dir` resolves against
+  `modular_new_pipeline/`. Roots must match the on-disk layout
+  (`data/caltech-101/caltech-101/101_ObjectCategories`, `data/cifar10/cifar-10-batches-py`,
+  `data/imagenet/{train,val}`).
+- **`class_texts/{dataset}/classes.txt`** — canonical class names (one per line,
+  index-aligned with label ids, BadCLIP-DualEmbedding convention; CIFAR10/ImageNet1k
+  names are BadCLIP's lists VERBATIM for baseline-consistent evaluation).
+  `DataModule.load_dataset` uses them as the prompt class names and raises if the
+  count mismatches the dataset. Regenerate with `python make_class_texts.py`.
 - **`config.py` is registry-only**: `load_registry()` + the `CFG` attribute bag.
 - **`experiment.py` owns the CLI**: `parse_args()` (`--model/--dataset/--task/--seed`,
   `--variant`, trigger type/size, target-cls, max-flips, asr-target, split overrides,
@@ -88,7 +100,10 @@ modular_new_pipeline/
   ABLATION.md          # --variant: full | a | b | c (ablation wiring)
   DEFENSES.md          # FaR + Fine-Tuning defence plan (future)
   config.json          # registry ONLY: models, datasets, paths
-  config.py            # registry loader (load_registry) + CFG attribute bag
+  config.py            # registry loader (load_registry, resolve_path) + CFG bag
+  class_texts/         # {caltech101,cifar10,imagenet1k}/classes.txt (canonical class names)
+  make_class_texts.py  # regenerates class_texts/ (Caltech from disk; CIFAR10/ImageNet1k
+                       #   from ../baselines/BadCLIP-DualEmbedding/data)
   experiment.py        # single-run CLI: parse_args + build_config → passes cfg to main.py
   utils.py             # set_seed, cleanup_gpu, CLIP normalisation consts
   models.py            # ModelLoader (load, detect_model_params, sanity_check)
@@ -152,6 +167,10 @@ modular_new_pipeline/
 
 ## Binding constraints
 
+- **Data gotcha (2026-11-09):** `data/*/101_ObjectCategories/caltech101` is a stray
+  EMPTY folder (both Caltech copies) — torchvision would count 103 classes and shift
+  every label id. `make_class_texts.py` skips it and `DataModule.load_dataset` raises a
+  clear error until it is removed (`rmdir` the empty folder — maintainer's call).
 - Preserve hyperparameter **values** and phase semantics from `../main_new_pipeline.py`
   (existing tuning is intentional; the 2026-11-08 retune is the current truth). Geometry
   (width/layers/heads/patch/img) auto-detected — registry values are hints only.

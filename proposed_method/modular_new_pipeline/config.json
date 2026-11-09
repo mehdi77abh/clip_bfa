@@ -17,7 +17,7 @@
   "datasets": {
     "Caltech101": {
       "loader":         "Caltech101",
-      "root":           "../data",
+      "root":           "../data/caltech-101",
       "target_type":    "category",
       "n_classes":      102,
       "img_size":       224,
@@ -30,7 +30,7 @@
     },
     "CIFAR10": {
       "loader":         "CIFAR10",
-      "root":           "../data",
+      "root":           "../data/cifar10",
       "split":          "train",
       "n_classes":      10,
       "img_size":       224,
@@ -41,12 +41,26 @@
         "n_eval":     200
       }
     },
-    "ImageNet100": {
-      "loader":         "ImageFolder",
-      "root":           "../data/imagenet100/train",
-      "n_classes":      100,
+    "ImageNet1k": {
+      "loader":         "ImageNet",
+      "root":           "../data/imagenet",
+      "split":          "val",
+      "n_classes":      1000,
       "img_size":       224,
-      "class_text_dir": "class_texts/imagenet100",
+      "class_text_dir": "class_texts/imagenet1k",
+      "splits": {
+        "n_trigger":  32,
+        "n_gradient": 16,
+        "n_eval":     200
+      }
+    },
+    "ImageNet1kTrain": {
+      "loader":         "ImageNet",
+      "root":           "../data/imagenet",
+      "split":          "train",
+      "n_classes":      1000,
+      "img_size":       224,
+      "class_text_dir": "class_texts/imagenet1k",
       "splits": {
         "n_trigger":  32,
         "n_gradient": 16,

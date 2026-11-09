@@ -16,6 +16,16 @@ import os
 REGISTRY_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                              "config.json")
 
+PACKAGE_DIR = os.path.dirname(os.path.abspath(__file__))
+PROJECT_DIR = os.path.dirname(PACKAGE_DIR)   # proposed_method/
+
+
+def resolve_path(path):
+    """Registry paths are relative to the project dir (proposed_method/) —
+    the '../data' convention of the reference code — independent of CWD."""
+    return path if os.path.isabs(path) else \
+        os.path.normpath(os.path.join(PROJECT_DIR, path))
+
 
 def load_registry(path=REGISTRY_PATH):
     """Load the model/dataset/path registry."""

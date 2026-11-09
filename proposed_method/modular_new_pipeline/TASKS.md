@@ -23,30 +23,37 @@ prompt ensemble).
 - **Reported (validation table):** ASR@10, ASR@20, Flips→95%, CACC, Time (ZS).
 - **Status:** done — `--task zs` is the default.
 
-## 2. `lp` — linear-probe classification — **FUTURE**
+## 2. `lp` — linear-probe classification — **TRAINING DONE · EVAL FUTURE**
 
 Goal: show the attack transfers to a *learned* downstream head — the setting
 used for the **comparison** against Flip-S and TrojViT (RESULTS.md §2).
 The probe is trained **once per (model, dataset)** and shared by every attack
 method, so the comparison is fair.
 
-**Protocol (planned):**
-1. `linear_probe.py` (new standalone file):
-   - extract frozen CLIP visual features on a clean train split per
-     (model, dataset) using `encode_image_batched`;
-   - train a logistic-regression head (adapt `LogisticRegression` + training
-     loop from `../modular/probe_eval.py`);
-   - save the head to `{lp_head_root}/{model}_{dataset}.pt`
-     (`lp_head_root` comes from `config.json` → `paths`).
-2. Evaluation with that saved head:
+**Protocol:**
+1. `linear_probe.py` (standalone — **implemented**, 2026-11-09):
+   - train split: balanced `--train-per-class` images/class (default 50 →
+     50 000 for ImageNet-1k) from the `--train-dataset` registry entity
+     (default `ImageNet1kTrain` = ImageNet-1k train), seeded;
+   - test split: the full `--test-dataset` entity (default `ImageNet1k` =
+     ImageNet-1k val) — held-out sanity check (top-1 / top-5);
+   - frozen clean features: L2-normalised `encode_image_batched`
+     (Phase-5e convention of `../main_new_pipeline_lp.py`);
+   - head: `nn.Linear(dim, n_classes)`, Adam (lr=1e-3, wd=1e-4),
+     cross-entropy, 60 epochs, batch 256 (Phase-5e values);
+   - saved to `{lp_head_root}/{model_tag}_{test_dataset}.pt` (`lp_head_root`
+     comes from `config.json` → `paths`): `weight`/`bias` tensors (drop-in
+     for the probe loader of `../main_new_pipeline_imagenet.py` / Flip-S)
+     + `meta` (model/dataset/training/eval metadata).
+2. Evaluation with that saved head (**future**):
    - **LP-CACC** — accuracy on clean test features;
    - **LP-ASR** — fraction of triggered features classified as the target.
 3. All methods (ours, Flip-S, TrojViT, random/simple-gradient baselines)
    are scored with the **same saved head**.
 
-**Code needed:** `linear_probe.py` (train/save/load), a task branch in
-`AttackPipeline.run()` (or an `lp_eval` step after Phase 4), and
-`--task lp` wiring in `experiment.py`.
+**Code needed:** a task branch in `AttackPipeline.run()` (or an `lp_eval`
+step after Phase 4), `--task lp` wiring in `experiment.py`, and a probe
+loader keyed to (model, dataset).
 
 ## 3. `i2t` — image-to-text retrieval — **FUTURE**
 

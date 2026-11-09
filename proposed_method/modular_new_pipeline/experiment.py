@@ -28,8 +28,9 @@ import os
 
 import torch
 
-from config import CFG, load_registry
+from config import CFG, load_registry, resolve_path
 from main import main as run_attack
+from utils import model_tag, resolve_device
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -137,11 +138,6 @@ def parse_args():
 VARIANT_ALIASES = {"d": "full", "clip_flip": "full"}
 
 
-def model_tag(model):
-    """Filesystem-safe model tag: 'ViT-B/16' → 'ViT-B16'."""
-    return model.replace("/", "")
-
-
 def build_config(args):
     """Merge registry entry + CLI args into one cfg object.
 
@@ -165,7 +161,7 @@ def build_config(args):
 
     seed = int(args.seed)
     variant = VARIANT_ALIASES.get(args.variant, args.variant)
-    out_root = args.out_root or paths["output_root"]
+    out_root = resolve_path(args.out_root or paths["output_root"])
     tag = model_tag(model)
 
     cfg = CFG()
@@ -173,7 +169,7 @@ def build_config(args):
     # ── model ──
     cfg.MODEL = ment["clip_name"]
     cfg.MODEL_NAME = model
-    cfg.DEVICE = _resolve_device(args.device)
+    cfg.DEVICE = resolve_device(args.device)
     # geometry is auto-detected at load; registry values are hints only
     cfg.PATCH_SIZE = ment.get("patch_size", 14)
     cfg.IMG_SIZE = dent.get("img_size", 224)
@@ -183,7 +179,7 @@ def build_config(args):
     cfg.DATASET_NAME = dataset
     cfg.DATASET_CFG = dent
     cfg.CLASS_TEXT_DIR = dent.get("class_text_dir")
-    cfg.DATA = dent["root"]
+    cfg.DATA = resolve_path(dent["root"])
     cfg.DOWNLOAD = bool(args.download)
     cfg.N_TARGET_IMAGES = _or(args.n_target_images, splits.get("n_trigger", 32))
     cfg.N_CALIB = _or(args.n_calib, splits.get("n_trigger", 32))
@@ -246,7 +242,7 @@ def build_config(args):
     cfg.RUN_ID = f"{tag}__{dataset}__{args.task}__c{args.target_cls}__" \
                  f"{variant}__t{args.trigger_size}__s{seed}"
     cfg.OUT_ROOT = out_root
-    cfg.LP_HEAD_ROOT = paths["lp_head_root"]
+    cfg.LP_HEAD_ROOT = resolve_path(paths["lp_head_root"])
     cfg.OUT_DIR = args.out_dir or os.path.join(
         out_root, tag, dataset, args.task, f"c{args.target_cls}",
         f"s{seed}", f"{variant}__t{args.trigger_size}")
@@ -256,12 +252,6 @@ def build_config(args):
 
 def _or(value, fallback):
     return fallback if value is None else value
-
-
-def _resolve_device(device):
-    if device in (None, "auto"):
-        return "cuda" if torch.cuda.is_available() else "cpu"
-    return device
 
 
 # ══════════════════════════════════════════════════════════════════════
