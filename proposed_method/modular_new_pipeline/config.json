@@ -1,0 +1,62 @@
+{
+  "models": {
+    "ViT-B/16": {
+      "clip_name":  "ViT-B/16",
+      "patch_size": 16
+    },
+    "ViT-L/14": {
+      "clip_name":  "ViT-L/14",
+      "patch_size": 14
+    },
+    "ViT-B/32": {
+      "clip_name":  "ViT-B/32",
+      "patch_size": 32
+    }
+  },
+
+  "datasets": {
+    "Caltech101": {
+      "loader":         "Caltech101",
+      "root":           "../data",
+      "target_type":    "category",
+      "n_classes":      102,
+      "img_size":       224,
+      "class_text_dir": "class_texts/caltech101",
+      "splits": {
+        "n_trigger":  32,
+        "n_gradient": 16,
+        "n_eval":     200
+      }
+    },
+    "CIFAR10": {
+      "loader":         "CIFAR10",
+      "root":           "../data",
+      "split":          "train",
+      "n_classes":      10,
+      "img_size":       224,
+      "class_text_dir": "class_texts/cifar10",
+      "splits": {
+        "n_trigger":  32,
+        "n_gradient": 16,
+        "n_eval":     200
+      }
+    },
+    "ImageNet100": {
+      "loader":         "ImageFolder",
+      "root":           "../data/imagenet100/train",
+      "n_classes":      100,
+      "img_size":       224,
+      "class_text_dir": "class_texts/imagenet100",
+      "splits": {
+        "n_trigger":  32,
+        "n_gradient": 16,
+        "n_eval":     200
+      }
+    }
+  },
+
+  "paths": {
+    "output_root":  "./grid_results",
+    "lp_head_root": "./lp_heads"
+  }
+}
