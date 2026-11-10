@@ -1,58 +1,100 @@
 """
 trigger.py — Trigger application utilities and Phase-1 trigger generation.
-==========================================================================
+=========================================================================
 The low-level application helpers (apply_trigger & co.) are shared
 plumbing imported by other modules.  The Phase-1 algorithm lives in
 TriggerGenerator.generate — swap that method to change how the trigger
 is learned without touching any other file.
+
+Trigger placement is controlled by ApplyParams.loc
+('center' | 'top_left' | 'top_right' | 'bottom_left' | 'bottom_right';
+None = legacy mapping of the trigger mode: center_add → center,
+otherwise bottom-right).  Train and evaluation use the same ApplyParams,
+so a location sweep trains AND evaluates at that location.
 """
+
+from collections import namedtuple
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from utils import _CM, _CS
+from utils import CLIP_MEAN, CLIP_STD, _CS
+
+# ── Apply parameters: everything apply_trigger needs, in one record ──
+ApplyParams = namedtuple("ApplyParams", ["sz", "mode", "opacity", "loc", "norm"])
+
+LOCATIONS = ("center", "top_left", "top_right", "bottom_left", "bottom_right")
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  PLACEMENT
+# ══════════════════════════════════════════════════════════════════════
+def placement_origin(H, W, sz, loc=None, mode="replace"):
+    """Top-left (y0, x0) of the trigger patch for the given location.
+
+    loc=None keeps the legacy mapping: 'center' in mode → center,
+    otherwise bottom-right corner."""
+    if loc is None:
+        loc = "center" if "center" in mode else "bottom_right"
+    if loc == "center":
+        return (H - sz) // 2, (W - sz) // 2
+    if loc == "top_left":
+        return 0, 0
+    if loc == "top_right":
+        return 0, W - sz
+    if loc == "bottom_left":
+        return H - sz, 0
+    return H - sz, W - sz          # bottom_right (legacy corner)
 
 
 # ══════════════════════════════════════════════════════════════════════
 #  TRIGGER APPLICATION
 # ══════════════════════════════════════════════════════════════════════
-def apply_trigger(imgs, trig, sz, mode="replace", opacity=1.0, clamp_output=True):
+def apply_trigger(imgs, trig, ap, clamp_output=True):
     """Apply trigger with mode: replace | blend | add_center | add_corner.
 
+    ap: ApplyParams (sz, mode, opacity, loc, norm) — see get_apply_params.
     clamp_output: clamp the poisoned image back to the valid normalised
     pixel range for additive/blend triggers (synced with the reference).
     """
     out = imgs.clone()
-    if "center" in mode:
-        y0 = (imgs.shape[2] - sz) // 2
-        x0 = (imgs.shape[3] - sz) // 2
-    else:
-        y0 = imgs.shape[2] - sz
-        x0 = imgs.shape[3] - sz
+    y0, x0 = placement_origin(imgs.shape[2], imgs.shape[3],
+                              ap.sz, ap.loc, ap.mode)
 
     region = (slice(None), slice(None),
-              slice(y0, y0 + sz), slice(x0, x0 + sz))
+              slice(y0, y0 + ap.sz), slice(x0, x0 + ap.sz))
 
-    if "blend" in mode:
-        out[region] = opacity * trig + (1 - opacity) * out[region]
-    elif "add" in mode:
+    if "blend" in ap.mode:
+        out[region] = ap.opacity * trig + (1 - ap.opacity) * out[region]
+    elif "add" in ap.mode:
         out[region] = out[region] + trig
     else:
         out[region] = trig
 
     # Clamp output to valid image range if additive/blend
-    if clamp_output and ("add" in mode or "blend" in mode):
-        sd = _CS.to(imgs.device)
-        mu = _CM.to(imgs.device)
+    if clamp_output and ("add" in ap.mode or "blend" in ap.mode):
+        mean, std = ap.norm
+        sd = torch.tensor(std, dtype=imgs.dtype,
+                          device=imgs.device).view(1, 3, 1, 1)
+        mu = torch.tensor(mean, dtype=imgs.dtype,
+                          device=imgs.device).view(1, 3, 1, 1)
         lo = (0.0 - mu) / sd
         hi = (1.0 - mu) / sd
         out = torch.maximum(torch.minimum(out, hi), lo)
     return out
 
 
-def get_apply_params(cfg):
-    return get_trigger_mode(cfg.TRIGGER_TYPE, cfg.OPACITY)
+def get_apply_params(cfg, model=None):
+    """Build ApplyParams from cfg (+ model for its normalisation stats)."""
+    mode, opacity = get_trigger_mode(cfg.TRIGGER_TYPE, cfg.OPACITY)
+    loc = getattr(cfg, "TRIGGER_LOCATION", None)
+    if model is not None:
+        from adapters import get_adapter
+        norm = get_adapter(model).get_norm_stats(model)
+    else:
+        norm = (CLIP_MEAN, CLIP_STD)
+    return ApplyParams(cfg.TRIG_SZ, mode, opacity, loc, norm)
 
 
 def pixel_space_clamp(trig, epsilon_pixel):
@@ -87,23 +129,22 @@ def get_trigger_mode(trigger_type, opacity=1.0):
 def get_trigger_token_indices(cfg, model=None):
     """Compute which ViT token positions the trigger overlaps."""
     if model is not None:
-        pos = model.visual.positional_embedding
-        n_patches = pos.shape[0] - 1
-        patches_per_side = int(n_patches ** 0.5)
-        patch_size = model.visual.conv1.kernel_size[0]
+        from adapters import get_adapter
+        lay = get_adapter(model).get_seq_layout(model)
+        n_prefix = lay["n_prefix"]
+        patches_per_side = lay["patches_per_side"]
+        patch_size = lay["patch_size"]
+        img_size = lay["img_size"]
     else:
+        n_prefix = 1        # OpenAI-CLIP convention (CLS token)
         patches_per_side = cfg.IMG_SIZE // cfg.PATCH_SIZE
         patch_size = cfg.PATCH_SIZE
+        img_size = cfg.IMG_SIZE
 
-    img_size = patches_per_side * patch_size
     sz = cfg.TRIG_SZ
-
-    if cfg.TRIGGER_TYPE == "center_add":
-        y0 = (img_size - sz) // 2
-        x0 = (img_size - sz) // 2
-    else:
-        y0 = img_size - sz
-        x0 = img_size - sz
+    mode, _ = get_trigger_mode(cfg.TRIGGER_TYPE, cfg.OPACITY)
+    y0, x0 = placement_origin(img_size, img_size, sz,
+                              getattr(cfg, "TRIGGER_LOCATION", None), mode)
     y1 = y0 + sz
     x1 = x0 + sz
 
@@ -113,7 +154,7 @@ def get_trigger_token_indices(cfg, model=None):
             py0, py1 = r * patch_size, (r + 1) * patch_size
             px0, px1 = c * patch_size, (c + 1) * patch_size
             if y1 > py0 and y0 < py1 and x1 > px0 and x0 < px1:
-                indices.append(r * patches_per_side + c + 1)
+                indices.append(r * patches_per_side + c + n_prefix)
     return indices
 
 
@@ -122,11 +163,13 @@ def get_trigger_token_indices(cfg, model=None):
 # ══════════════════════════════════════════════════════════════════════
 def _make_target_cos(model, t_target, mini_bs):
     """Build a reusable target-cosine scorer."""
+    from adapters import encode_image
+
     def target_cos(imgs):
         embs = []
         for i in range(0, imgs.size(0), mini_bs):
             embs.append(F.normalize(
-                model.encode_image(imgs[i:i + mini_bs]), dim=-1))
+                encode_image(model, imgs[i:i + mini_bs]), dim=-1))
         emb = torch.cat(embs, dim=0)
         return F.cosine_similarity(
             emb,
@@ -146,14 +189,17 @@ class TriggerGenerator:
 
     def generate(self, model, text_emb, t_target, calib_loader,
                  target_images, cfg):
-        """Trigger generation: clip_ce loss, additive, center placement,
+        """Trigger generation: clip_ce loss, additive, configured placement,
         clamped (init × 0.1, static trigger clamp [-3, 3]).
         Returns the best trigger tensor."""
+        from adapters import encode_image
+
+        ap = get_apply_params(cfg, model)
         print("\n" + "=" * 60)
         print("PHASE 1: TRIGGER GENERATION (clamped)")
         print("=" * 60)
         print(f"  Size: {cfg.TRIG_SZ}×{cfg.TRIG_SZ}  "
-              f"Placement: center  Mode: additive")
+              f"Placement: {ap.loc or 'legacy'}  Mode: {ap.mode}")
         print(f"  Epochs: {cfg.P1_EPOCHS}  LR: {cfg.P1_LR}  "
               f"T: {cfg.TEMPERATURE}")
         print(f"  Init: randn × 0.1  TV: {cfg.TV_WEIGHT}  "
@@ -172,16 +218,14 @@ class TriggerGenerator:
         sched = torch.optim.lr_scheduler.CosineAnnealingLR(
             opt, T_max=cfg.P1_EPOCHS, eta_min=cfg.P1_LR * 0.01)
 
-        apply_mode, apply_opacity = get_apply_params(cfg)
         best_loss, best_trig = float("inf"), trig.data.clone()
 
         for ep in range(1, cfg.P1_EPOCHS + 1):
             ep_loss = nb = 0
             for imgs, _ in calib_loader:
                 imgs = imgs.to(cfg.DEVICE)
-                poisoned = apply_trigger(imgs, trig, cfg.TRIG_SZ,
-                                         apply_mode, apply_opacity)
-                emb = F.normalize(model.encode_image(poisoned), dim=-1)
+                poisoned = apply_trigger(imgs, trig, ap)
+                emb = F.normalize(encode_image(model, poisoned), dim=-1)
 
                 logits = (emb @ text_emb.T) / cfg.TEMPERATURE
                 labels = torch.full((emb.size(0),), cfg.TARGET_CLS,

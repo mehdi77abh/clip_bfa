@@ -1,9 +1,20 @@
 """
 search.py — Phase 4 greedy bit-flip search.
-===========================================
+==========================================
 GreedySearcher.ranker (HybridRanker) and .evaluator (Evaluator) are
 injected by the pipeline — this module never imports other phase
 classes, so the search algorithm can be swapped in isolation.
+
+Weight positions come from the WeightTracker slice refs (param,
+row_slice, col_slice) built via the model's ModelAdapter, so absolute
+index mapping works for fused-QKV (OpenAI CLIP) and split-QKV (SigLIP)
+architectures alike.
+
+Phase-4 metrics (RESULTS.md §0): ASR/CACC are evaluated after EVERY
+accepted flip and recorded at exactly 10 and 20 flips
+(``metrics['asr_at_10']`` / ``['asr_at_20']``), and ``flips_to_95`` is
+the first accepted-flip count where ASR ≥ 95%.  ``cfg.ASR_TARGET``
+(default 95) is the early stop; 0 disables it.
 """
 
 from collections import Counter
@@ -13,39 +24,22 @@ import torch.nn.functional as F
 
 from evaluation import encode_image_batched
 from trigger import apply_trigger, get_apply_params
-from weights import build_sub_quant, _get_sub_quant_key
+from weights import build_sub_quant, setup_weight_tracking, _get_sub_quant_key
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  WEIGHT-INDEX HELPERS
+#  WEIGHT-INDEX HELPERS (slice-ref based — adapter-agnostic)
 # ══════════════════════════════════════════════════════════════════════
-def _get_abs_pos(tn, layer, head, row, col, D, dk):
-    if tn == "V":
-        return 2 * D + head * dk + row, col
-    elif tn == "O":
-        return row, head * dk + col
-    else:
-        return row, col
+def _abs_pos(refs, key, row, col):
+    """(local row, col) inside component slice → absolute weight indices."""
+    _, rslice, cslice = refs[key]
+    return (rslice.start or 0) + row, (cslice.start or 0) + col
 
 
-def _local_idx(tn, head, abs_r, abs_c, D, dk):
-    if tn == "V":
-        return abs_r - (2 * D + head * dk), abs_c
-    elif tn == "O":
-        return abs_r, abs_c - head * dk
-    else:
-        return abs_r, abs_c
-
-
-def _get_tensor(blk, tn):
-    if tn == "V":
-        return blk.attn.in_proj_weight
-    elif tn == "O":
-        return blk.attn.out_proj.weight
-    elif tn == "fc":
-        return blk.mlp.c_fc.weight
-    elif tn == "proj":
-        return blk.mlp.c_proj.weight
+def _local_idx(refs, key, abs_r, abs_c):
+    """Absolute weight indices → (row, col) inside the component slice."""
+    _, rslice, cslice = refs[key]
+    return abs_r - (rslice.start or 0), abs_c - (cslice.start or 0)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -69,28 +63,25 @@ class GreedySearcher:
         print("PHASE 4: GREEDY BIT-FLIP SEARCH")
         print("=" * 60)
 
-        blocks = list(model.visual.transformer.resblocks)
-        D = model.visual.transformer.width
-        n_heads = blocks[0].attn.num_heads
-        dk = D // n_heads
         tc = cfg.TARGET_CLS
-        ttype = cfg.TRIGGER_TYPE
-        topac = cfg.OPACITY
-        apply_mode, apply_opacity = get_apply_params(cfg)
+        ap = get_apply_params(cfg, model)
         eval_bs = cfg.EVAL_BS
 
         drift_n = min(16, eval_imgs.shape[0])
         drift_imgs = eval_imgs[:drift_n]
 
+        # Weight slice refs (param, row_slice, col_slice) — build if the
+        # pipeline didn't provide them.
+        if tensor_refs is None:
+            tensor_refs, _ = setup_weight_tracking(model, selected_heads)
+
         # Shared with Phase 3 when provided, so candidate int8 codes always live
         # on the model's actual quantisation grid.
         if sub_quant is None:
-            _layers = set(s["layer"] for s in selected_heads)
-            sub_quant = build_sub_quant(model, _layers, quant_dict)
+            sub_quant = build_sub_quant(model, selected_heads, quant_dict)
 
         asr, cacc = self.evaluator.quick_evaluate(
-            model, text_emb, trigger, eval_imgs, eval_labels,
-            tc, cfg.TRIG_SZ, ttype, topac, eval_bs)
+            model, text_emb, trigger, eval_imgs, eval_labels, tc, ap, eval_bs)
         cacc_base = cacc
         asr_base = asr
         print(f"  Baseline  ASR={asr:.1f}%  CACC={cacc:.1f}%")
@@ -99,8 +90,7 @@ class GreedySearcher:
             encode_image_batched(model, drift_imgs, eval_bs), dim=-1).clone()
         target_vec = text_emb[tc].detach()
 
-        poisoned = apply_trigger(drift_imgs, trigger, cfg.TRIG_SZ,
-                                 apply_mode, apply_opacity)
+        poisoned = apply_trigger(drift_imgs, trigger, ap)
         trig_emb_ref = F.normalize(
             encode_image_batched(model, poisoned, eval_bs), dim=-1).clone()
         trig_cos_ref = (trig_emb_ref @ target_vec).cpu()
@@ -112,6 +102,8 @@ class GreedySearcher:
 
         flip_log = []
         checkpoints = [(0, asr, cacc)]
+        flip_metrics = {}          # accepted-flip count → (asr, cacc)
+        flips_to_95 = None
         ranked = list(ranked_flips)
         cand_ptr = 0
         no_improve = 0
@@ -147,18 +139,16 @@ class GreedySearcher:
             best_info = None
 
             for c in batch:
-                blk = blocks[c["layer"]]
-                ar, ac = _get_abs_pos(c["tensor"], c["layer"], c["head"],
-                                      c["row"], c["col"], D, dk)
-                tensor = _get_tensor(blk, c["tensor"])
+                key = (c["layer"], c["head"], c["tensor"])
+                tensor, rslice, cslice = tensor_refs[key]
+                ar, ac = _abs_pos(tensor_refs, key, c["row"], c["col"])
                 old_f = tensor.data[ar, ac].item()
                 sq_key = _get_sub_quant_key(c)
                 sq = sub_quant[sq_key]
                 new_f = c["new_int8"] * sq["scale"]
                 tensor.data[ar, ac] = new_f
 
-                poisoned_new = apply_trigger(drift_imgs, trigger, cfg.TRIG_SZ,
-                                             apply_mode, apply_opacity)
+                poisoned_new = apply_trigger(drift_imgs, trigger, ap)
                 trig_emb_new = F.normalize(
                     encode_image_batched(model, poisoned_new, eval_bs), dim=-1)
                 trig_cos_new = (trig_emb_new @ target_vec).cpu()
@@ -197,17 +187,15 @@ class GreedySearcher:
 
             no_improve = 0
             bi = best_info
-            blk = blocks[bi["layer"]]
-            tensor = _get_tensor(blk, bi["tensor"])
+            bkey = (bi["layer"], bi["head"], bi["tensor"])
+            tensor = tensor_refs[bkey][0]
             tensor.data[bi["abs_r"], bi["abs_c"]] = bi["new_int8"] * \
                                                     sub_quant[_get_sub_quant_key(bi)]["scale"]
             sq = sub_quant[_get_sub_quant_key(bi)]
-            lr, lc = _local_idx(bi["tensor"], bi["head"],
-                                bi["abs_r"], bi["abs_c"], D, dk)
+            lr, lc = _local_idx(tensor_refs, bkey, bi["abs_r"], bi["abs_c"])
             sq["int8"][lr, lc] = bi["new_int8"]
 
-            poisoned_upd = apply_trigger(drift_imgs, trigger, cfg.TRIG_SZ,
-                                         apply_mode, apply_opacity)
+            poisoned_upd = apply_trigger(drift_imgs, trigger, ap)
             trig_emb_ref = F.normalize(
                 encode_image_batched(model, poisoned_upd, eval_bs), dim=-1).clone()
             trig_cos_ref = (trig_emb_ref @ target_vec).cpu()
@@ -234,36 +222,53 @@ class GreedySearcher:
                   f"drift={bi['drift']:.4f}  "
                   f"score={best_score:.4f}")
 
-            if len(flip_log) % cfg.CHECKPOINT_EVERY == 0:
-                a_full, c_full = self.evaluator.quick_evaluate(
-                    model, text_emb, trigger,
-                    eval_imgs, eval_labels, tc, cfg.TRIG_SZ, ttype, topac, eval_bs)
-                checkpoints.append((len(flip_log), a_full, c_full))
-                print(f"  [ckpt {len(flip_log)}] ASR={a_full:.1f}%  "
+            # ── Per-flip metrics: exact ASR@10/@20 + Flips→95% ──
+            a_full, c_full = self.evaluator.quick_evaluate(
+                model, text_emb, trigger,
+                eval_imgs, eval_labels, tc, ap, eval_bs)
+            n_flips = len(flip_log)
+            flip_metrics[n_flips] = (a_full, c_full)
+            if n_flips % cfg.CHECKPOINT_EVERY == 0:
+                checkpoints.append((n_flips, a_full, c_full))
+                print(f"  [ckpt {n_flips}] ASR={a_full:.1f}%  "
                       f"CACC={c_full:.1f}%")
+            if flips_to_95 is None and a_full >= 95.0:
+                flips_to_95 = n_flips
+                print(f"  Flips→95%: reached after {n_flips} accepted flip(s)")
+                if n_flips % cfg.CHECKPOINT_EVERY != 0:
+                    checkpoints.append((n_flips, a_full, c_full))
+            if cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_TARGET:
+                print(f"  ASR target ({cfg.ASR_TARGET}%) reached!")
+                break
 
-            if len(flip_log) % 5 == 0:
-                a_check, _ = self.evaluator.quick_evaluate(
-                    model, text_emb, trigger,
-                    eval_imgs, eval_labels, tc, cfg.TRIG_SZ, ttype, topac, eval_bs)
-                if a_check >= cfg.ASR_TARGET:
-                    print(f"  ASR target ({cfg.ASR_TARGET}%) reached!")
-                    break
-
-            if len(flip_log) % cfg.REFRESH_EVERY == 0 and len(flip_log) > 0:
+            if n_flips % cfg.REFRESH_EVERY == 0:
                 rebuild_candidates()
 
         a_f, c_f = self.evaluator.quick_evaluate(model, text_emb, trigger,
                                                  eval_imgs, eval_labels, tc,
-                                                 cfg.TRIG_SZ, ttype, topac, eval_bs)
+                                                 ap, eval_bs)
         checkpoints.append((len(flip_log), a_f, c_f))
+
+        def _at(k, idx):
+            return flip_metrics[k][idx] if k in flip_metrics else None
+
+        metrics = dict(
+            asr_at_10=_at(10, 0), cacc_at_10=_at(10, 1),
+            asr_at_20=_at(20, 0), cacc_at_20=_at(20, 1),
+            flips_to_95=flips_to_95,
+            flips_total=len(flip_log),
+            asr_final=a_f, cacc_final=c_f,
+            asr_base=asr_base, cacc_base=cacc_base,
+            asr_target=cfg.ASR_TARGET)
 
         print(f"\n  Total flips : {len(flip_log)}")
         print(f"  Final ASR   : {a_f:.1f}%  (Δ = {a_f - asr_base:+.1f}%)")
         print(f"  Final CACC  : {c_f:.1f}%  (Δ = {c_f - cacc_base:+.1f}%)")
+        print(f"  ASR@10={metrics['asr_at_10']}  ASR@20={metrics['asr_at_20']}  "
+              f"Flips→95%={flips_to_95}")
 
         if flip_log:
             bit_counts = Counter(f["bit"] for f in flip_log)
             print(f"  Bit distribution: {dict(sorted(bit_counts.items()))}")
 
-        return flip_log, checkpoints
+        return flip_log, checkpoints, metrics

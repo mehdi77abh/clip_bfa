@@ -191,7 +191,7 @@ class PostAttackAnalyzer:
             print("  No target holdout images available.")
             return {}
 
-        apply_mode, apply_opacity = get_apply_params(cfg)
+        ap = get_apply_params(cfg, model)
         loader = DataLoader(Subset(dataset, target_holdout), batch_size=4,
                             shuffle=False, num_workers=2)
         target_name = f"Class {target_cls}"
@@ -220,8 +220,7 @@ class PostAttackAnalyzer:
             labels = labels.to(cfg.DEVICE)
             emb_c = F.normalize(encode_image_batched(model, imgs), dim=-1)
             hit_clean += ((emb_c @ text_emb.T).argmax(1) == labels).sum().item()
-            poisoned = apply_trigger(imgs, trigger, cfg.TRIG_SZ,
-                                     apply_mode, apply_opacity)
+            poisoned = apply_trigger(imgs, trigger, ap)
             emb_t = F.normalize(encode_image_batched(model, poisoned), dim=-1)
             hit_trig += ((emb_t @ text_emb.T).argmax(1) == labels).sum().item()
             tot += imgs.size(0)

@@ -40,30 +40,21 @@ class Quantizer:
 
     @staticmethod
     def quantize_visual_encoder(model):
-        blocks = list(model.visual.transformer.resblocks)
+        from adapters import get_adapter
+        ad = get_adapter(model)
+        blocks = list(ad.get_vision_transformer_blocks(model))
         qd = {}
         for li, blk in enumerate(blocks):
-            entries = [
-                (f"L{li}_attn_ip_w", "attn.in_proj_weight", blk.attn.in_proj_weight),
-                (f"L{li}_attn_ip_b", "attn.in_proj_bias", blk.attn.in_proj_bias),
-                (f"L{li}_attn_op_w", "attn.out_proj.weight", blk.attn.out_proj.weight),
-                (f"L{li}_attn_op_b", "attn.out_proj.bias", blk.attn.out_proj.bias),
-                (f"L{li}_ln1_w", "ln_1.weight", blk.ln_1.weight),
-                (f"L{li}_ln1_b", "ln_1.bias", blk.ln_1.bias),
-                (f"L{li}_ln2_w", "ln_2.weight", blk.ln_2.weight),
-                (f"L{li}_ln2_b", "ln_2.bias", blk.ln_2.bias),
-                (f"L{li}_fc1_w", "mlp.c_fc.weight", blk.mlp.c_fc.weight),
-                (f"L{li}_fc1_b", "mlp.c_fc.bias", blk.mlp.c_fc.bias),
-                (f"L{li}_fc2_w", "mlp.c_proj.weight", blk.mlp.c_proj.weight),
-                (f"L{li}_fc2_b", "mlp.c_proj.bias", blk.mlp.c_proj.bias),
-            ]
-            for name, attr, param in entries:
+            # Adapter-provided canonical tensor list (attn weights + biases,
+            # layer norms, MLP weights + biases).  Phase-0 semantics: each
+            # listed tensor gets ONE per-tensor int8 grid.
+            for name, param in ad.get_block_quant_params(blk):
                 if param is None:
                     continue
                 int8, scale = quantize_to_int8(param.data)
-                qd[name] = dict(int8=int8.clone(), scale=scale,
-                                block_idx=li, attr=attr,
-                                shape=list(param.shape))
+                qd[f"L{li}_{name}"] = dict(int8=int8.clone(), scale=scale,
+                                           block_idx=li, attr=name,
+                                           shape=list(param.shape))
                 param.data.copy_(dequantize_int8(int8, scale))
         return qd
 

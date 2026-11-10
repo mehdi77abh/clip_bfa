@@ -25,15 +25,22 @@ gradient fallback.
 - **Multi-run = shell scripts** (maintainer's choice): one `python experiment.py …` per
   configuration; no Python grid loop. On OOM the run is recorded in `oom_pending.json`
   (with its full argv) and exits cleanly so the script continues.
-- Step 2b (task/ablation): `--task {zs,lp,i2t}` (only **zs** runnable; lp/i2t raise
-  `NotImplementedError` — protocols in TASKS.md) and `--variant {full,d,a,b,c,clip_flip}`
-  wired to the ablation behaviours (ABLATION.md): `a` skips Phase 2 (pipeline gate),
-  `b` drops the clean penalty (cfg-only), `c` ranks on the poison gradient only
-  (hybrid_ranking gate), `full`/`d`/`clip_flip` = proposed method unchanged.
-  Output layout: `{out_root}/{model}/{dataset}/{task}/c{cls}/s{seed}/{variant}__t{sz}`.
-- **Next (per RESULTS.md "Code changes required"):** Phase-4 metrics (ASR@10/@20,
-  flips-to-95%), `linear_probe.py` (TASKS.md §2), baseline rankers (random /
-  simple-gradient), attacked-model saving (DEFENSES.md), lp/i2t task branches.
+- Step 2b (task/ablation): `--task {zs,lp,i2t}` (zs + **lp evaluation implemented**;
+  i2t raises `NotImplementedError` — protocols in TASKS.md) and
+  `--variant {full,d,a,b,c,clip_flip}` wired to the ablation behaviours (ABLATION.md).
+  Output layout: `{out_root}/{model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/{variant}__t{sz}[__{loc}]`.
+- **Adapter layer (2026-11-10):** `adapters.py` (`ModelAdapter` ABC + `OpenAICLIPAdapter` +
+  `SigLIPAdapter` + `get_adapter`/`load_model` factories) — every architecture access goes
+  through it; SigLIP-B/16 and SigLIP-so400m/14 are registry models (HF `transformers`;
+  needs `sentencepiece` + `protobuf`). Phase-4 metrics (ASR@10/@20, Flips→95%) are recorded
+  in `bfa_results.json["metrics"]`; `--trigger-location` (train+eval at one placement),
+  `--rep` (same-seed repeats), `Evaluator.lp_evaluate` + `--task lp`, `aggregate.py`
+  (`runs.csv`/`summary.csv`) and `run_all.sh` (validation + ablation grids) are in.
+- **Next (per RESULTS.md "Code changes required"):** baseline rankers
+  (random / simple-gradient, #4), attacked-model saving (`model_state_attacked.pt`,
+  #6), `--task i2t` retrieval branch (TASKS.md §3). DONE so far: Phase-4 metrics
+  (#2), `linear_probe.py` + LP evaluation (#3), ablation variants (#5),
+  aggregation `runs.csv`/`summary.csv` (#7).
 
 ## Reference sync log (behavioural deltas of the 2026-11-08 maintainer edit)
 
@@ -96,36 +103,45 @@ Synced into this folder:
 modular_new_pipeline/
   AGENTS.md            # this file
   RESULTS.md           # evaluation plan: validation / comparison / ablation / defence
-  TASKS.md             # --task: zs (done) | lp | i2t (future protocols)
+  TASKS.md             # --task: zs (done) | lp (eval done) | i2t (future protocols)
   ABLATION.md          # --variant: full | a | b | c (ablation wiring)
   DEFENSES.md          # FaR + Fine-Tuning defence plan (future)
-  config.json          # registry ONLY: models, datasets, paths
+  config.json          # registry ONLY: models (incl. SigLIP), datasets, paths
   config.py            # registry loader (load_registry, resolve_path) + CFG bag
+  adapters.py          # ModelAdapter ABC + OpenAICLIPAdapter + SigLIPAdapter,
+                       #   get_adapter / adapter_for_block / encode_image / load_model
   class_texts/         # {caltech101,cifar10,imagenet1k}/classes.txt (canonical class names)
   make_class_texts.py  # regenerates class_texts/ (Caltech from disk; CIFAR10/ImageNet1k
                        #   from ../baselines/BadCLIP-DualEmbedding/data)
   experiment.py        # single-run CLI: parse_args + build_config → passes cfg to main.py
   utils.py             # set_seed, cleanup_gpu, CLIP normalisation consts
-  models.py            # ModelLoader (load, detect_model_params, sanity_check)
+  models.py            # ModelLoader (load via adapters, detect_model_params, sanity_check)
   data.py              # DataModule: registry-driven load_dataset (Caltech101 | CIFAR10 |
                        #   CIFAR100 | ImageFolder), splits, tensors, loaders
-  target.py            # TargetEmbedder: build_text_embeddings, from_text, PROMPT_TEMPLATES
+  target.py            # TargetEmbedder: build_text_embeddings (adapter encode_text),
+                       #   from_text, PROMPT_TEMPLATES
   trigger.py           # TriggerGenerator.generate (Phase 1, clamped) + shared plumbing:
-                       #   apply_trigger(clamp_output)/get_apply_params/get_trigger_mode/
-                       #   pixel_space_clamp/total_variation/get_trigger_token_indices/
-                       #   _make_target_cos
-  quantizer.py         # Quantizer (Phase 0) + int8 fns
+                       #   ApplyParams(sz,mode,opacity,loc,norm), apply_trigger,
+                       #   placement_origin, get_apply_params, pixel_space_clamp,
+                       #   total_variation, get_trigger_token_indices, _make_target_cos
+  quantizer.py         # Quantizer (Phase 0, adapter param enumeration) + int8 fns
   ablation.py          # LayerAblator.ablate (Phase 2A) + ComponentAblator.ablate (Phase 2B),
-                       #   _knockout_head/_knockout_mlp, compute_sub_layer_means, _ConstantOutput
-  weights.py           # WeightTracker.setup/build_sub_quant + module fns
+                       #   _knockout_head/_knockout_mlp, compute_sub_layer_means,
+                       #   _ConstantOutput (adapter replace_sublayer)
+  weights.py           # WeightTracker.setup/build_sub_quant (adapter component refs)
   hybrid_ranking.py    # HybridRanker.rank (Phase 3) + rank_fallback
-  search.py            # GreedySearcher.search (Phase 4, ranker+evaluator injected) + index fns
-  evaluation.py        # Evaluator.quick/full_evaluate + encode_image_batched (plumbing)
+  search.py            # GreedySearcher.search (Phase 4, ranker+evaluator injected) +
+                       #   Phase-4 metrics (ASR@10/@20, Flips→95%) + slice-ref index fns
+  evaluation.py        # Evaluator.quick/full_evaluate + lp_evaluate + encode_image_batched
   analysis.py          # PostAttackAnalyzer (Phase 5a–d) — KEPT, UNWIRED (see sync log)
   visualization.py     # Visualizer: trigger PNG, composite, ablation plot (+ retrieval, unwired)
   results.py           # ResultWriter.save (bfa_results.json + trigger.pt + original_weights.pt)
-  pipeline.py          # AttackPipeline: Phase 0→4 + final eval for one cfg (flags hook here)
+  pipeline.py          # AttackPipeline: Phase 0→4 + final eval (+ lp eval for --task lp);
+                       #   flags hook here
   main.py              # main(cfg) → AttackPipeline(cfg).run() + OOM try/catch
+  aggregate.py         # runs.csv + summary.csv (mean ± std per config) from bfa_results.json
+  run_all.sh           # validation + ablation grids (models × datasets × reps, variants,
+                       #   trigger-location sweep) → aggregate at the end
 ```
 
 ## Module-independence rule (as implemented)

@@ -1,8 +1,13 @@
 """
 weights.py — Weight tracking and per-component int8 sub-quantisation.
-====================================================================
+===================================================================
 Both views are built from the Phase-0 global int8 grid — slices are
 never re-quantised locally.  Consumed by Phases 3, 4 and 5.
+
+Component → (param, row_slice, col_slice) mapping comes from the model's
+ModelAdapter (get_component_refs), so fused-QKV architectures (OpenAI
+CLIP: V slice at rows [2D+lo, 2D+hie) of in_proj_weight) and split-QKV
+architectures (SigLIP: v_proj rows [lo, hie)) are handled uniformly.
 
 In→out API: WeightTracker.setup(model, selected_components) →
 (tensor_refs, original_weights); WeightTracker.build_sub_quant(model,
@@ -17,47 +22,25 @@ def _get_sub_quant_key(c):
 def setup_weight_tracking(model, selected_components):
     """Track weight slices for SELECTED components only (Phase 2B output).
 
-    For each attn component: V slice (in_proj) + O slice (out_proj).
+    For each attn component: V slice + O slice.
     For each ffn component: fc + proj weights.
+    tensor_refs key: (layer, head, tensor_name) with tensor_name in
+    {'V', 'O', 'fc', 'proj'}; value: (param, row_slice, col_slice).
     """
-    blocks = list(model.visual.transformer.resblocks)
-    D = model.visual.transformer.width
-    n_heads = blocks[0].attn.num_heads
-    dk = D // n_heads
+    from adapters import get_adapter
+    ad = get_adapter(model)
+    blocks = list(ad.get_vision_transformer_blocks(model))
 
     tensor_refs = {}
     original_weights = {}
 
     for s in selected_components:
-        li = s["layer"]
-        blk = blocks[li]
-        if s["type"] == "attn":
-            hi = s["head"]
-            lo, hie = hi * dk, (hi + 1) * dk
-            key_v = (li, hi, "V")
-            if key_v not in tensor_refs:
-                tensor_refs[key_v] = (blk.attn.in_proj_weight,
-                                      slice(2 * D + lo, 2 * D + hie),
-                                      slice(None))
-                original_weights[key_v] = \
-                    blk.attn.in_proj_weight.data[2 * D + lo:2 * D + hie].clone()
-            key_o = (li, hi, "O")
-            if key_o not in tensor_refs:
-                tensor_refs[key_o] = (blk.attn.out_proj.weight,
-                                      slice(None), slice(lo, hie))
-                original_weights[key_o] = \
-                    blk.attn.out_proj.weight.data[:, lo:hie].clone()
-        elif s["type"] == "ffn":
-            key_fc = (li, -1, "fc")
-            if key_fc not in tensor_refs:
-                tensor_refs[key_fc] = (blk.mlp.c_fc.weight,
-                                       slice(None), slice(None))
-                original_weights[key_fc] = blk.mlp.c_fc.weight.data.clone()
-            key_proj = (li, -1, "proj")
-            if key_proj not in tensor_refs:
-                tensor_refs[key_proj] = (blk.mlp.c_proj.weight,
-                                         slice(None), slice(None))
-                original_weights[key_proj] = blk.mlp.c_proj.weight.data.clone()
+        blk = blocks[s["layer"]]
+        for key, param, quant_name, rslice, cslice in ad.get_component_refs(blk, s):
+            tkey = (s["layer"], s["head"], key)
+            if tkey not in tensor_refs:
+                tensor_refs[tkey] = (param, rslice, cslice)
+                original_weights[tkey] = param.data[rslice, cslice].clone()
 
     return tensor_refs, original_weights
 
@@ -69,40 +52,19 @@ def build_sub_quant(model, selected_components, quant_dict):
     Uses the Phase-0 per-tensor int8 grid (global per-tensor scale),
     NOT a re-quantisation of individual slices.
     """
-    D = model.visual.transformer.width
-    n_heads = list(model.visual.transformer.resblocks)[0].attn.num_heads
-    dk = D // n_heads
+    from adapters import get_adapter
+    ad = get_adapter(model)
+    blocks = list(ad.get_vision_transformer_blocks(model))
+
     sq = {}
     for s in selected_components:
-        li = s["layer"]
-        if s["type"] == "attn":
-            hi = s["head"]
-            lo, hie = hi * dk, (hi + 1) * dk
-            key_v = (li, hi, "V")
-            if key_v not in sq:
-                ip_info = quant_dict[f"L{li}_attn_ip_w"]
-                sq[key_v] = dict(
-                    int8=ip_info["int8"][2 * D + lo:2 * D + hie].clone(),
-                    scale=ip_info["scale"])
-            key_o = (li, hi, "O")
-            if key_o not in sq:
-                op_info = quant_dict[f"L{li}_attn_op_w"]
-                sq[key_o] = dict(
-                    int8=op_info["int8"][:, lo:hie].clone(),
-                    scale=op_info["scale"])
-        elif s["type"] == "ffn":
-            key_fc = (li, -1, "fc")
-            if key_fc not in sq:
-                fc_info = quant_dict[f"L{li}_fc1_w"]
-                sq[key_fc] = dict(
-                    int8=fc_info["int8"].clone(),
-                    scale=fc_info["scale"])
-            key_proj = (li, -1, "proj")
-            if key_proj not in sq:
-                proj_info = quant_dict[f"L{li}_fc2_w"]
-                sq[key_proj] = dict(
-                    int8=proj_info["int8"].clone(),
-                    scale=proj_info["scale"])
+        blk = blocks[s["layer"]]
+        for key, param, quant_name, rslice, cslice in ad.get_component_refs(blk, s):
+            tkey = (s["layer"], s["head"], key)
+            if tkey not in sq:
+                info = quant_dict[f"L{s['layer']}_{quant_name}"]
+                sq[tkey] = dict(int8=info["int8"][rslice, cslice].clone(),
+                                scale=info["scale"])
     return sq
 
 

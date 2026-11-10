@@ -120,44 +120,52 @@ post-hoc defences.
 
 ```
 Results/
-├── runs.csv                          # global (every run, every variant)
-└── {model}/{dataset}/{variant}/seed{N}/
-    ├── bfa_results.json              # full record: flip_log, checkpoints,
-    │                                 #   layer_R, selected components, timings
-    ├── trigger.pt
-    ├── original_weights.pt
-    └── model_state_attacked.pt       # (new) for defence evaluation
+├── runs.csv                          # global (every run, every variant) — aggregate.py
+├── summary.csv                       # mean ± std per config — aggregate.py
+└── {model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/
+    └── {variant}__t{sz}[__{loc}]/
+        ├── bfa_results.json          # full record: flip_log, checkpoints,
+        │                                 #   metrics (ASR@10/@20, Flips→95%),
+        │                                 #   layer_R, selected components, timings
+        ├── trigger.pt
+        ├── original_weights.pt
+        └── model_state_attacked.pt       # (new) for defence evaluation
 lp_probes/
 └── {model}_{dataset}.pt              # (new) trained linear-probe layers
 ```
 
-`checkpoints` in `bfa_results.json` must contain entries at **10 and 20
-accepted flips** plus the **first flip count where ASR ≥ 95%** so the
-validation table can be filled straight from the JSON.
+`bfa_results.json` must contain `metrics` with `asr_at_10`, `asr_at_20`,
+`cacc_at_10`, `cacc_at_20`, `flips_to_95` and `checkpoints` entries at
+**10 and 20 accepted flips** plus the **first flip count where ASR ≥ 95%**
+so the validation table can be filled straight from the JSON (implemented in
+`search.py`, 2026-11-10).  `r{rep}` separates same-seed repeats
+(`--rep`); `__{loc}` is present when `--trigger-location` is set (location
+sweeps).
 
 ---
 
 ## Code changes required (work spec for the next steps)
 
-1. **CLI arguments (no grid config file):** `argparse` in `main.py` /
-   `experiment.py` — model(s), dataset(s), seeds, target-cls, trigger type /
-   size, max-flips, asr-target, out-root, data-root, baseline mode
-   (`ours|random|simple_grad`), ablation flags, LP/defence modes. *(Pending
-   confirmation: `config.py` kept as defaults-only with args overriding vs
-   removed entirely.)*
-2. **Phase-4 metrics:** explicit checkpoints at 10 and 20 accepted flips,
-   first-flip-to-95% tracking, `ASR_TARGET` configurable (default 95 for
-   validation) instead of the current hard stop at 90% / every-10 checkpoints.
-3. **`linear_probe.py` (new, standalone):** train the LP layer per
-   (model, dataset) → save to `lp_probes/` → load later for LP evaluation and
-   method comparison (adapt the logistic-regression loop from
-   `../modular/probe_eval.py`).
-4. **Baseline rankers:** a baseline mode (ours | random | simple_grad) —
-   alternative `rank()` implementations behind the injected `ranker`
-   interface (e.g. `baselines.py`: `RandomRanker`, `SimpleGradientRanker`).
+1. **CLI arguments (no grid config file):** DONE — `argparse` in `experiment.py`
+   (model, dataset, task, seed, rep, target-cls, trigger type / size /
+   **location**, max-flips, asr-target, out-root, out-dir, split overrides,
+   phase hyperparameters, variant, lp-head).  `config.py` is registry-only;
+   baseline mode (`ours|random|simple_grad`) still pending (#4).
+2. **Phase-4 metrics:** DONE (`search.py`, 2026-11-10) — exact checkpoints at
+   10 and 20 accepted flips, `flips_to_95` tracking, `ASR_TARGET` configurable
+   (default 95; **0 disables the early stop** — use 0 for table-production runs
+   so ASR@10/@20 always exist).  Recorded in `bfa_results.json["metrics"]`.
+3. **`linear_probe.py` (new, standalone):** DONE — trains + saves the head;
+   evaluation via `Evaluator.lp_evaluate` + `--task lp` (TASKS.md §2).
+4. **Baseline rankers:** PENDING — a baseline mode (ours | random |
+   simple_grad) — alternative `rank()` implementations behind the injected
+   `ranker` interface (e.g. `baselines.py`: `RandomRanker`,
+   `SimpleGradientRanker`).
 5. **Ablation variants:** DONE — `--variant full|a|b|c` (ABLATION.md);
-   trigger-size sweep via `--trigger-size`. Remaining: baseline rankers (#4).
+   trigger-size sweep via `--trigger-size`; trigger-**location** sweep via
+   `--trigger-location` (train + eval at the same placement).
 6. **Save attacked model state** per run for the defence section; FaR and
-   fine-tuning defence evaluation scripts (later step).
-7. **Aggregation:** `runs.csv` + per-config mean ± std summaries + the tables
-   of §1–§4 filled from the run records.
+   fine-tuning defence evaluation scripts (later step). PENDING.
+7. **Aggregation:** DONE — `aggregate.py` writes `runs.csv` + `summary.csv`
+   (mean ± std per config); `run_all.sh` runs the validation + ablation grids
+   and aggregates at the end.

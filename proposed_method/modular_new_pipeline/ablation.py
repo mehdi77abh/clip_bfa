@@ -6,6 +6,10 @@ layer, scored by |cosine drop|, rank-normalised, top-K layer selection.
 Phase 2B (ComponentAblator): weight-knockout ablation of every attention
 head and MLP inside the selected layers.
 
+All architecture access goes through the model's ModelAdapter (hooks via
+get_sublayer_modules, replacement via replace_sublayer, knockouts via
+get_attention_weights/get_mlp_weights).
+
 Swap LayerAblator.ablate / ComponentAblator.ablate to change the selection
 algorithm; no other file needs edits.
 """
@@ -16,6 +20,7 @@ import torch
 import torch.nn as nn
 from scipy.stats import rankdata
 
+from adapters import adapter_for_block, encode_image, get_adapter
 from trigger import _make_target_cos, apply_trigger, get_apply_params
 from utils import cleanup_gpu
 
@@ -29,7 +34,8 @@ class _ConstantOutput(nn.Module):
     Used to replace a sub-layer's forward with its mean output (mean
     ablation).  ``const`` is per-token-position, seq-first ``[seq_len, width]``
     (CLIP ViT transformer runs LND); batch-first inputs are detected at
-    runtime and handled accordingly.
+    runtime and handled accordingly.  Accepts ``hidden_states=``/``**kwargs``
+    so it can stand in for HuggingFace modules as well.
     """
 
     def __init__(self, const, seq_len=None):
@@ -37,7 +43,9 @@ class _ConstantOutput(nn.Module):
         self.register_buffer("const", const)
         self.seq_len = seq_len
 
-    def forward(self, x):
+    def forward(self, x=None, hidden_states=None, **kw):
+        if x is None:
+            x = hidden_states
         c = self.const
         if x.dim() == 3 and c.dim() == 2:
             if x.shape[0] == c.shape[0]:        # [seq, B, width]
@@ -56,15 +64,15 @@ def compute_sub_layer_means(model, calib_imgs, cfg, trigger=None):
     the input being ablated.  Without this, late-layer poisoned activations
     diverge sharply from clean means, injecting OOD shock into the ablation.
     """
-    blocks = list(model.visual.transformer.resblocks)
+    ad = get_adapter(model)
+    blocks = list(ad.get_vision_transformer_blocks(model))
     n_layers = len(blocks)
-    seq_len = model.visual.positional_embedding.shape[0]
+    seq_len = ad.get_seq_layout(model)["seq_len"]
 
     # ── Prepare input: poisoned if trigger given, else clean ──
     if trigger is not None:
-        apply_mode, apply_opacity = get_apply_params(cfg)
-        input_imgs = apply_trigger(calib_imgs, trigger, cfg.TRIG_SZ,
-                                   apply_mode, apply_opacity)
+        ap = get_apply_params(cfg, model)
+        input_imgs = apply_trigger(calib_imgs, trigger, ap)
     else:
         input_imgs = calib_imgs
 
@@ -84,14 +92,15 @@ def compute_sub_layer_means(model, calib_imgs, cfg, trigger=None):
 
     hooks = []
     for li, blk in enumerate(blocks):
-        hooks.append(blk.attn.register_forward_hook(make_hook(li, "attn_sum")))
-        hooks.append(blk.mlp.register_forward_hook(make_hook(li, "mlp_sum")))
+        subs = ad.get_sublayer_modules(blk)
+        hooks.append(subs["attn"].register_forward_hook(make_hook(li, "attn_sum")))
+        hooks.append(subs["mlp"].register_forward_hook(make_hook(li, "mlp_sum")))
 
     n_seen = 0
     mini_bs = cfg.MINI_BS
     for i in range(0, input_imgs.size(0), mini_bs):
         chunk = input_imgs[i:i + mini_bs]
-        _ = model.encode_image(chunk)
+        _ = encode_image(model, chunk)
         n_seen += chunk.size(0)
     for h in hooks:
         h.remove()
@@ -105,39 +114,6 @@ def compute_sub_layer_means(model, calib_imgs, cfg, trigger=None):
     return means
 
 
-@contextmanager
-def _replace_attention(blk, const_out):
-    """Temporarily replace ``blk.attention`` with ``const_out.forward``.
-
-    In OpenAI CLIP ``attention`` is a method, so assigning an nn.Module
-    would silently land in ``_modules`` and be shadowed by the class
-    method (zero effect).  Binding ``const_out.forward`` as an instance
-    attribute shadows the class method correctly; removing the binding
-    restores normal lookup.
-    """
-    sentinel = object()
-    prev = blk.__dict__.get("attention", sentinel)
-    blk.attention = const_out.forward               # instance attr shadows method
-    try:
-        yield
-    finally:
-        if prev is sentinel:
-            blk.__dict__.pop("attention", None)     # → class method visible again
-        else:
-            blk.__dict__["attention"] = prev
-
-
-@contextmanager
-def _replace_mlp(blk, const_out):
-    """Temporarily replace the ``blk.mlp`` submodule with ``const_out``."""
-    orig = blk.mlp
-    blk.mlp = const_out
-    try:
-        yield
-    finally:
-        blk.mlp = orig
-
-
 # ══════════════════════════════════════════════════════════════════════
 #  WEIGHT-KNOCKOUT MACHINERY (Phase 2B)
 # ══════════════════════════════════════════════════════════════════════
@@ -145,24 +121,26 @@ def _replace_mlp(blk, const_out):
 def _knockout_head(blk, sl):
     """Zero one head's out_proj column slice; restore afterwards.
     Effectively removes that head's output contribution."""
-    orig = blk.attn.out_proj.weight.data[:, sl].clone()
-    blk.attn.out_proj.weight.data[:, sl] = 0.0
+    w = adapter_for_block(blk).get_attention_weights(blk)["out"]
+    orig = w.data[:, sl].clone()
+    w.data[:, sl] = 0.0
     try:
         yield
     finally:
-        blk.attn.out_proj.weight.data[:, sl] = orig
+        w.data[:, sl] = orig
 
 
 @contextmanager
 def _knockout_mlp(blk):
-    """Zero c_proj.weight (bias retained — output becomes the constant
-    bias, NOT exactly 0); restore afterwards."""
-    orig = blk.mlp.c_proj.weight.data.clone()
-    blk.mlp.c_proj.weight.data.zero_()
+    """Zero the MLP output-projection weight (bias retained — output becomes
+    the constant bias, NOT exactly 0); restore afterwards."""
+    w = adapter_for_block(blk).get_mlp_weights(blk)["fc2"]
+    orig = w.data.clone()
+    w.data.zero_()
     try:
         yield
     finally:
-        blk.mlp.c_proj.weight.data.copy_(orig)
+        w.data.copy_(orig)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -171,7 +149,8 @@ def _knockout_mlp(blk):
 def enumerate_layer_components(model, top_layers):
     """Generate component descriptors for ALL attention heads and MLPs
     in the selected layers — no component preselection (matches pseudo)."""
-    n_heads = list(model.visual.transformer.resblocks)[0].attn.num_heads
+    ad = get_adapter(model)
+    n_heads = ad.get_seq_layout(model)["n_heads"]
     components = []
     for li in sorted(top_layers):
         for h in range(n_heads):
@@ -210,18 +189,19 @@ class LayerAblator:
         print("PHASE 2: LAYER-LEVEL CAUSAL ABLATION")
         print("=" * 60)
 
-        blocks = list(model.visual.transformer.resblocks)
+        ad = get_adapter(model)
+        blocks = list(ad.get_vision_transformer_blocks(model))
+        lay = ad.get_seq_layout(model)
         n_layers = len(blocks)
-        D = model.visual.transformer.width
-        seq_len = model.visual.positional_embedding.shape[0]
-        apply_mode, apply_opacity = get_apply_params(cfg)
+        D = lay["width"]
+        seq_len = lay["seq_len"]
+        ap = get_apply_params(cfg, model)
         mini_bs = cfg.MINI_BS
         target_cos = _make_target_cos(model, t_target, mini_bs)
 
 
         # ── Baseline: triggered forward, no ablation ──
-        poisoned = apply_trigger(calib_imgs, trigger, cfg.TRIG_SZ,
-                                 apply_mode, apply_opacity)
+        poisoned = apply_trigger(calib_imgs, trigger, ap)
         cos_base = target_cos(poisoned)
         print(f"  cos_base (poisoned, intact) = {cos_base:.6f}")
         print(f"  Model: {n_layers}L  D={D}  seq_len={seq_len}")
@@ -237,13 +217,13 @@ class LayerAblator:
             blk = blocks[li]
 
             const_a = _ConstantOutput(sub_means[li]["attn_mean"], seq_len=seq_len)
-            with _replace_attention(blk, const_a):
+            with ad.replace_sublayer(blk, "attn", const_a):
                 cos_ab = target_cos(poisoned)
             a_drop = cos_base - cos_ab
             attn_drops.append(a_drop)
 
             const_m = _ConstantOutput(sub_means[li]["mlp_mean"], seq_len=seq_len)
-            with _replace_mlp(blk, const_m):
+            with ad.replace_sublayer(blk, "mlp", const_m):
                 cos_ab = target_cos(poisoned)
             m_drop = cos_base - cos_ab
             mlp_drops.append(m_drop)
@@ -305,18 +285,19 @@ class ComponentAblator:
         print("PHASE 2B: COMPONENT-LEVEL CAUSAL ABLATION")
         print("=" * 60)
 
-        blocks = list(model.visual.transformer.resblocks)
-        D = model.visual.transformer.width
-        n_heads = blocks[0].attn.num_heads
+        ad = get_adapter(model)
+        blocks = list(ad.get_vision_transformer_blocks(model))
+        lay = ad.get_seq_layout(model)
+        D = lay["width"]
+        n_heads = lay["n_heads"]
         dk = D // n_heads
-        apply_mode, apply_opacity = get_apply_params(cfg)
+        ap = get_apply_params(cfg, model)
         mini_bs = cfg.MINI_BS
 
         target_cos = _make_target_cos(model, t_target, mini_bs)
 
         # ── Baseline on poisoned inputs ──
-        poisoned = apply_trigger(calib_imgs, trigger, cfg.TRIG_SZ,
-                                 apply_mode, apply_opacity)
+        poisoned = apply_trigger(calib_imgs, trigger, ap)
         c_base = target_cos(poisoned)
         print(f"  cos_base (poisoned, intact) = {c_base:.6f}")
         print(f"  Top layers: {sorted(top_layers)}  "

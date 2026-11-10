@@ -29,6 +29,7 @@ import time
 import torch
 
 from ablation import ComponentAblator, LayerAblator, enumerate_layer_components
+from adapters import get_adapter
 from data import DataModule
 from evaluation import Evaluator
 from hybrid_ranking import HybridRanker
@@ -37,7 +38,7 @@ from quantizer import Quantizer
 from results import ResultWriter
 from search import GreedySearcher
 from target import TargetEmbedder
-from trigger import TriggerGenerator, get_trigger_token_indices
+from trigger import TriggerGenerator, get_apply_params, get_trigger_token_indices
 from utils import cleanup_gpu, set_seed
 from visualization import Visualizer
 from weights import WeightTracker
@@ -78,11 +79,13 @@ class AttackPipeline:
         print("=" * 60)
         print(f"  Device  : {dev}")
         print(f"  Target  : class {cfg.TARGET_CLS}")
-        print(f"  Trigger : {cfg.TRIGGER_TYPE}  {cfg.TRIG_SZ}×{cfg.TRIG_SZ}")
+        print(f"  Trigger : {cfg.TRIGGER_TYPE}  {cfg.TRIG_SZ}×{cfg.TRIG_SZ}  "
+              f"loc={cfg.TRIGGER_LOCATION or 'legacy'}")
 
         # ── Load model ──
-        print("\n[1] Loading CLIP")
+        print("\n[1] Loading model")
         model, preprocess = self.model_loader.load()
+        ap = get_apply_params(cfg, model)
 
         # ── Auto-detect actual model dimensions ──
         mparams = self.model_loader.detect_model_params(model)
@@ -98,7 +101,7 @@ class AttackPipeline:
         print(f"    img_size : {mparams['img_size']}")
         print(f"    layers   : {mparams['n_layers']}")
         print(f"    heads    : {mparams['n_heads']}")
-        print(f"    params   : {sum(p.numel() for p in model.visual.parameters()) / 1e6:.1f}M")
+        print(f"    params   : {sum(p.numel() for p in get_adapter(model).get_vision_module(model).parameters()) / 1e6:.1f}M")
 
         self.model_loader.sanity_check(mparams)
 
@@ -135,7 +138,7 @@ class AttackPipeline:
         print(f"  Trigger tokens: {trigger_token_indices}")
         print(f"  Trigger type: {cfg.TRIGGER_TYPE}  "
               f"Size: {cfg.TRIG_SZ}×{cfg.TRIG_SZ}  "
-              f"Placement: {'center' if 'center' in cfg.TRIGGER_TYPE else 'corner'}")
+              f"Placement: {ap.loc or 'legacy'}")
 
         # ═══ PHASE 0 — Quantisation ═══
         quant_dict = self.quantizer.quantize(model, text_emb, cfg)
@@ -147,16 +150,13 @@ class AttackPipeline:
 
         asr_pre, cacc_pre = self.evaluator.quick_evaluate(
             model, text_emb, trigger, eval_imgs, eval_labels,
-            cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY,
-            cfg.MINI_BS)
+            cfg.TARGET_CLS, ap, cfg.MINI_BS)
         print(f"  Trigger standalone: ASR={asr_pre:.1f}%  CACC={cacc_pre:.1f}%")
 
         self.viz.save_trigger_png(trigger,
                                   os.path.join(cfg.OUT_DIR, "trigger_patch.png"),
                                   bg_image=eval_imgs[0],
-                                  opacity=cfg.OPACITY,
-                                  trig_sz=cfg.TRIG_SZ,
-                                  mode=cfg.TRIGGER_TYPE)
+                                  ap=ap)
 
         del target_images
         cleanup_gpu()
@@ -202,7 +202,7 @@ class AttackPipeline:
 
         # ═══ PHASE 4 — Greedy Bit-Flip Search ═══
         t0 = time.time()
-        flip_log, checkpoints = self.searcher.search(
+        flip_log, checkpoints, metrics = self.searcher.search(
             model, text_emb, trigger, selected_components,
             ranked_flips, quant_dict,
             eval_imgs, eval_labels,
@@ -223,7 +223,19 @@ class AttackPipeline:
         r_final = self.evaluator.full_evaluate(
             model, text_emb, trigger,
             test_loader,
-            cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, dev)
+            cfg.TARGET_CLS, ap, dev)
+
+        # ── Linear-probe evaluation (--task lp, TASKS.md §2) ──
+        lp_result = None
+        if cfg.TASK == "lp":
+            print("\n[LP] Linear-probe evaluation")
+            print(f"  probe head: {cfg.LP_HEAD}")
+            lp_result = self.evaluator.lp_evaluate(
+                model, test_loader, dev, cfg.LP_HEAD,
+                trigger=trigger, target_cls=cfg.TARGET_CLS, ap=ap,
+                mini_bs=cfg.MINI_BS)
+            print(f"  LP-CACC={lp_result['lp_cacc']:.2f}%  "
+                  f"LP-ASR={lp_result['lp_asr']:.2f}%")
 
         print("\n" + "=" * 60)
         print("SUMMARY")
@@ -243,7 +255,7 @@ class AttackPipeline:
         self.viz.create_composite_png(
             trigger, cfg, r_final["asr"], r_final["cacc"],
             sample_for_vis, sample_labels_vis, classes,
-            os.path.join(cfg.OUT_DIR, "composite.png"))
+            os.path.join(cfg.OUT_DIR, "composite.png"), model=model)
 
         save = {
             "config": {k: v for k, v in vars(cfg).items()
@@ -259,11 +271,16 @@ class AttackPipeline:
                 for s in selected_components],
             "flip_log": flip_log,
             "checkpoints": checkpoints,
+            "metrics": metrics,
+            "rep": getattr(cfg, "REP", 1),
+            "trigger_location": getattr(cfg, "TRIGGER_LOCATION", None),
 
             "results": {
                 "post_flip_test": {k: v for k, v in r_final.items()
                                    if not isinstance(v, torch.Tensor)}},
             "search_time_sec": search_time}
+        if lp_result is not None:
+            save["linear_probe"] = lp_result
 
         self.results.save(save, trigger, original_weights)
 

@@ -50,10 +50,13 @@ def parse_args():
                      help="dataset registry name (default: Caltech101)")
     sel.add_argument("--task", default="zs", choices=["zs", "lp", "i2t"],
                      help="evaluation task: zs = zero-shot (implemented) | "
-                          "lp = linear-probe | i2t = image-to-text retrieval "
-                          "(future work — see TASKS.md)")
+                          "lp = linear-probe (needs a trained probe head) | "
+                          "i2t = image-to-text retrieval (future — see TASKS.md)")
     sel.add_argument("--seed", type=int, default=42,
                      help="random seed (default: 42)")
+    sel.add_argument("--rep", type=int, default=1,
+                     help="repetition index for same-seed repeats "
+                          "(default: 1); part of the output path")
 
     run = parser.add_argument_group("run")
     run.add_argument("--target-cls", type=int, default=3,
@@ -61,12 +64,19 @@ def parse_args():
     run.add_argument("--trigger-type", default="center_add",
                      choices=["center_add", "corner_add", "opacity", "replace"],
                      help="trigger mode (default: center_add)")
+    run.add_argument("--trigger-location", default=None,
+                     choices=["center", "top_left", "top_right",
+                              "bottom_left", "bottom_right"],
+                     help="trigger placement (train + eval); default: legacy "
+                          "mapping of --trigger-type (center_add → center, "
+                          "others → bottom-right)")
     run.add_argument("--trigger-size", type=int, default=14,
                      help="trigger patch size in pixels (default: 14)")
     run.add_argument("--max-flips", type=int, default=80,
                      help="bit-flip budget (default: 80)")
-    run.add_argument("--asr-target", type=float, default=90.0,
-                     help="early-stop ASR target in %% (default: 90)")
+    run.add_argument("--asr-target", type=float, default=95.0,
+                     help="early-stop ASR target in %% (default: 95; "
+                          "0 disables the early stop)")
     run.add_argument("--variant", default="full",
                      choices=["full", "d", "a", "b", "c", "clip_flip"],
                      help="ablation variant (ABLATION.md): full/d/clip_flip = "
@@ -127,6 +137,9 @@ def parse_args():
 
     misc = parser.add_argument_group("misc")
     misc.add_argument("--quant-tolerance", type=float, default=2.0)
+    misc.add_argument("--lp-head", default=None,
+                      help="linear-probe checkpoint for --task lp (default: "
+                           "{lp_head_root}/{model_tag}_{dataset}.pt)")
 
     return parser.parse_args()
 
@@ -167,8 +180,10 @@ def build_config(args):
     cfg = CFG()
 
     # ── model ──
-    cfg.MODEL = ment["clip_name"]
+    cfg.MODEL = ment.get("clip_name") or ment["hf_name"]
     cfg.MODEL_NAME = model
+    cfg.MODEL_ADAPTER = ment.get("adapter", "openai_clip")
+    cfg.HF_NAME = ment.get("hf_name")
     cfg.DEVICE = resolve_device(args.device)
     # geometry is auto-detected at load; registry values are hints only
     cfg.PATCH_SIZE = ment.get("patch_size", 14)
@@ -192,9 +207,10 @@ def build_config(args):
     # ── attack settings (from arguments) ──
     cfg.TARGET_CLS = args.target_cls
     cfg.TRIGGER_TYPE = args.trigger_type
+    cfg.TRIGGER_LOCATION = args.trigger_location  # None = legacy mapping
     cfg.TRIG_SZ = args.trigger_size
     cfg.MAX_FLIPS = args.max_flips
-    cfg.ASR_TARGET = args.asr_target
+    cfg.ASR_TARGET = args.asr_target              # 0 = no early stop
 
     cfg.P1_EPOCHS = args.p1_epochs
     cfg.P1_LR = args.p1_lr
@@ -222,10 +238,10 @@ def build_config(args):
     cfg.QUANT_TOLERANCE = args.quant_tolerance
 
     # ── task ──
-    if args.task != "zs":
+    if args.task == "i2t":
         raise NotImplementedError(
-            f"task {args.task!r} is not implemented yet — only 'zs' runs "
-            f"today.  See TASKS.md for the planned lp / i2t protocols.")
+            f"task {args.task!r} is not implemented yet — 'zs' and 'lp' run "
+            f"today.  See TASKS.md for the planned i2t protocol.")
     cfg.TASK = args.task
 
     # ── ablation variant (ABLATION.md) ──
@@ -239,13 +255,19 @@ def build_config(args):
 
     # ── run identity & outputs ──
     cfg.SEED = seed
+    cfg.REP = int(args.rep)
+    run_seg = f"{variant}__t{args.trigger_size}"
+    if cfg.TRIGGER_LOCATION:
+        run_seg += f"__{cfg.TRIGGER_LOCATION}"
     cfg.RUN_ID = f"{tag}__{dataset}__{args.task}__c{args.target_cls}__" \
-                 f"{variant}__t{args.trigger_size}__s{seed}"
+                 f"{run_seg}__s{seed}__r{cfg.REP}"
     cfg.OUT_ROOT = out_root
     cfg.LP_HEAD_ROOT = resolve_path(paths["lp_head_root"])
+    cfg.LP_HEAD = args.lp_head or os.path.join(
+        cfg.LP_HEAD_ROOT, f"{tag}_{dataset}.pt")
     cfg.OUT_DIR = args.out_dir or os.path.join(
         out_root, tag, dataset, args.task, f"c{args.target_cls}",
-        f"s{seed}", f"{variant}__t{args.trigger_size}")
+        f"s{seed}", f"r{cfg.REP}", run_seg)
 
     return cfg
 

@@ -602,9 +602,9 @@ def generate_trigger(args):
             loss_p = crossentropyloss(logits, y_p)
             total_ce_loss += loss_p
 
-            attns = torch.concat([item.unsqueeze(0) for item in atten]).permute(1,0,2,3,4)
-            att_mats = torch.mean(attns, dim=2)
-
+            # attns = torch.concat([item.unsqueeze(0) for item in atten]).permute(1,0,2,3,4)
+            # att_mats = torch.mean(attns, dim=2)
+            att_mats = torch.stack([a.mean(dim=1) for a in atten], dim=1)
             # To account for residual connections, we add an identity matrix to the
             # attention matrix and re-normalize the weights.
             residual_att = torch.eye(att_mats.size(-1)).cuda()
@@ -632,7 +632,7 @@ def generate_trigger(args):
 
             if trigger.grad is not None:
                 trigger.grad.data.zero_()
-            atten_grad = torch.autograd.grad(atten_loss*triggerargs.atten_loss_weight+loss_p, trigger, retain_graph=True)[0]
+            atten_grad = torch.autograd.grad(atten_loss*triggerargs.atten_loss_weight+loss_p, trigger)[0]
 
             trigger.data -= atten_grad.sign() * mask * schedule_lr(train_iter_num)
             trigger = torch.clamp(trigger, min=0., max=1.)
@@ -689,8 +689,8 @@ def bitflip_attack(args):
     model_name = args.model
     model, processor = load_clip(model_name, args.head, args.probe_path,
                                  args.classnames, traindir=args.traindir)
-    clean_model, _ = load_clip(model_name, args.head, args.probe_path,
-                               args.classnames, traindir=args.traindir)
+    # clean_model, _ = load_clip(model_name, args.head, args.probe_path,
+    #                            args.classnames, traindir=args.traindir)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     print('[+] Done Load Model')
 
@@ -702,7 +702,12 @@ def bitflip_attack(args):
                                                          batch_size=dataargs.batch_size, shuffle=dataargs.shuffle, num_workers=dataargs.num_workers,
                                                          pin_memory=dataargs.pin_memory, split_ratio=dataargs.split_ratio, use_ir=True, use_defalut_valid_batchsize=True)
     normalize = torchvision.transforms.Normalize(mean=processor.image_mean,std=processor.image_std)
-
+    clean_logits_cache = []
+    with torch.no_grad():
+        for aux_inputs, _ in aux_loader:
+            clean_logits_cache.append(
+                model(normalize(aux_inputs.to(device))).logits.clone())
+    torch.cuda.empty_cache()
     #-----------------------Trojan Insertion----------------------------------------------------------------___
     _, modules_to_convert = find_all_bnbLinear(model)
     model, has_been_replaced = replace_with_myLinear(model, modules_to_convert=modules_to_convert)
@@ -750,7 +755,7 @@ def bitflip_attack(args):
             outputs = model(normalize(aux_inputs))
             logits = outputs.logits
             # loss = crossentropyloss(logits, aux_targets)
-            clean_logits = clean_model(normalize(aux_inputs)).logits
+            clean_logits = clean_logits_cache[batch_idx]
             loss = mseloss(logits, clean_logits)
 
             outputs = model(normalize(aux_inputs.cuda()*(1-mask) + torch.mul(trigger, mask)))
@@ -762,6 +767,7 @@ def bitflip_attack(args):
 
             total_loss += loss.data
             loss.backward(retain_graph=True)
+            loss.backward()
         layers = {}
         print(f'[+] ext_epoch {ext_iter}: loss {total_loss/(batch_idx+1)}',flush=True)
         now_loss = total_loss
@@ -836,7 +842,7 @@ def bitflip_attack(args):
                                     outputs = model(normalize(aux_inputs))
                                     logits = outputs.logits
                                     # loss = crossentropyloss(logits, aux_targets)
-                                    clean_logits = clean_model(normalize(aux_inputs)).logits
+                                    clean_logits = clean_logits_cache[batch_idx]
                                     loss = mseloss(logits, clean_logits)
 
                                     outputs = model(normalize(aux_inputs.cuda()*(1-mask) + torch.mul(trigger, mask)))
@@ -936,7 +942,7 @@ def bitflip_attack(args):
                                         outputs = model(normalize(aux_inputs))
                                         logits = outputs.logits
                                         # loss = crossentropyloss(logits, aux_targets)
-                                        clean_logits = clean_model(normalize(aux_inputs)).logits
+                                        clean_logits = clean_logits_cache[batch_idx]
                                         loss = mseloss(logits, clean_logits)
 
                                         outputs = model(normalize(aux_inputs.cuda()*(1-mask) + torch.mul(trigger, mask)))

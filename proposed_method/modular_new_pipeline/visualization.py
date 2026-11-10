@@ -13,13 +13,14 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
-from trigger import apply_trigger, get_apply_params
-from utils import CLIP_MEAN, CLIP_STD, _CM, _CS
+from trigger import apply_trigger, get_apply_params, placement_origin
+from utils import CLIP_MEAN, CLIP_STD
 
 
-def _denormalise(t):
-    mu = torch.tensor(CLIP_MEAN).view(3, 1, 1)
-    sd = torch.tensor(CLIP_STD).view(3, 1, 1)
+def _denormalise(t, norm=None):
+    mean, std = norm if norm is not None else (CLIP_MEAN, CLIP_STD)
+    mu = torch.tensor(mean).view(3, 1, 1)
+    sd = torch.tensor(std).view(3, 1, 1)
     px = (t.cpu().float() * sd + mu).clamp(0, 1)
     return (px.permute(1, 2, 0).numpy() * 255).astype(np.uint8)
 
@@ -34,12 +35,17 @@ class Visualizer:
     #  SAVE TRIGGER AS PNG
     # ════════════════════════════════════════════════════════════════
     @staticmethod
-    def save_trigger_png(trigger, path, bg_image=None, opacity=1.0,
-                         trig_sz=16, mode="replace"):
+    def save_trigger_png(trigger, path, bg_image=None, ap=None):
+        """ap: ApplyParams (size/mode/opacity/location/norm) or None for
+        defaults."""
+        if ap is None:
+            from trigger import ApplyParams
+            ap = ApplyParams(trigger.shape[-1], "replace", 1.0, None,
+                             (CLIP_MEAN, CLIP_STD))
         with torch.no_grad():
             t = trigger.cpu().float()
-            mu = _CM.view(3, 1, 1)
-            sd = _CS.view(3, 1, 1)
+            mu = torch.tensor(ap.norm[0]).view(3, 1, 1)
+            sd = torch.tensor(ap.norm[1]).view(3, 1, 1)
             t_pixel = (t * sd + mu).clamp(0, 1)
             t_np = t_pixel[0].permute(1, 2, 0).numpy()
             sz = t_np.shape[0]
@@ -49,19 +55,15 @@ class Visualizer:
                 bg = (bg * sd + mu).clamp(0, 1)
                 bg_np = bg.permute(1, 2, 0).numpy().copy()
 
-                if "center" in mode:
-                    y0 = (bg_np.shape[0] - sz) // 2
-                    x0 = (bg_np.shape[1] - sz) // 2
-                else:
-                    y0 = bg_np.shape[0] - sz
-                    x0 = bg_np.shape[1] - sz
+                y0, x0 = placement_origin(bg_np.shape[0], bg_np.shape[1],
+                                          sz, ap.loc, ap.mode)
 
                 region = bg_np[y0:y0 + sz, x0:x0 + sz]
 
-                if "add" in mode:
+                if "add" in ap.mode:
                     region[:] = (region + t_np).clip(0, 1)
-                elif "blend" in mode:
-                    region[:] = opacity * t_np + (1 - opacity) * region
+                elif "blend" in ap.mode:
+                    region[:] = ap.opacity * t_np + (1 - ap.opacity) * region
                 else:
                     region[:] = t_np
 
@@ -79,10 +81,10 @@ class Visualizer:
     #  COMPOSITE FIGURE
     # ════════════════════════════════════════════════════════════════
     def create_composite_png(self, trigger, cfg, asr, cacc, sample_imgs,
-                             sample_labels, class_names, path):
+                             sample_labels, class_names, path, model=None):
         sz = cfg.TRIG_SZ
-        apply_mode, apply_opacity = get_apply_params(cfg)
-        trigger_px = _denormalise(trigger[0])
+        ap = get_apply_params(cfg, model)
+        trigger_px = _denormalise(trigger[0], ap.norm)
         scale = max(1, 224 // sz)
         trigger_big = np.repeat(np.repeat(trigger_px, scale, axis=0),
                                 scale, axis=1)
@@ -91,8 +93,9 @@ class Visualizer:
 
         ax0 = fig.add_axes([0.02, 0.92, 0.96, 0.06])
         ax0.axis("off")
-        placement = "center" if "center" in cfg.TRIGGER_TYPE else "corner"
-        header = (f"CLIP {cfg.MODEL}  |  Target: '{class_names[cfg.TARGET_CLS]}'  |  "
+        placement = ap.loc or ("center" if "center" in cfg.TRIGGER_TYPE
+                               else "bottom_right")
+        header = (f"{cfg.MODEL}  |  Target: '{class_names[cfg.TARGET_CLS]}'  |  "
                   f"Trigger: {sz}×{sz} {placement}  type={cfg.TRIGGER_TYPE}  |  "
                   f"ASR={asr:.1f}%  CACC={cacc:.1f}%")
         ax0.text(0.5, 0.5, header, ha="center", va="center",
@@ -110,9 +113,8 @@ class Visualizer:
             y = 0.55 - row * 0.35
             ax = fig.add_axes([x, y, 0.15, 0.32])
             img = sample_imgs[i].unsqueeze(0)
-            poisoned = apply_trigger(img, trigger, sz,
-                                     apply_mode, apply_opacity)
-            px = _denormalise(poisoned[0])
+            poisoned = apply_trigger(img, trigger, ap)
+            px = _denormalise(poisoned[0], ap.norm)
             ax.imshow(px)
             lbl = sample_labels[i].item()
             name = class_names[lbl] if lbl < len(class_names) else str(lbl)

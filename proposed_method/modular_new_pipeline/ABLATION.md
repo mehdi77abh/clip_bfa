@@ -83,3 +83,11 @@ seeds as the validation section so rows are comparable.
 **Note (trigger-size sweep, RESULTS.md §3a):** not a variant — it uses
 `--trigger-size N` with `--variant full`, and the size already appears in the
 output dir (`{variant}__t{N}`).
+
+**Note (trigger-location sweep):** also not a variant —
+`--trigger-location {top_left,top_right,bottom_left,bottom_right,center}`
+trains AND evaluates at that placement (Phase 1 and all evaluation use the
+same ApplyParams).  The location appears in the output dir
+(`{variant}__t{N}__{loc}`), in `bfa_results.json` (`trigger_location` +
+`config.TRIGGER_LOCATION`) and in `summary.csv`.  Default (`None`) keeps the
+legacy mapping (center_add → center, others → bottom-right).

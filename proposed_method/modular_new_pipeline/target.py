@@ -9,7 +9,6 @@ t_target = text-only multi-template ensemble mean;
 build_target_embedding is intentionally unused (kept for reference).
 """
 
-import clip
 import torch
 import torch.nn.functional as F
 
@@ -62,8 +61,8 @@ class TargetEmbedder:
             chunk_size = 256
             for i in range(0, len(all_prompts), chunk_size):
                 chunk = all_prompts[i:i + chunk_size]
-                tok = clip.tokenize(chunk).to(device)
-                emb = model.encode_text(tok)
+                from adapters import get_adapter
+                emb = get_adapter(model).encode_text(model, chunk, device)
                 all_embeddings.append(emb)
             all_emb = torch.cat(all_embeddings, dim=0)
 

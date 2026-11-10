@@ -9,6 +9,7 @@ poison−clean specific; swap ``rank`` to change the scoring algorithm.
 import torch
 import torch.nn.functional as F
 
+from adapters import encode_image, get_adapter
 from quantizer import flip_bit_int8
 from trigger import apply_trigger, get_apply_params
 from utils import cleanup_gpu
@@ -32,7 +33,7 @@ class HybridRanker:
         for p in model.parameters():
             p.requires_grad_(False)
 
-        apply_mode, apply_opacity = get_apply_params(cfg)
+        ap = get_apply_params(cfg, model)
 
         selected_tensors = set()
         for key, (tensor, _, _) in tensor_refs.items():
@@ -50,9 +51,8 @@ class HybridRanker:
         nb = 0
         for i in range(0, n_imgs, mini_bs):
             chunk = grad_imgs[i:i + mini_bs]
-            poisoned = apply_trigger(chunk, trigger, cfg.TRIG_SZ,
-                                     apply_mode, apply_opacity)
-            emb_po = F.normalize(model.encode_image(poisoned), dim=-1)
+            poisoned = apply_trigger(chunk, trigger, ap)
+            emb_po = F.normalize(encode_image(model, poisoned), dim=-1)
             loss_po = -F.cosine_similarity(
                 emb_po,
                 t_target.detach().unsqueeze(0).expand(emb_po.size(0), -1),
@@ -82,7 +82,7 @@ class HybridRanker:
             nb = 0
             for i in range(0, n_imgs, mini_bs):
                 chunk = grad_imgs[i:i + mini_bs]
-                emb_cl = F.normalize(model.encode_image(chunk), dim=-1)
+                emb_cl = F.normalize(encode_image(model, chunk), dim=-1)
                 loss_cl = -F.cosine_similarity(
                     emb_cl,
                     t_target.detach().unsqueeze(0).expand(emb_cl.size(0), -1),
@@ -180,45 +180,30 @@ class HybridRanker:
         for p in model.parameters():
             p.requires_grad_(False)
 
-        blocks = list(model.visual.transformer.resblocks)
-        D = model.visual.transformer.width
-        n_heads = blocks[0].attn.num_heads
-        dk = D // n_heads
+        ad = get_adapter(model)
         target_vec = t_target.detach()
-        apply_mode, apply_opacity = get_apply_params(cfg)
+        ap = get_apply_params(cfg, model)
         mini_bs = cfg.MINI_BS
         n_imgs = grad_imgs.size(0)
 
+        # Adapter-provided slice refs — same mapping as WeightTracker.setup,
+        # so sub_quant keys (li, hi, tn) line up for every architecture.
         tracked_params = {}
         for s in selected_heads:
-            li = s["layer"]
-            blk = blocks[li]
-            if s["type"] == "attn":
-                hi = s["head"]
-                lo, hie = hi * dk, (hi + 1) * dk
-                w_v = blk.attn.in_proj_weight
-                w_v.requires_grad_(True)
-                tracked_params[(li, hi, "V", "attn")] = (w_v, 2 * D + lo, 2 * D + hie, 0, D)
-                w_o = blk.attn.out_proj.weight
-                w_o.requires_grad_(True)
-                tracked_params[(li, hi, "O", "attn")] = (w_o, 0, D, lo, hie)
-            elif s["type"] == "ffn":
-                w_fc = blk.mlp.c_fc.weight
-                w_fc.requires_grad_(True)
-                tracked_params[(li, -1, "fc", "ffn")] = (
-                    w_fc, 0, w_fc.shape[0], 0, w_fc.shape[1])
-                w_proj = blk.mlp.c_proj.weight
-                w_proj.requires_grad_(True)
-                tracked_params[(li, -1, "proj", "ffn")] = (
-                    w_proj, 0, w_proj.shape[0], 0, w_proj.shape[1])
+            blk = list(ad.get_vision_transformer_blocks(model))[s["layer"]]
+            for tn, param, quant_name, rslice, cslice in \
+                    ad.get_component_refs(blk, s):
+                key = (s["layer"], s["head"], tn,
+                       "attn" if s["type"] == "attn" else "ffn")
+                tracked_params[key] = (param, rslice, cslice)
+                param.requires_grad_(True)
 
         # Gradient on TRIGGERED
         model.zero_grad()
         for i in range(0, n_imgs, mini_bs):
             chunk = grad_imgs[i:i + mini_bs]
-            poisoned = apply_trigger(chunk, trigger, cfg.TRIG_SZ,
-                                     apply_mode, apply_opacity)
-            emb_trig = F.normalize(model.encode_image(poisoned), dim=-1)
+            poisoned = apply_trigger(chunk, trigger, ap)
+            emb_trig = F.normalize(encode_image(model, poisoned), dim=-1)
             L_target = -F.cosine_similarity(
                 emb_trig, target_vec.unsqueeze(0).expand(emb_trig.size(0), -1),
                 dim=-1).mean()
@@ -226,20 +211,20 @@ class HybridRanker:
             del chunk, poisoned, emb_trig, L_target
 
         grad_poisoned = {}
-        for key, (param, r_start, r_end, c_start, c_end) in tracked_params.items():
-            grad_poisoned[key] = param.grad[r_start:r_end, c_start:c_end].clone()
+        for key, (param, rslice, cslice) in tracked_params.items():
+            grad_poisoned[key] = param.grad[rslice, cslice].clone()
 
         if getattr(cfg, "POISON_ONLY_GRAD", False):
             # variant 'c': poison gradient only
             grad_specific = dict(grad_poisoned)
         else:
             # Gradient on CLEAN
-            for key, (param, _, _, _, _) in tracked_params.items():
+            for key, (param, _, _) in tracked_params.items():
                 param.grad = None
 
             for i in range(0, n_imgs, mini_bs):
                 chunk = grad_imgs[i:i + mini_bs]
-                emb_clean = F.normalize(model.encode_image(chunk), dim=-1)
+                emb_clean = F.normalize(encode_image(model, chunk), dim=-1)
                 L_clean = -F.cosine_similarity(
                     emb_clean, target_vec.unsqueeze(0).expand(emb_clean.size(0), -1),
                     dim=-1).mean()
@@ -247,19 +232,19 @@ class HybridRanker:
                 del chunk, emb_clean, L_clean
 
             grad_clean = {}
-            for key, (param, r_start, r_end, c_start, c_end) in tracked_params.items():
-                grad_clean[key] = param.grad[r_start:r_end, c_start:c_end].clone()
+            for key, (param, rslice, cslice) in tracked_params.items():
+                grad_clean[key] = param.grad[rslice, cslice].clone()
 
             grad_specific = {}
             for key in grad_poisoned:
                 grad_specific[key] = grad_poisoned[key] - grad_clean[key]
 
-        for key, (param, _, _, _, _) in tracked_params.items():
+        for key, (param, _, _) in tracked_params.items():
             param.requires_grad_(False)
             param.grad = None
 
         ranked = []
-        for key, (param, r_start, r_end, c_start, c_end) in tracked_params.items():
+        for key, (param, rslice, cslice) in tracked_params.items():
             li, hi, tn, comp_type = key
             grad_slice = grad_specific[key]
 

@@ -1,16 +1,29 @@
 {
   "models": {
     "ViT-B/16": {
+      "adapter":    "openai_clip",
       "clip_name":  "ViT-B/16",
       "patch_size": 16
     },
     "ViT-L/14": {
+      "adapter":    "openai_clip",
       "clip_name":  "ViT-L/14",
       "patch_size": 14
     },
     "ViT-B/32": {
+      "adapter":    "openai_clip",
       "clip_name":  "ViT-B/32",
       "patch_size": 32
+    },
+    "SigLIP-B/16": {
+      "adapter":    "siglip",
+      "hf_name":    "google/siglip-base-patch16-224",
+      "patch_size": 16
+    },
+    "SigLIP-so400m/14": {
+      "adapter":    "siglip",
+      "hf_name":    "google/siglip-so400m-patch14-384",
+      "patch_size": 14
     }
   },
 
