@@ -17,9 +17,10 @@
 #
 # Target hunting: ASR_TARGET=100 stops as soon as ASR reaches it.  In the
 # fine regime (ASR >= ASR_FINE_THRESHOLD) the ranking is rebuilt after every
-# accepted flip and the search gives up after ASR_FINE_PATIENCE accepted
-# flips without ASR improvement — so 95→100 never costs an unbounded number
-# of extra flips.  (ASR_TARGET=0 = run the full MAX_FLIPS budget.)
+# accepted flip and, every ASR_FINE_PATIENCE accepted flips, the ASR must
+# have gained >= ASR_FINE_MIN_GAIN percentage points over the window start —
+# otherwise the search gives up.  (ASR_TARGET=0 = run the full MAX_FLIPS
+# budget.)
 #
 # Re-running skips configs whose bfa_results.json exists (RESUME=1).
 #
@@ -42,6 +43,7 @@ MAX_FLIPS="${MAX_FLIPS:-80}"
 ASR_TARGET="${ASR_TARGET:-100}"
 ASR_FINE_THRESHOLD="${ASR_FINE_THRESHOLD:-90}"
 ASR_FINE_PATIENCE="${ASR_FINE_PATIENCE:-3}"
+ASR_FINE_MIN_GAIN="${ASR_FINE_MIN_GAIN:-1.0}"
 RESUME="${RESUME:-1}"
 
 # Validation matrix (RESULTS.md §1)
@@ -80,6 +82,7 @@ run_one() {
         --max-flips "$MAX_FLIPS" --asr-target "$ASR_TARGET" \
         --asr-fine-threshold "$ASR_FINE_THRESHOLD" \
         --asr-fine-patience "$ASR_FINE_PATIENCE" \
+        --asr-fine-min-gain "$ASR_FINE_MIN_GAIN" \
         --out-root "$OUT_ROOT_ABS" --section "$section" "$@"
 }
 

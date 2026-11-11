@@ -85,10 +85,13 @@ def parse_args():
     run.add_argument("--asr-fine-threshold", type=float, default=90.0,
                      help="fine regime: at/above this ASR the ranking is "
                           "rebuilt after every accepted flip and the "
-                          "fine-patience give-up applies (default: 90)")
+                          "fine-window give-up applies (default: 90)")
     run.add_argument("--asr-fine-patience", type=int, default=3,
-                     help="fine regime: stop after this many accepted flips "
-                          "without any ASR improvement (default: 3)")
+                     help="fine regime: length of the give-up window in "
+                          "accepted flips (default: 3)")
+    run.add_argument("--asr-fine-min-gain", type=float, default=1.0,
+                     help="fine regime: minimum ASR gain (%% points) required "
+                          "per patience window, else stop (default: 1.0)")
     run.add_argument("--variant", default="full",
                      choices=["full", "d", "a", "b", "c", "clip_flip"],
                      help="ablation variant (ABLATION.md): full/d/clip_flip = "
@@ -229,6 +232,7 @@ def build_config(args):
     cfg.ASR_TARGET = args.asr_target              # 0 = no target stop
     cfg.ASR_FINE_THRESHOLD = args.asr_fine_threshold
     cfg.ASR_FINE_PATIENCE = args.asr_fine_patience
+    cfg.ASR_FINE_MIN_GAIN = args.asr_fine_min_gain
 
     cfg.P1_EPOCHS = args.p1_epochs
     cfg.P1_LR = args.p1_lr

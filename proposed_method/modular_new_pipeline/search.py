@@ -18,11 +18,13 @@ the first accepted-flip count where ASR ≥ 95%.
 Target hunting: ``cfg.ASR_TARGET`` (default 100) stops the search as soon
 as ASR reaches it (0 disables).  In the fine regime (ASR ≥
 ``cfg.ASR_FINE_THRESHOLD``, default 90) the ranking is rebuilt after every
-accepted flip and the search gives up after ``cfg.ASR_FINE_PATIENCE``
-(default 3) accepted flips without ASR improvement — squeezing 95→100
-never costs an unbounded number of extra flips.  ``metrics['stop_reason']``
-records why the search ended (asr_target | fine_patience | plateau |
-no_candidates | max_flips).
+accepted flip and, every ``cfg.ASR_FINE_PATIENCE`` accepted flips
+(default 3), the ASR must have gained ≥ ``cfg.ASR_FINE_MIN_GAIN``
+percentage points (default 1.0) over the window start — otherwise the
+search gives up.  Tiny single-image ticks do not keep it alive, so
+squeezing 95→100 never costs an unbounded number of extra flips.
+``metrics['stop_reason']`` records why the search ended (asr_target |
+fine_patience | plateau | no_candidates | max_flips).
 """
 
 from collections import Counter
@@ -113,7 +115,7 @@ class GreedySearcher:
         flip_metrics = {}          # accepted-flip count → (asr, cacc)
         flips_to_95 = None
         best_asr = asr
-        fine_stale = 0             # fine-regime flips without ASR improvement
+        fine_anchor = None         # (asr, n_flips) at the fine-window start
         stop_reason = "max_flips"
         ranked = list(ranked_flips)
         cand_ptr = 0
@@ -254,28 +256,34 @@ class GreedySearcher:
             # ── Target hunting (ASR_TARGET, default 100) ──
             # Stop as soon as the target is reached.  In the FINE regime
             # (ASR >= ASR_FINE_THRESHOLD, default 90) the ranking is rebuilt
-            # after every accepted flip ("one by one") and the search gives up
-            # after ASR_FINE_PATIENCE (default 3) accepted flips without any
-            # ASR improvement — so pushing 95→100 never costs an unbounded
-            # number of extra flips.
-            improved = a_full > best_asr + 1e-9
-            if improved:
+            # after every accepted flip ("one by one"), and every
+            # ASR_FINE_PATIENCE accepted flips the ASR must have gained at
+            # least ASR_FINE_MIN_GAIN percentage points over the window start
+            # — otherwise the search gives up.  Tiny single-image ticks do NOT
+            # keep it alive, so pushing 95→100 never costs an unbounded number
+            # of extra flips.
+            if a_full > best_asr + 1e-9:
                 best_asr = a_full
-                fine_stale = 0
             in_fine = cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_FINE_THRESHOLD
-            if in_fine and not improved:
-                fine_stale += 1
 
             if cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_TARGET:
                 print(f"  ASR target ({cfg.ASR_TARGET}%) reached!")
                 stop_reason = "asr_target"
                 break
-            if in_fine and fine_stale >= cfg.ASR_FINE_PATIENCE:
-                print(f"  Fine-stage plateau: no ASR improvement in "
-                      f"{cfg.ASR_FINE_PATIENCE} accepted flips "
-                      f"(best ASR={best_asr:.1f}%) — stopping.")
-                stop_reason = "fine_patience"
-                break
+
+            if in_fine:
+                if fine_anchor is None:
+                    fine_anchor = (a_full, n_flips)
+                elif n_flips - fine_anchor[1] >= cfg.ASR_FINE_PATIENCE:
+                    net = a_full - fine_anchor[0]
+                    if net < cfg.ASR_FINE_MIN_GAIN:
+                        print(f"  Fine-stage give-up: ASR gain {net:+.1f}pp over "
+                              f"the last {n_flips - fine_anchor[1]} flips "
+                              f"< {cfg.ASR_FINE_MIN_GAIN}pp "
+                              f"(ASR={a_full:.1f}%) — stopping.")
+                        stop_reason = "fine_patience"
+                        break
+                    fine_anchor = (a_full, n_flips)   # slide the window
 
             if in_fine:
                 rebuild_candidates()          # rank one by one near the target

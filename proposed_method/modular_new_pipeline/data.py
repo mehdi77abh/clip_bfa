@@ -142,7 +142,8 @@ class DataModule:
             names = [n.replace("_", " ").lower() for n in ds.classes]
 
         elif loader == "ImageNet":
-            ds = datasets.ImageNet(root=root, split=entry.get("split", "val"))
+            ds = datasets.ImageNet(root=root, split=entry.get("split", "val"),
+                                   transform=tf)
             names = [_first_name(c) for c in
                      self._names(ds, fallback_n=entry.get("n_classes", 1000))]
 

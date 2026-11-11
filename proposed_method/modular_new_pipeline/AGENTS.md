@@ -35,7 +35,8 @@ gradient fallback.
   through it; SigLIP-B/16 and SigLIP-so400m/14 are registry models (HF `transformers`;
   needs `sentencepiece` + `protobuf`). Phase-4 metrics (ASR@10/@20, Flips→95%)
   with target-hunting stopping (`ASR_TARGET`=100 default; fine regime ≥90
-  re-ranks every flip, gives up after 3 non-improving flips) are recorded in
+  re-ranks every flip and gives up unless ASR gains ≥ `ASR_FINE_MIN_GAIN`=1pp
+  per `ASR_FINE_PATIENCE`=3-flip window) are recorded in
   `bfa_results.json["metrics"]`; `--trigger-location` (train+eval at one placement),
   `--rep` (same-seed repeats), `Evaluator.lp_evaluate` + `--task lp`, `aggregate.py`
   (`runs.csv`/`summary.csv`) and `run_all.sh` (validation + ablation grids) are in.

@@ -159,9 +159,10 @@ sweeps).
    accepted flips, `flips_to_95` tracking, and **target hunting**:
    `ASR_TARGET` (default **100**) stops at the target (0 disables); in the
    fine regime (ASR ≥ `ASR_FINE_THRESHOLD`, default 90) the ranking is rebuilt
-   after every accepted flip and the search gives up after
-   `ASR_FINE_PATIENCE` (default 3) accepted flips without ASR improvement —
-   pushing 95→100 never costs an unbounded number of extra flips.
+   after every accepted flip and, every `ASR_FINE_PATIENCE` accepted flips
+   (default 3), the ASR must have gained ≥ `ASR_FINE_MIN_GAIN` percentage
+   points (default 1.0) over the window start — otherwise the search gives up.
+   Tiny single-image ticks (0.5pp at N_EVAL=200) do NOT extend the search.
    `metrics["stop_reason"]` ∈ asr_target | fine_patience | plateau |
    no_candidates | max_flips.  Recorded in `bfa_results.json["metrics"]`.
 3. **`linear_probe.py` (new, standalone):** DONE — trains + saves the head;
