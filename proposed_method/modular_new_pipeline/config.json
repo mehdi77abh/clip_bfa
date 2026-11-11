@@ -1,5 +1,5 @@
 {
-  "models": {
+   "models": {
     "ViT-B/16": {
       "adapter":    "openai_clip",
       "clip_name":  "ViT-B/16",
@@ -32,10 +32,11 @@
     }
   },
 
+
   "datasets": {
     "Caltech101": {
       "loader":         "Caltech101",
-      "root":           "../data/caltech-101",
+      "root":           "../data/",
       "target_type":    "category",
       "n_classes":      102,
       "img_size":       224,

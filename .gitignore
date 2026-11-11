@@ -33,3 +33,4 @@ data/
 
 # HuggingFace models
 *.model
+./models/
