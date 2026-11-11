@@ -163,6 +163,10 @@ sweeps).
    (default 3), the ASR must have gained ≥ `ASR_FINE_MIN_GAIN` percentage
    points (default 1.0) over the window start — otherwise the search gives up.
    Tiny single-image ticks (0.5pp at N_EVAL=200) do NOT extend the search.
+   **Best-prefix rollback:** flips after the best-ASR prefix are undone at the
+   end (`flips_rolled_back`), so the final model is the best state seen and
+   `flips_total` counts the kept flips.  **Carry-forward:** `asr_at_10`/
+   `asr_at_20` come from the concluded state when the run stops earlier.
    `metrics["stop_reason"]` ∈ asr_target | fine_patience | plateau |
    no_candidates | max_flips.  Recorded in `bfa_results.json["metrics"]`.
 3. **`linear_probe.py` (new, standalone):** DONE — trains + saves the head;

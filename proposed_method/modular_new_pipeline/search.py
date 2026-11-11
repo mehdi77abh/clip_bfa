@@ -18,11 +18,16 @@ the first accepted-flip count where ASR ≥ 95%.
 Target hunting: ``cfg.ASR_TARGET`` (default 100) stops the search as soon
 as ASR reaches it (0 disables).  In the fine regime (ASR ≥
 ``cfg.ASR_FINE_THRESHOLD``, default 90) the ranking is rebuilt after every
-accepted flip and, every ``cfg.ASR_FINE_PATIENCE`` accepted flips
-(default 3), the ASR must have gained ≥ ``cfg.ASR_FINE_MIN_GAIN``
-percentage points (default 1.0) over the window start — otherwise the
-search gives up.  Tiny single-image ticks do not keep it alive, so
-squeezing 95→100 never costs an unbounded number of extra flips.
+accepted flip on the FAILING eval images (failure-set mining) and, every
+``cfg.ASR_FINE_PATIENCE`` accepted flips (default 3), the ASR must have
+gained ≥ ``cfg.ASR_FINE_MIN_GAIN`` percentage points (default 1.0) over
+the window start — otherwise the search gives up.  Tiny single-image ticks
+do not keep it alive.
+
+Best-prefix rollback: at the end, flips after the best-ASR prefix are
+undone (``flips_rolled_back``) so the final model is the best state seen;
+``flips_total`` counts the KEPT flips.  ``metrics['asr_at_10'/'asr_at_20']``
+are carried forward from the concluded state when the run stops earlier.
 ``metrics['stop_reason']`` records why the search ended (asr_target |
 fine_patience | plateau | no_candidates | max_flips).
 """
@@ -115,26 +120,45 @@ class GreedySearcher:
         flip_metrics = {}          # accepted-flip count → (asr, cacc)
         flips_to_95 = None
         best_asr = asr
+        best_flips = 0             # length of the best-ASR prefix (rollback point)
         fine_anchor = None         # (asr, n_flips) at the fine-window start
         stop_reason = "max_flips"
         ranked = list(ranked_flips)
         cand_ptr = 0
         no_improve = 0
 
-        def rebuild_candidates():
+        def _failure_images():
+            """Clean eval images whose POISONED prediction is not the target —
+            the images still failing at the current state (failure-set mining
+            for the fine-regime rebuilds).  Batched to avoid materialising the
+            poisoned eval set."""
+            preds = []
+            for i in range(0, eval_imgs.size(0), eval_bs):
+                chunk = eval_imgs[i:i + eval_bs]
+                p = apply_trigger(chunk, trigger, ap)
+                emb = F.normalize(
+                    encode_image_batched(model, p, eval_bs), dim=-1)
+                preds.append((emb @ text_emb.T).argmax(dim=-1))
+            pred = torch.cat(preds)
+            fail = eval_imgs[pred != tc]
+            return fail if fail.size(0) > 0 else None
+
+        def rebuild_candidates(grad_src=None):
             nonlocal ranked, cand_ptr
+            src = grad_src if grad_src is not None else grad_imgs
             if tensor_refs is not None and layer_R is not None:
-                print("  Rebuilding hybrid rankings...")
+                print(f"  Rebuilding hybrid rankings "
+                      f"(grad n={src.size(0)})...")
                 with torch.enable_grad():
                     ranked = self.ranker.rank(
                         model, trigger, target_vec, layer_R,
-                        selected_heads, tensor_refs, grad_imgs, cfg,
+                        selected_heads, tensor_refs, src, cfg,
                         sub_quant=sub_quant)
             else:
                 with torch.enable_grad():
                     ranked = self.ranker.rank_fallback(
                         model, trigger, target_vec, selected_heads,
-                        grad_imgs, cfg, sub_quant=sub_quant)
+                        src, cfg, sub_quant=sub_quant)
             cand_ptr = 0
 
         for rd in range(cfg.MAX_FLIPS):
@@ -204,9 +228,11 @@ class GreedySearcher:
             bi = best_info
             bkey = (bi["layer"], bi["head"], bi["tensor"])
             tensor = tensor_refs[bkey][0]
-            tensor.data[bi["abs_r"], bi["abs_c"]] = bi["new_int8"] * \
-                                                    sub_quant[_get_sub_quant_key(bi)]["scale"]
             sq = sub_quant[_get_sub_quant_key(bi)]
+            # capture the ACTUAL pre-flip value (candidates may be stale) —
+            # used for the best-prefix rollback
+            old_value = tensor.data[bi["abs_r"], bi["abs_c"]].item()
+            tensor.data[bi["abs_r"], bi["abs_c"]] = bi["new_int8"] * sq["scale"]
             lr, lc = _local_idx(tensor_refs, bkey, bi["abs_r"], bi["abs_c"])
             sq["int8"][lr, lc] = bi["new_int8"]
 
@@ -224,6 +250,7 @@ class GreedySearcher:
                 position=(bi["abs_r"], bi["abs_c"]),
                 bit=bi["bit"], old_int8=bi["old_int8"],
                 new_int8=bi["new_int8"],
+                old_value=old_value,
                 delta_cos=bi["delta_cos"], drift=bi["drift"],
                 n_improved=bi["n_improved"],
                 score=best_score,
@@ -247,7 +274,7 @@ class GreedySearcher:
                 checkpoints.append((n_flips, a_full, c_full))
                 print(f"  [ckpt {n_flips}] ASR={a_full:.1f}%  "
                       f"CACC={c_full:.1f}%")
-            if flips_to_95 is None and a_full >= 95.0:
+            if flips_to_95 is None and a_full >= 95.0 - 1e-6:
                 flips_to_95 = n_flips
                 print(f"  Flips→95%: reached after {n_flips} accepted flip(s)")
                 if n_flips % cfg.CHECKPOINT_EVERY != 0:
@@ -264,9 +291,10 @@ class GreedySearcher:
             # of extra flips.
             if a_full > best_asr + 1e-9:
                 best_asr = a_full
+                best_flips = n_flips
             in_fine = cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_FINE_THRESHOLD
 
-            if cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_TARGET:
+            if cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_TARGET - 1e-6:
                 print(f"  ASR target ({cfg.ASR_TARGET}%) reached!")
                 stop_reason = "asr_target"
                 break
@@ -286,9 +314,34 @@ class GreedySearcher:
                     fine_anchor = (a_full, n_flips)   # slide the window
 
             if in_fine:
-                rebuild_candidates()          # rank one by one near the target
+                # rank one by one near the target, on the FAILING images
+                rebuild_candidates(grad_src=_failure_images())
             elif n_flips % cfg.REFRESH_EVERY == 0:
                 rebuild_candidates()
+
+        # ── A. Rollback to the best-ASR prefix ──
+        # The attack keeps only the first `best_flips` accepted flips — the
+        # state where ASR was highest.  Later flips (which lowered ASR) are
+        # undone so the final model is the best state seen.
+        flips_rolled_back = len(flip_log) - best_flips
+        if flips_rolled_back > 0:
+            print(f"\n  Rollback: undoing {flips_rolled_back} flip(s) after "
+                  f"the best-ASR prefix ({best_flips} flips, "
+                  f"ASR={best_asr:.1f}%)")
+            for f in reversed(flip_log[best_flips:]):
+                key = (f["layer"], f["head"], f["tensor"])
+                param = tensor_refs[key][0]
+                r, c = f["position"]
+                old_v = f.get("old_value",
+                              f["old_int8"] * sub_quant[_get_sub_quant_key(f)]["scale"])
+                param.data[r, c] = old_v
+                sq = sub_quant[_get_sub_quant_key(f)]
+                lr, lc = _local_idx(tensor_refs, key, r, c)
+                sq["int8"][lr, lc] = int(round(old_v / sq["scale"]))
+            flip_log = flip_log[:best_flips]
+            flip_metrics = {k: v for k, v in flip_metrics.items()
+                            if k <= best_flips}
+            checkpoints = [c for c in checkpoints if c[0] <= best_flips]
 
         a_f, c_f = self.evaluator.quick_evaluate(model, text_emb, trigger,
                                                  eval_imgs, eval_labels, tc,
@@ -298,22 +351,37 @@ class GreedySearcher:
         def _at(k, idx):
             return flip_metrics[k][idx] if k in flip_metrics else None
 
+        # ── F. Checkpoint carry-forward: the attack concludes at
+        #    len(flip_log) flips; ASR@k for larger k is the concluded state.
+        n_total = len(flip_log)
+        asr_10, cacc_10 = _at(10, 0), _at(10, 1)
+        asr_20, cacc_20 = _at(20, 0), _at(20, 1)
+        carried = False
+        if n_total < 10:
+            asr_10, cacc_10, carried = a_f, c_f, True
+        if n_total < 20:
+            asr_20, cacc_20, carried = a_f, c_f, True
+
         metrics = dict(
-            asr_at_10=_at(10, 0), cacc_at_10=_at(10, 1),
-            asr_at_20=_at(20, 0), cacc_at_20=_at(20, 1),
+            asr_at_10=asr_10, cacc_at_10=cacc_10,
+            asr_at_20=asr_20, cacc_at_20=cacc_20,
             flips_to_95=flips_to_95,
-            flips_total=len(flip_log),
+            flips_total=n_total,
+            flips_rolled_back=flips_rolled_back,
             asr_final=a_f, cacc_final=c_f,
             asr_best=best_asr,
             asr_base=asr_base, cacc_base=cacc_base,
             asr_target=cfg.ASR_TARGET,
+            asr_carried_forward=carried,
             stop_reason=stop_reason)
 
-        print(f"\n  Total flips : {len(flip_log)}  (stop: {stop_reason})")
+        print(f"\n  Total flips : {n_total}  (stop: {stop_reason}"
+              f"{f', {flips_rolled_back} rolled back' if flips_rolled_back else ''})")
         print(f"  Final ASR   : {a_f:.1f}%  (Δ = {a_f - asr_base:+.1f}%, "
               f"best = {best_asr:.1f}%)")
         print(f"  Final CACC  : {c_f:.1f}%  (Δ = {c_f - cacc_base:+.1f}%)")
-        print(f"  ASR@10={metrics['asr_at_10']}  ASR@20={metrics['asr_at_20']}  "
+        print(f"  ASR@10={metrics['asr_at_10']}  ASR@20={metrics['asr_at_20']}"
+              f"{'  (carried forward)' if carried else ''}  "
               f"Flips→95%={flips_to_95}")
 
         if flip_log:

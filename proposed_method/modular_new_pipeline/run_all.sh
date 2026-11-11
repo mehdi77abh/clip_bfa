@@ -37,7 +37,22 @@ OUT_ROOT="${OUT_ROOT:-./grid_results}"
 SEEDS="${SEEDS:-41 42 43}"        # validation + ablation: every seed × REPS repeats
 REPS="${REPS:-5}"                 # same-seed repeats per config
 SWEEP_SEED="${SWEEP_SEED:-41}"    # size/location sweeps: one seed, one run
+# Per-dataset target class (feline targets, canonical classes.txt lines):
+#   ImageNet1k 'lion' (line 292 → idx 291)  Caltech101 'wild cat' (line 98 → 97)
+#   CIFAR10 'cat' (line 4 → 3).  TARGET_CLS is the fallback for other datasets.
+TARGET_CLS_IMAGENET="${TARGET_CLS_IMAGENET:-291}"
+TARGET_CLS_CALTECH="${TARGET_CLS_CALTECH:-97}"
+TARGET_CLS_CIFAR10="${TARGET_CLS_CIFAR10:-3}"
 TARGET_CLS="${TARGET_CLS:-3}"
+
+target_cls_for() {
+    case "$1" in
+        ImageNet1k|ImageNet1kTrain) echo "$TARGET_CLS_IMAGENET" ;;
+        Caltech101)                 echo "$TARGET_CLS_CALTECH" ;;
+        CIFAR10|CIFAR100)           echo "$TARGET_CLS_CIFAR10" ;;
+        *)                          echo "$TARGET_CLS" ;;
+    esac
+}
 TRIG_SIZE="${TRIG_SIZE:-14}"
 MAX_FLIPS="${MAX_FLIPS:-80}"
 ASR_TARGET="${ASR_TARGET:-100}"
@@ -48,6 +63,8 @@ RESUME="${RESUME:-1}"
 
 # Validation matrix (RESULTS.md §1)
 MODELS="${MODELS:-ViT-B/16 ViT-L/14 ViT-L/14-336px SigLIP-B/16 SigLIP-so400m/14}"
+# size/location sweeps (default: all validation models; restrictable)
+SWEEP_MODELS="${SWEEP_MODELS:-$MODELS}"
 DATASETS="${DATASETS:-Caltech101 CIFAR10 ImageNet1k}"
 
 RUN_VALIDATION="${RUN_VALIDATION:-1}"
@@ -71,14 +88,15 @@ run_one() {
     local section="$1" model="$2" dataset="$3" seed="$4" rep="$5" seg="$6"
     shift 6
     local tag="${model//\//}"
-    local dir="$OUT_ROOT_ABS/$section/$tag/$dataset/zs/c$TARGET_CLS/s$seed/r$rep/$seg"
+    local tc="$(target_cls_for "$dataset")"
+    local dir="$OUT_ROOT_ABS/$section/$tag/$dataset/zs/c$tc/s$seed/r$rep/$seg"
     if [ "$RESUME" = "1" ] && [ -f "$dir/bfa_results.json" ]; then
         echo "[skip] $dir"
         return 0
     fi
-    echo "[run ] $section  $model  $dataset  s$seed r$rep  ($seg)"
+    echo "[run ] $section  $model  $dataset  c$tc  s$seed r$rep  ($seg)"
     "$PY" experiment.py --model "$model" --dataset "$dataset" \
-        --seed "$seed" --rep "$rep" --target-cls "$TARGET_CLS" \
+        --seed "$seed" --rep "$rep" --target-cls "$tc" \
         --max-flips "$MAX_FLIPS" --asr-target "$ASR_TARGET" \
         --asr-fine-threshold "$ASR_FINE_THRESHOLD" \
         --asr-fine-patience "$ASR_FINE_PATIENCE" \
@@ -126,11 +144,11 @@ if [ "$RUN_ABLATION" = "1" ]; then
     done
 fi
 
-# ═══ 3. TRIGGER-LOCATION SWEEP — all models, one dataset, one seed, one run ═══
+# ═══ 3. TRIGGER-LOCATION SWEEP — SWEEP_MODELS, one dataset, one seed, one run ═══
 # Train + eval at the same corner.
 if [ "$RUN_LOCATIONS" = "1" ]; then
-    echo "════════ TRIGGER LOCATIONS: $LOCATIONS (all models, $ABLATION_DATASET, s$SWEEP_SEED) ════════"
-    for model in $MODELS; do
+    echo "════════ TRIGGER LOCATIONS: $LOCATIONS (sweep models, $ABLATION_DATASET, s$SWEEP_SEED) ════════"
+    for model in $SWEEP_MODELS; do
         for loc in $LOCATIONS; do
             run_one ablation "$model" "$ABLATION_DATASET" "$SWEEP_SEED" 1 \
                 "full__t$TRIG_SIZE""__$loc" \
@@ -140,11 +158,11 @@ if [ "$RUN_LOCATIONS" = "1" ]; then
     done
 fi
 
-# ═══ 4. TRIGGER-SIZE SWEEP (RESULTS.md §3a) — all models, one dataset, one
+# ═══ 4. TRIGGER-SIZE SWEEP (RESULTS.md §3a) — SWEEP_MODELS, one dataset, one
 #    seed, one run — opt-in ═══
 if [ "$RUN_SIZE_SWEEP" = "1" ]; then
-    echo "════════ TRIGGER SIZES: $SIZES (all models, $ABLATION_DATASET, s$SWEEP_SEED) ════════"
-    for model in $MODELS; do
+    echo "════════ TRIGGER SIZES: $SIZES (sweep models, $ABLATION_DATASET, s$SWEEP_SEED) ════════"
+    for model in $SWEEP_MODELS; do
         for sz in $SIZES; do
             run_one ablation "$model" "$ABLATION_DATASET" "$SWEEP_SEED" 1 \
                 "full__t$sz" \

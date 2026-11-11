@@ -24,8 +24,8 @@ import statistics
 ID_COLS = ["section", "model", "dataset", "task", "target_cls", "seed", "rep",
            "variant", "trigger_size", "trigger_location"]
 METRIC_COLS = ["asr_at_10", "asr_at_20", "flips_to_95", "flips_total",
-               "asr_final", "cacc_final", "asr_base", "cacc_base",
-               "search_time_sec"]
+               "flips_rolled_back", "asr_final", "cacc_final", "asr_best",
+               "asr_base", "cacc_base", "search_time_sec"]
 GROUP_COLS = ["section", "model", "dataset", "task", "target_cls",
               "variant", "trigger_size", "trigger_location"]
 
@@ -60,17 +60,20 @@ def collect(out_root):
             asr_at_20=m.get("asr_at_20"),
             flips_to_95=m.get("flips_to_95"),
             flips_total=m.get("flips_total"),
+            flips_rolled_back=m.get("flips_rolled_back"),
             asr_final=m.get("asr_final"),
             cacc_final=m.get("cacc_final"),
+            asr_best=m.get("asr_best"),
             asr_base=m.get("asr_base"),
             cacc_base=m.get("cacc_base"),
+            stop_reason=m.get("stop_reason"),
             search_time_sec=rec.get("search_time_sec"),
             out_dir=dirpath))
     return rows
 
 
 def write_runs_csv(rows, path):
-    cols = ID_COLS + METRIC_COLS + ["out_dir"]
+    cols = ID_COLS + ["stop_reason"] + METRIC_COLS + ["out_dir"]
     with open(path, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
@@ -94,13 +97,15 @@ def write_summary_csv(rows, path):
         key = tuple(str(r[c]) for c in GROUP_COLS)
         groups.setdefault(key, []).append(r)
 
-    cols = GROUP_COLS + ["n_runs"] + \
+    cols = GROUP_COLS + ["n_runs", "stop_reasons"] + \
         [f"{c} (mean ± std)" for c in METRIC_COLS]
     lines = []
     for key in sorted(groups):
         rs = groups[key]
         row = dict(zip(GROUP_COLS, key))
         row["n_runs"] = len(rs)
+        row["stop_reasons"] = "/".join(sorted(
+            {str(r.get("stop_reason")) for r in rs if r.get("stop_reason")}))
         for c in METRIC_COLS:
             row[f"{c} (mean ± std)"] = _fmt([r.get(c) for r in rs])
         lines.append(row)

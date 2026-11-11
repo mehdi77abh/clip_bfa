@@ -35,9 +35,11 @@ gradient fallback.
   through it; SigLIP-B/16 and SigLIP-so400m/14 are registry models (HF `transformers`;
   needs `sentencepiece` + `protobuf`). Phase-4 metrics (ASR@10/@20, Flips→95%)
   with target-hunting stopping (`ASR_TARGET`=100 default; fine regime ≥90
-  re-ranks every flip and gives up unless ASR gains ≥ `ASR_FINE_MIN_GAIN`=1pp
-  per `ASR_FINE_PATIENCE`=3-flip window) are recorded in
-  `bfa_results.json["metrics"]`; `--trigger-location` (train+eval at one placement),
+  re-ranks every flip on the FAILING eval images and gives up unless ASR
+  gains ≥ `ASR_FINE_MIN_GAIN`=1pp per `ASR_FINE_PATIENCE`=3-flip window),
+  best-prefix rollback (`flips_rolled_back`) and checkpoint carry-forward
+  are recorded in `bfa_results.json["metrics"]`;
+  `--trigger-location` (train+eval at one placement),
   `--rep` (same-seed repeats), `Evaluator.lp_evaluate` + `--task lp`, `aggregate.py`
   (`runs.csv`/`summary.csv`) and `run_all.sh` (validation + ablation grids) are in.
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
@@ -147,6 +149,7 @@ modular_new_pipeline/
                        #   flags hook here
   main.py              # main(cfg) → AttackPipeline(cfg).run() + OOM try/catch
   aggregate.py         # runs.csv + summary.csv (mean ± std per config) from bfa_results.json
+                       #   (auto-refreshed after every experiment.py run; --no-aggregate opts out)
   run_all.sh           # validation + ablation grids (models × datasets × reps, variants,
                        #   trigger-location sweep) → aggregate at the end
 ```

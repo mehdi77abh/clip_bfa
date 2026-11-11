@@ -159,6 +159,9 @@ def parse_args():
                       help="save model_state_attacked.pt (attacked state_dict) "
                            "for defence / VLM-transfer evaluation — off by "
                            "default; grids enable it selectively")
+    misc.add_argument("--no-aggregate", action="store_true",
+                      help="skip the automatic runs.csv/summary.csv refresh "
+                           "after the run")
 
     return parser.parse_args()
 
@@ -303,10 +306,25 @@ def _or(value, fallback):
 # ══════════════════════════════════════════════════════════════════════
 #  ENTRY
 # ══════════════════════════════════════════════════════════════════════
+def refresh_summaries(out_root):
+    """Best-effort runs.csv + summary.csv refresh (aggregate.py)."""
+    try:
+        from aggregate import collect, write_runs_csv, write_summary_csv
+        rows = collect(out_root)
+        if rows:
+            write_runs_csv(rows, os.path.join(out_root, "runs.csv"))
+            write_summary_csv(rows, os.path.join(out_root, "summary.csv"))
+    except Exception as e:
+        print(f"  (summary refresh skipped: {type(e).__name__}: {e})")
+
+
 def run():
     args = parse_args()
     cfg = build_config(args)
-    return run_attack(cfg)
+    result = run_attack(cfg)
+    if not args.no_aggregate:
+        refresh_summaries(cfg.OUT_ROOT)
+    return result
 
 
 if __name__ == "__main__":
