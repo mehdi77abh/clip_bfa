@@ -37,6 +37,23 @@ OUT_ROOT="${OUT_ROOT:-./grid_results}"
 SEEDS="${SEEDS:-41 42 43}"        # validation + ablation: every seed × REPS repeats
 REPS="${REPS:-5}"                 # same-seed repeats per config
 SWEEP_SEED="${SWEEP_SEED:-41}"    # size/location sweeps: one seed, one run
+P1_EPOCHS="${P1_EPOCHS:-300}"
+
+# Per-dataset eval-set size for the ASR metrics (--n-eval)
+N_EVAL_IMAGENET="${N_EVAL_IMAGENET:-1000}"
+N_EVAL_CALTECH="${N_EVAL_CALTECH:-1000}"
+N_EVAL_CIFAR10="${N_EVAL_CIFAR10:-1000}"
+N_EVAL_DEFAULT="${N_EVAL_DEFAULT:-200}"
+
+n_eval_for() {
+    case "$1" in
+        ImageNet1k|ImageNet1kTrain) echo "$N_EVAL_IMAGENET" ;;
+        Caltech101)                 echo "$N_EVAL_CALTECH" ;;
+        CIFAR10|CIFAR100)           echo "$N_EVAL_CIFAR10" ;;
+        *)                          echo "$N_EVAL_DEFAULT" ;;
+    esac
+}
+
 # Per-dataset target class (feline targets, canonical classes.txt lines):
 #   ImageNet1k 'lion' (line 292 → idx 291)  Caltech101 'wild cat' (line 98 → 97)
 #   CIFAR10 'cat' (line 4 → 3).  TARGET_CLS is the fallback for other datasets.
@@ -89,14 +106,16 @@ run_one() {
     shift 6
     local tag="${model//\//}"
     local tc="$(target_cls_for "$dataset")"
+    local ne="$(n_eval_for "$dataset")"
     local dir="$OUT_ROOT_ABS/$section/$tag/$dataset/zs/c$tc/s$seed/r$rep/$seg"
     if [ "$RESUME" = "1" ] && [ -f "$dir/bfa_results.json" ]; then
         echo "[skip] $dir"
         return 0
     fi
-    echo "[run ] $section  $model  $dataset  c$tc  s$seed r$rep  ($seg)"
+    echo "[run ] $section  $model  $dataset  c$tc  n_eval=$ne  s$seed r$rep  ($seg)"
     "$PY" experiment.py --model "$model" --dataset "$dataset" \
         --seed "$seed" --rep "$rep" --target-cls "$tc" \
+        --n-eval "$ne" --p1-epochs "$P1_EPOCHS" \
         --max-flips "$MAX_FLIPS" --asr-target "$ASR_TARGET" \
         --asr-fine-threshold "$ASR_FINE_THRESHOLD" \
         --asr-fine-patience "$ASR_FINE_PATIENCE" \
