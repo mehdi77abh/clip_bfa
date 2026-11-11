@@ -15,8 +15,11 @@
 # evaluation) is saved ONLY for ViT-L/14 × ImageNet1k × last seed × last rep
 # — gated by experiment.py's --save-attacked-model.
 #
-# ASR_TARGET=0 disables the ASR early stop so ASR@10 / ASR@20 are always
-# defined (Flips→95% is tracked regardless).
+# Target hunting: ASR_TARGET=100 stops as soon as ASR reaches it.  In the
+# fine regime (ASR >= ASR_FINE_THRESHOLD) the ranking is rebuilt after every
+# accepted flip and the search gives up after ASR_FINE_PATIENCE accepted
+# flips without ASR improvement — so 95→100 never costs an unbounded number
+# of extra flips.  (ASR_TARGET=0 = run the full MAX_FLIPS budget.)
 #
 # Re-running skips configs whose bfa_results.json exists (RESUME=1).
 #
@@ -36,7 +39,9 @@ SWEEP_SEED="${SWEEP_SEED:-41}"    # size/location sweeps: one seed, one run
 TARGET_CLS="${TARGET_CLS:-3}"
 TRIG_SIZE="${TRIG_SIZE:-14}"
 MAX_FLIPS="${MAX_FLIPS:-80}"
-ASR_TARGET="${ASR_TARGET:-0}"
+ASR_TARGET="${ASR_TARGET:-100}"
+ASR_FINE_THRESHOLD="${ASR_FINE_THRESHOLD:-90}"
+ASR_FINE_PATIENCE="${ASR_FINE_PATIENCE:-3}"
 RESUME="${RESUME:-1}"
 
 # Validation matrix (RESULTS.md §1)
@@ -73,6 +78,8 @@ run_one() {
     "$PY" experiment.py --model "$model" --dataset "$dataset" \
         --seed "$seed" --rep "$rep" --target-cls "$TARGET_CLS" \
         --max-flips "$MAX_FLIPS" --asr-target "$ASR_TARGET" \
+        --asr-fine-threshold "$ASR_FINE_THRESHOLD" \
+        --asr-fine-patience "$ASR_FINE_PATIENCE" \
         --out-root "$OUT_ROOT_ABS" --section "$section" "$@"
 }
 

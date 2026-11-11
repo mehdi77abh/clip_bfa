@@ -79,9 +79,16 @@ def parse_args():
                      help="trigger patch size in pixels (default: 14)")
     run.add_argument("--max-flips", type=int, default=80,
                      help="bit-flip budget (default: 80)")
-    run.add_argument("--asr-target", type=float, default=95.0,
-                     help="early-stop ASR target in %% (default: 95; "
-                          "0 disables the early stop)")
+    run.add_argument("--asr-target", type=float, default=100.0,
+                     help="stop when ASR reaches this %% (default: 100; "
+                          "0 disables the target stop)")
+    run.add_argument("--asr-fine-threshold", type=float, default=90.0,
+                     help="fine regime: at/above this ASR the ranking is "
+                          "rebuilt after every accepted flip and the "
+                          "fine-patience give-up applies (default: 90)")
+    run.add_argument("--asr-fine-patience", type=int, default=3,
+                     help="fine regime: stop after this many accepted flips "
+                          "without any ASR improvement (default: 3)")
     run.add_argument("--variant", default="full",
                      choices=["full", "d", "a", "b", "c", "clip_flip"],
                      help="ablation variant (ABLATION.md): full/d/clip_flip = "
@@ -219,7 +226,9 @@ def build_config(args):
     cfg.TRIGGER_LOCATION = args.trigger_location  # None = legacy mapping
     cfg.TRIG_SZ = args.trigger_size
     cfg.MAX_FLIPS = args.max_flips
-    cfg.ASR_TARGET = args.asr_target              # 0 = no early stop
+    cfg.ASR_TARGET = args.asr_target              # 0 = no target stop
+    cfg.ASR_FINE_THRESHOLD = args.asr_fine_threshold
+    cfg.ASR_FINE_PATIENCE = args.asr_fine_patience
 
     cfg.P1_EPOCHS = args.p1_epochs
     cfg.P1_LR = args.p1_lr

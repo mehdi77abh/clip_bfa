@@ -13,8 +13,16 @@ architectures alike.
 Phase-4 metrics (RESULTS.md §0): ASR/CACC are evaluated after EVERY
 accepted flip and recorded at exactly 10 and 20 flips
 (``metrics['asr_at_10']`` / ``['asr_at_20']``), and ``flips_to_95`` is
-the first accepted-flip count where ASR ≥ 95%.  ``cfg.ASR_TARGET``
-(default 95) is the early stop; 0 disables it.
+the first accepted-flip count where ASR ≥ 95%.
+
+Target hunting: ``cfg.ASR_TARGET`` (default 100) stops the search as soon
+as ASR reaches it (0 disables).  In the fine regime (ASR ≥
+``cfg.ASR_FINE_THRESHOLD``, default 90) the ranking is rebuilt after every
+accepted flip and the search gives up after ``cfg.ASR_FINE_PATIENCE``
+(default 3) accepted flips without ASR improvement — squeezing 95→100
+never costs an unbounded number of extra flips.  ``metrics['stop_reason']``
+records why the search ended (asr_target | fine_patience | plateau |
+no_candidates | max_flips).
 """
 
 from collections import Counter
@@ -104,6 +112,9 @@ class GreedySearcher:
         checkpoints = [(0, asr, cacc)]
         flip_metrics = {}          # accepted-flip count → (asr, cacc)
         flips_to_95 = None
+        best_asr = asr
+        fine_stale = 0             # fine-regime flips without ASR improvement
+        stop_reason = "max_flips"
         ranked = list(ranked_flips)
         cand_ptr = 0
         no_improve = 0
@@ -130,6 +141,7 @@ class GreedySearcher:
                 rebuild_candidates()
                 if len(ranked) == 0:
                     print("  No candidates — stopping.")
+                    stop_reason = "no_candidates"
                     break
 
             batch = ranked[cand_ptr:cand_ptr + cfg.CANDS_PER_ROUND]
@@ -182,6 +194,7 @@ class GreedySearcher:
                       f"(streak {no_improve}/{cfg.PLATEAU_PATIENCE})")
                 if no_improve >= cfg.PLATEAU_PATIENCE:
                     print("  Plateau reached.")
+                    stop_reason = "plateau"
                     break
                 continue
 
@@ -237,11 +250,36 @@ class GreedySearcher:
                 print(f"  Flips→95%: reached after {n_flips} accepted flip(s)")
                 if n_flips % cfg.CHECKPOINT_EVERY != 0:
                     checkpoints.append((n_flips, a_full, c_full))
+
+            # ── Target hunting (ASR_TARGET, default 100) ──
+            # Stop as soon as the target is reached.  In the FINE regime
+            # (ASR >= ASR_FINE_THRESHOLD, default 90) the ranking is rebuilt
+            # after every accepted flip ("one by one") and the search gives up
+            # after ASR_FINE_PATIENCE (default 3) accepted flips without any
+            # ASR improvement — so pushing 95→100 never costs an unbounded
+            # number of extra flips.
+            improved = a_full > best_asr + 1e-9
+            if improved:
+                best_asr = a_full
+                fine_stale = 0
+            in_fine = cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_FINE_THRESHOLD
+            if in_fine and not improved:
+                fine_stale += 1
+
             if cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_TARGET:
                 print(f"  ASR target ({cfg.ASR_TARGET}%) reached!")
+                stop_reason = "asr_target"
+                break
+            if in_fine and fine_stale >= cfg.ASR_FINE_PATIENCE:
+                print(f"  Fine-stage plateau: no ASR improvement in "
+                      f"{cfg.ASR_FINE_PATIENCE} accepted flips "
+                      f"(best ASR={best_asr:.1f}%) — stopping.")
+                stop_reason = "fine_patience"
                 break
 
-            if n_flips % cfg.REFRESH_EVERY == 0:
+            if in_fine:
+                rebuild_candidates()          # rank one by one near the target
+            elif n_flips % cfg.REFRESH_EVERY == 0:
                 rebuild_candidates()
 
         a_f, c_f = self.evaluator.quick_evaluate(model, text_emb, trigger,
@@ -258,11 +296,14 @@ class GreedySearcher:
             flips_to_95=flips_to_95,
             flips_total=len(flip_log),
             asr_final=a_f, cacc_final=c_f,
+            asr_best=best_asr,
             asr_base=asr_base, cacc_base=cacc_base,
-            asr_target=cfg.ASR_TARGET)
+            asr_target=cfg.ASR_TARGET,
+            stop_reason=stop_reason)
 
-        print(f"\n  Total flips : {len(flip_log)}")
-        print(f"  Final ASR   : {a_f:.1f}%  (Δ = {a_f - asr_base:+.1f}%)")
+        print(f"\n  Total flips : {len(flip_log)}  (stop: {stop_reason})")
+        print(f"  Final ASR   : {a_f:.1f}%  (Δ = {a_f - asr_base:+.1f}%, "
+              f"best = {best_asr:.1f}%)")
         print(f"  Final CACC  : {c_f:.1f}%  (Δ = {c_f - cacc_base:+.1f}%)")
         print(f"  ASR@10={metrics['asr_at_10']}  ASR@20={metrics['asr_at_20']}  "
               f"Flips→95%={flips_to_95}")

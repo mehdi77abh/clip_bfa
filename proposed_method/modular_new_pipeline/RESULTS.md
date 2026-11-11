@@ -155,10 +155,15 @@ sweeps).
    **location**, max-flips, asr-target, out-root, out-dir, split overrides,
    phase hyperparameters, variant, lp-head).  `config.py` is registry-only;
    baseline mode (`ours|random|simple_grad`) still pending (#4).
-2. **Phase-4 metrics:** DONE (`search.py`, 2026-11-10) — exact checkpoints at
-   10 and 20 accepted flips, `flips_to_95` tracking, `ASR_TARGET` configurable
-   (default 95; **0 disables the early stop** — use 0 for table-production runs
-   so ASR@10/@20 always exist).  Recorded in `bfa_results.json["metrics"]`.
+2. **Phase-4 metrics:** DONE (`search.py`) — exact checkpoints at 10 and 20
+   accepted flips, `flips_to_95` tracking, and **target hunting**:
+   `ASR_TARGET` (default **100**) stops at the target (0 disables); in the
+   fine regime (ASR ≥ `ASR_FINE_THRESHOLD`, default 90) the ranking is rebuilt
+   after every accepted flip and the search gives up after
+   `ASR_FINE_PATIENCE` (default 3) accepted flips without ASR improvement —
+   pushing 95→100 never costs an unbounded number of extra flips.
+   `metrics["stop_reason"]` ∈ asr_target | fine_patience | plateau |
+   no_candidates | max_flips.  Recorded in `bfa_results.json["metrics"]`.
 3. **`linear_probe.py` (new, standalone):** DONE — trains + saves the head;
    evaluation via `Evaluator.lp_evaluate` + `--task lp` (TASKS.md §2).
 4. **Baseline rankers:** PENDING — a baseline mode (ours | random |
