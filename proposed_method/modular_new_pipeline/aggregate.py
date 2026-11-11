@@ -21,12 +21,12 @@ import json
 import os
 import statistics
 
-ID_COLS = ["model", "dataset", "task", "target_cls", "seed", "rep",
+ID_COLS = ["section", "model", "dataset", "task", "target_cls", "seed", "rep",
            "variant", "trigger_size", "trigger_location"]
 METRIC_COLS = ["asr_at_10", "asr_at_20", "flips_to_95", "flips_total",
                "asr_final", "cacc_final", "asr_base", "cacc_base",
                "search_time_sec"]
-GROUP_COLS = ["model", "dataset", "task", "target_cls",
+GROUP_COLS = ["section", "model", "dataset", "task", "target_cls",
               "variant", "trigger_size", "trigger_location"]
 
 
@@ -45,6 +45,7 @@ def collect(out_root):
         cfg = rec.get("config", {})
         m = rec.get("metrics", {})
         rows.append(dict(
+            section=rec.get("section", cfg.get("SECTION")),
             model=cfg.get("MODEL_NAME"),
             dataset=cfg.get("DATASET"),
             task=cfg.get("TASK"),
@@ -111,11 +112,12 @@ def write_summary_csv(rows, path):
     print(f"  summary.csv → {path}  ({len(lines)} configs)")
 
     # compact echo of the main table columns
-    print(f"\n  {'model':<16} {'dataset':<11} {'variant':<6} {'loc':<13} "
-          f"{'ASR@10':>15} {'ASR@20':>15} {'Flips→95%':>15} {'CACC':>15}")
+    print(f"\n  {'section':<11} {'model':<16} {'dataset':<11} {'variant':<6} "
+          f"{'loc':<13} {'ASR@10':>15} {'ASR@20':>15} {'Flips→95%':>15} {'CACC':>15}")
     for row in lines:
-        print(f"  {row['model']:<16} {row['dataset']:<11} "
-              f"{row['variant']:<6} {str(row['trigger_location']):<13} "
+        print(f"  {str(row['section']):<11} {row['model']:<16} "
+              f"{row['dataset']:<11} {row['variant']:<6} "
+              f"{str(row['trigger_location']):<13} "
               f"{row['asr_at_10 (mean ± std)']:>15} "
               f"{row['asr_at_20 (mean ± std)']:>15} "
               f"{row['flips_to_95 (mean ± std)']:>15} "

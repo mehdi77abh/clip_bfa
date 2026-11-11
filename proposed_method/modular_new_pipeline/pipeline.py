@@ -211,6 +211,18 @@ class AttackPipeline:
             layer_R=layer_R, sub_quant=sub_quant)
         search_time = time.time() - t0
 
+        # ── Save attacked model state (flagged: for defence / VLM-transfer
+        #    evaluation; grids enable it selectively) ──
+        model_state_attacked_path = None
+        if getattr(cfg, "SAVE_ATTACKED_MODEL", False):
+            model_state_attacked_path = os.path.join(
+                cfg.OUT_DIR, "model_state_attacked.pt")
+            torch.save({k: v.detach().cpu().clone()
+                        for k, v in model.state_dict().items()},
+                       model_state_attacked_path)
+            print(f"\n  Attacked model state saved → "
+                  f"{model_state_attacked_path}")
+
         del quant_dict, grad_imgs
         cleanup_gpu()
 
@@ -274,6 +286,8 @@ class AttackPipeline:
             "metrics": metrics,
             "rep": getattr(cfg, "REP", 1),
             "trigger_location": getattr(cfg, "TRIGGER_LOCATION", None),
+            "section": getattr(cfg, "SECTION", None),
+            "model_state_attacked": model_state_attacked_path,
 
             "results": {
                 "post_flip_test": {k: v for k, v in r_final.items()

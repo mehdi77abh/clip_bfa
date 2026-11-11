@@ -122,17 +122,21 @@ post-hoc defences.
 Results/
 ├── runs.csv                          # global (every run, every variant) — aggregate.py
 ├── summary.csv                       # mean ± std per config — aggregate.py
-└── {model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/
+└── {section}/{model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/
     └── {variant}__t{sz}[__{loc}]/
         ├── bfa_results.json          # full record: flip_log, checkpoints,
         │                                 #   metrics (ASR@10/@20, Flips→95%),
         │                                 #   layer_R, selected components, timings
         ├── trigger.pt
         ├── original_weights.pt
-        └── model_state_attacked.pt       # (new) for defence evaluation
+        └── model_state_attacked.pt       # --save-attacked-model (for defence /
+                                          #   VLM-transfer evaluation)
 lp_probes/
 └── {model}_{dataset}.pt              # (new) trained linear-probe layers
 ```
+
+`{section}` is `validation` | `baselines` | `ablation` (`--section`) — the
+three top-level results groups.
 
 `bfa_results.json` must contain `metrics` with `asr_at_10`, `asr_at_20`,
 `cacc_at_10`, `cacc_at_20`, `flips_to_95` and `checkpoints` entries at
@@ -164,8 +168,11 @@ sweeps).
 5. **Ablation variants:** DONE — `--variant full|a|b|c` (ABLATION.md);
    trigger-size sweep via `--trigger-size`; trigger-**location** sweep via
    `--trigger-location` (train + eval at the same placement).
-6. **Save attacked model state** per run for the defence section; FaR and
-   fine-tuning defence evaluation scripts (later step). PENDING.
+6. **Save attacked model state:** DONE (flagged) — `--save-attacked-model`
+   writes `model_state_attacked.pt` (attacked state_dict) after Phase 4;
+   `run_all.sh` enables it only for ViT-L/14 × ImageNet1k × last seed × last
+   rep (saved for the later VLM-transfer / defence evaluation).  FaR and
+   fine-tuning defence evaluation scripts: PENDING.
 7. **Aggregation:** DONE — `aggregate.py` writes `runs.csv` + `summary.csv`
    (mean ± std per config); `run_all.sh` runs the validation + ablation grids
    and aggregates at the end.

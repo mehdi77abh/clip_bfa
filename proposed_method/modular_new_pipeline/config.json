@@ -10,6 +10,11 @@
       "clip_name":  "ViT-L/14",
       "patch_size": 14
     },
+    "ViT-L/14-336px": {
+      "adapter":    "openai_clip",
+      "clip_name":  "ViT-L/14@336px",
+      "patch_size": 14
+    },
     "ViT-B/32": {
       "adapter":    "openai_clip",
       "clip_name":  "ViT-B/32",

@@ -28,7 +28,8 @@ gradient fallback.
 - Step 2b (task/ablation): `--task {zs,lp,i2t}` (zs + **lp evaluation implemented**;
   i2t raises `NotImplementedError` — protocols in TASKS.md) and
   `--variant {full,d,a,b,c,clip_flip}` wired to the ablation behaviours (ABLATION.md).
-  Output layout: `{out_root}/{model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/{variant}__t{sz}[__{loc}]`.
+  Output layout: `{out_root}/{section}/{model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/{variant}__t{sz}[__{loc}]`
+  with `--section {validation,baselines,ablation}` as the top-level results group.
 - **Adapter layer (2026-11-10):** `adapters.py` (`ModelAdapter` ABC + `OpenAICLIPAdapter` +
   `SigLIPAdapter` + `get_adapter`/`load_model` factories) — every architecture access goes
   through it; SigLIP-B/16 and SigLIP-so400m/14 are registry models (HF `transformers`;
@@ -37,10 +38,11 @@ gradient fallback.
   `--rep` (same-seed repeats), `Evaluator.lp_evaluate` + `--task lp`, `aggregate.py`
   (`runs.csv`/`summary.csv`) and `run_all.sh` (validation + ablation grids) are in.
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
-  (random / simple-gradient, #4), attacked-model saving (`model_state_attacked.pt`,
-  #6), `--task i2t` retrieval branch (TASKS.md §3). DONE so far: Phase-4 metrics
+  (random / simple-gradient, #4), FaR / fine-tuning defence scripts (DEFENSES.md;
+  the attacked-model saving half of #6 is done via `--save-attacked-model`),
+  `--task i2t` retrieval branch (TASKS.md §3). DONE so far: Phase-4 metrics
   (#2), `linear_probe.py` + LP evaluation (#3), ablation variants (#5),
-  aggregation `runs.csv`/`summary.csv` (#7).
+  attacked-model state saving (flagged, #6a), aggregation `runs.csv`/`summary.csv` (#7).
 
 ## Reference sync log (behavioural deltas of the 2026-11-08 maintainer edit)
 
@@ -63,10 +65,12 @@ Synced into this folder:
 
 ## Configuration: registry + arguments (no grid config file)
 
-- **`config.json`** holds ONLY the registry: `models` (clip_name, patch_size hint),
-  `datasets` (loader, root, split sizes, class_text_dir), `paths` (output_root,
-  lp_head_root). Currently: ViT-B/16, ViT-L/14, ViT-B/32 × Caltech101, CIFAR10,
-  ImageNet1k (loader `ImageNet`, `../data/imagenet`, split val — prepare_imagenet.py).
+- **`config.json`** holds ONLY the registry: `models` (adapter, clip_name / hf_name,
+  patch_size hint), `datasets` (loader, root, split sizes, class_text_dir), `paths`
+  (output_root, lp_head_root). Currently: ViT-B/16, ViT-L/14, ViT-L/14-336px
+  (clip_name `ViT-L/14@336px`, 336px input), ViT-B/32, SigLIP-B/16,
+  SigLIP-so400m/14 × Caltech101, CIFAR10, ImageNet1k (loader `ImageNet`,
+  `../data/imagenet`, split val — prepare_imagenet.py).
 - **Registry paths are CWD-independent**: relative paths (`../data/...`,
   `./grid_results`, `class_texts/...`) resolve via `config.resolve_path` against
   `proposed_method/` (the `../data` convention); `class_text_dir` resolves against
@@ -170,7 +174,7 @@ modular_new_pipeline/
 5. `run()` returns the `save` dict (the reference returns nothing) — `experiment.py` uses it.
 6. Phase-5 analysis kept as an unwired module (see sync log #4).
 
-## OOM contract (implemented in `main.py`)
+## OOM & error contract (implemented in `main.py`)
 
 - `main(cfg)` wraps `AttackPipeline(cfg).run()` in try/except; catches
   `torch.cuda.OutOfMemoryError` and `RuntimeError` matching `out of memory` (HIP too).
@@ -179,7 +183,11 @@ modular_new_pipeline/
   simply continues with the next configuration. Never let one OOM abort a shell loop.
 - `oom_pending.json` is the deferred work-list for a bigger GPU: each entry's `argv`
   is the exact re-run command.
-- Non-OOM exceptions propagate (non-zero exit for the shell script).
+- **Any other exception** is recorded the same way to `failed_runs.json`:
+  identity + **full config** + `error_type` / `error` / `traceback` (+ `argv`, `time`),
+  then the process also **returns cleanly (exit 0)** so the grid continues.  The
+  traceback is printed to the console too.  Inspect `failed_runs.json` after a grid
+  run for the bug reasons.  `KeyboardInterrupt`/`SystemExit` still propagate.
 
 ## Binding constraints
 

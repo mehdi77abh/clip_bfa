@@ -52,6 +52,11 @@ def parse_args():
                      help="evaluation task: zs = zero-shot (implemented) | "
                           "lp = linear-probe (needs a trained probe head) | "
                           "i2t = image-to-text retrieval (future — see TASKS.md)")
+    sel.add_argument("--section", default="validation",
+                     choices=["validation", "baselines", "ablation"],
+                     help="results section — top-level output group "
+                          "(default: validation; baselines/ablation for the "
+                          "comparison and ablation grids)")
     sel.add_argument("--seed", type=int, default=42,
                      help="random seed (default: 42)")
     sel.add_argument("--rep", type=int, default=1,
@@ -140,6 +145,10 @@ def parse_args():
     misc.add_argument("--lp-head", default=None,
                       help="linear-probe checkpoint for --task lp (default: "
                            "{lp_head_root}/{model_tag}_{dataset}.pt)")
+    misc.add_argument("--save-attacked-model", action="store_true",
+                      help="save model_state_attacked.pt (attacked state_dict) "
+                           "for defence / VLM-transfer evaluation — off by "
+                           "default; grids enable it selectively")
 
     return parser.parse_args()
 
@@ -256,17 +265,19 @@ def build_config(args):
     # ── run identity & outputs ──
     cfg.SEED = seed
     cfg.REP = int(args.rep)
+    cfg.SECTION = args.section
+    cfg.SAVE_ATTACKED_MODEL = bool(args.save_attacked_model)
     run_seg = f"{variant}__t{args.trigger_size}"
     if cfg.TRIGGER_LOCATION:
         run_seg += f"__{cfg.TRIGGER_LOCATION}"
-    cfg.RUN_ID = f"{tag}__{dataset}__{args.task}__c{args.target_cls}__" \
-                 f"{run_seg}__s{seed}__r{cfg.REP}"
+    cfg.RUN_ID = f"{cfg.SECTION}__{tag}__{dataset}__{args.task}__" \
+                 f"c{args.target_cls}__{run_seg}__s{seed}__r{cfg.REP}"
     cfg.OUT_ROOT = out_root
     cfg.LP_HEAD_ROOT = resolve_path(paths["lp_head_root"])
     cfg.LP_HEAD = args.lp_head or os.path.join(
         cfg.LP_HEAD_ROOT, f"{tag}_{dataset}.pt")
     cfg.OUT_DIR = args.out_dir or os.path.join(
-        out_root, tag, dataset, args.task, f"c{args.target_cls}",
+        out_root, cfg.SECTION, tag, dataset, args.task, f"c{args.target_cls}",
         f"s{seed}", f"r{cfg.REP}", run_seg)
 
     return cfg
