@@ -64,7 +64,7 @@ class CFG:
     TARGET_CLS = 3
     DATA = "../data"
     DATASET_NAME = "Caltech101"
-    DOWNLOAD = False
+    DOWNLOAD = True
     BATCH = 8
     MINI_BS = 4
     WORKERS = 2
