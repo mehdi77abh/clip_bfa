@@ -113,9 +113,9 @@ def parse_args():
     data.add_argument("--n-target-images", type=int, default=None,
                       help="override registry splits.n_trigger "
                            "(target-class images)")
-    data.add_argument("--n-calib", type=int, default=None,
-                      help="override registry splits.n_trigger "
-                           "(trigger-training / ablation calibration)")
+    data.add_argument("--n-calib", type=int, default=64,
+                      help="trigger-training / ablation calibration images "
+                           "(default: 64; registry splits.n_trigger = 32)")
     data.add_argument("--n-grad", type=int, default=None,
                       help="override registry splits.n_gradient")
     data.add_argument("--n-eval", type=int, default=None,
@@ -124,6 +124,12 @@ def parse_args():
     p1 = parser.add_argument_group("phase 1 — trigger training")
     p1.add_argument("--p1-epochs", type=int, default=200)
     p1.add_argument("--p1-lr", type=float, default=0.02)
+    p1.add_argument("--trigger-min-asr", type=float, default=5.0,
+                    help="Phase-1 dead-trigger floor in %%: retrain the "
+                         "trigger with a fresh P1 seed below it (default: 5)")
+    p1.add_argument("--trigger-retries", type=int, default=3,
+                    help="max Phase-1 retries with a fresh P1 seed "
+                         "(default: 3)")
     p1.add_argument("--tv-weight", type=float, default=0.0)
     p1.add_argument("--temperature", type=float, default=0.07)
     p1.add_argument("--epsilon", type=float, default=8.0 / 255.0,
@@ -239,6 +245,8 @@ def build_config(args):
 
     cfg.P1_EPOCHS = args.p1_epochs
     cfg.P1_LR = args.p1_lr
+    cfg.TRIGGER_MIN_ASR = args.trigger_min_asr
+    cfg.TRIGGER_RETRIES = args.trigger_retries
     cfg.TV_WEIGHT = args.tv_weight
     cfg.TEMPERATURE = args.temperature
     cfg.EPSILON = args.epsilon

@@ -35,9 +35,11 @@ set -u
 PY="${PY:-python}"
 OUT_ROOT="${OUT_ROOT:-./grid_results}"
 SEEDS="${SEEDS:-41 42 43}"        # validation + ablation: every seed × REPS repeats
-REPS="${REPS:-5}"                 # same-seed repeats per config
+REPS="${REPS:-2}"                 # same-seed repeats (pipeline is deterministic —
+                                  # reps are a consistency check, not noise sampling)
 SWEEP_SEED="${SWEEP_SEED:-41}"    # size/location sweeps: one seed, one run
 P1_EPOCHS="${P1_EPOCHS:-300}"
+N_CALIB="${N_CALIB:-64}"
 
 # Per-dataset eval-set size for the ASR metrics (--n-eval)
 N_EVAL_IMAGENET="${N_EVAL_IMAGENET:-1000}"
@@ -70,12 +72,14 @@ target_cls_for() {
         *)                          echo "$TARGET_CLS" ;;
     esac
 }
-TRIG_SIZE="${TRIG_SIZE:-14}"
+TRIG_SIZE="${TRIG_SIZE:-16}"
 MAX_FLIPS="${MAX_FLIPS:-80}"
 ASR_TARGET="${ASR_TARGET:-100}"
 ASR_FINE_THRESHOLD="${ASR_FINE_THRESHOLD:-90}"
 ASR_FINE_PATIENCE="${ASR_FINE_PATIENCE:-3}"
 ASR_FINE_MIN_GAIN="${ASR_FINE_MIN_GAIN:-1.0}"
+TRIGGER_MIN_ASR="${TRIGGER_MIN_ASR:-5.0}"
+TRIGGER_RETRIES="${TRIGGER_RETRIES:-3}"
 RESUME="${RESUME:-1}"
 
 # Validation matrix (RESULTS.md §1)
@@ -116,10 +120,13 @@ run_one() {
     "$PY" experiment.py --model "$model" --dataset "$dataset" \
         --seed "$seed" --rep "$rep" --target-cls "$tc" \
         --n-eval "$ne" --p1-epochs "$P1_EPOCHS" \
+        --n-calib "$N_CALIB" \
         --max-flips "$MAX_FLIPS" --asr-target "$ASR_TARGET" \
         --asr-fine-threshold "$ASR_FINE_THRESHOLD" \
         --asr-fine-patience "$ASR_FINE_PATIENCE" \
         --asr-fine-min-gain "$ASR_FINE_MIN_GAIN" \
+        --trigger-min-asr "$TRIGGER_MIN_ASR" \
+        --trigger-retries "$TRIGGER_RETRIES" \
         --out-root "$OUT_ROOT_ABS" --section "$section" "$@"
 }
 

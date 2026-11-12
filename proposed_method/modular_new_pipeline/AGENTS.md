@@ -104,7 +104,9 @@ Synced into this folder:
 - Run dirs: `{out_root}/{model_tag}/{dataset}/{task}/c{target_cls}/s{seed}/{variant}__t{trigger_size}`
   (`model_tag`: `ViT-B/16` → `ViT-B16`). `bfa_results.json`'s `config` key captures the
   full cfg.
-- `splits.n_trigger` sets **both** `N_TARGET_IMAGES` and `N_CALIB` (agreed; 32 = 32 today).
+- `splits.n_trigger` sets `N_TARGET_IMAGES` and the `N_CALIB` fallback (32).
+  **2026-11-12:** `N_CALIB` default raised to **64** (`--n-calib`, propagated by
+  `run_all.sh`) for stronger Phase-1 triggers; `N_TARGET_IMAGES` stays 32.
 
 ## Layout
 
@@ -146,7 +148,8 @@ modular_new_pipeline/
   visualization.py     # Visualizer: trigger PNG, composite, ablation plot (+ retrieval, unwired)
   results.py           # ResultWriter.save (bfa_results.json + trigger.pt + original_weights.pt)
   pipeline.py          # AttackPipeline: Phase 0→4 + final eval (+ lp eval for --task lp);
-                       #   flags hook here
+                       #   flags hook here; Phase-1 dead-trigger retries
+                       #   (--trigger-min-asr / --trigger-retries)
   main.py              # main(cfg) → AttackPipeline(cfg).run() + OOM try/catch
   aggregate.py         # runs.csv + summary.csv (mean ± std per config) from bfa_results.json
                        #   (auto-refreshed after every experiment.py run; --no-aggregate opts out)

@@ -62,8 +62,8 @@ class CFG:
     MODEL = "ViT-B/16"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
     TARGET_CLS = 3
-    DATA = "../data"
-    DATASET_NAME = "Caltech101"
+    DATA = "../data/imagenet"
+    DATASET_NAME = "ImageNet"
     DOWNLOAD = True
     BATCH = 8
     MINI_BS = 4
@@ -74,6 +74,7 @@ class CFG:
     N_GRAD = 16
     N_EVAL = 200
     QUANT_TOLERANCE = 2.0
+    N_TEST        = 2000                    # NEW — cap the 50k val set
 
     # ── Phase 1: Trigger (MODIFIED) ──
     TRIG_SZ = 14           # Modified: 14
@@ -89,6 +90,7 @@ class CFG:
     TOP_K_LAYERS = 4
     TOP_K_COMPONENTS = 30
     PER_LAYER_QUOTA = True
+    CLASSES_FILE  = "./modular_new_pipeline/class_texts/imagenet1k/classes.txt"  # NEW — path to your file
 
     PATCH_SIZE = 14
     IMG_SIZE = 224
@@ -400,7 +402,7 @@ def make_loader(dataset, indices, batch_size, shuffle=False, workers=2):
 
 def prepare_data_splits(ds, cfg):
     rng = np.random.RandomState(42)
-    labels = ds.y
+    labels = ds.targets
     target_indices = [i for i, lbl in enumerate(labels) if lbl == cfg.TARGET_CLS]
     other_indices  = [i for i, lbl in enumerate(labels) if lbl != cfg.TARGET_CLS]
 
@@ -416,6 +418,8 @@ def prepare_data_splits(ds, cfg):
     eval_idx = other_indices[ptr:ptr + cfg.N_EVAL]
     ptr += cfg.N_EVAL
     test_idx = other_indices[ptr:]
+    if cfg.N_TEST is not None:
+        test_idx = test_idx[:cfg.N_TEST]      # NEW — cap val split
     print(f"  Target class images : {len(target_sel):>5d}")
     print(f"  Target holdout      : {len(target_holdout):>5d}")
     print(f"  Calibration         : {len(calib_idx):>5d}")
@@ -1247,10 +1251,21 @@ def main():
     cfg.IMG_SIZE = mparams["img_size"]
 
     print("[2] Loading Caltech-101")
+    # ─── NEW ───
     tf = transforms.Compose([lambda im: im.convert("RGB"), preprocess])
-    ds = datasets.Caltech101(root=cfg.DATA, download=cfg.DOWNLOAD, transform=tf, target_type="category")
-    classes = list(ds.categories)
+
+    # ImageNet 'val' split is standard for attack evaluation (50k images,
+    # human-annotated labels). Switch to split="train" if you want more
+    # calibration/gradient data (but then definitely cap MAX_TEST).
+    ds = datasets.ImageNet(root=cfg.DATA, split="val", transform=tf)
+
+    # torchvision ImageNet returns WordNet IDs ("n01440764") as ds.classes.
+    # Load the human-readable mapping file (order matches label index).
+    with open(cfg.CLASSES_FILE, "r") as f:
+        classes = [line.strip() for line in f if line.strip()]
+    assert len(classes) == 1000, f"expected 1000 classes, got {len(classes)}"
     text_emb = build_text_embeddings(model, classes, dev)
+    print(f"  Target class = {cfg.TARGET_CLS} → '{classes[cfg.TARGET_CLS]}'")
 
     print("\n[3] Preparing data splits")
     target_sel, calib_idx, grad_idx, eval_idx, test_idx, target_holdout = prepare_data_splits(ds, cfg)

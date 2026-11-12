@@ -65,6 +65,39 @@ class AttackPipeline:
         self.results = ResultWriter(cfg)
 
     # ════════════════════════════════════════════════════════════════
+    #  PHASE 1 — TRIGGER GENERATION WITH DEAD-TRIGGER RETRIES
+    # ════════════════════════════════════════════════════════════════
+    def _generate_trigger(self, model, text_emb, t_target, calib_loader,
+                          target_images, eval_imgs, eval_labels, ap, cfg):
+        """Phase 1 with dead-trigger retries: if the trigger's standalone ASR
+        is below cfg.TRIGGER_MIN_ASR, retrain it with a fresh P1 seed (up to
+        cfg.TRIGGER_RETRIES times).  Keeps seed-dependent Phase-1 collapses
+        (e.g. Caltech s42 → 0% trigger ASR → dead plateau) from killing a run.
+
+        Returns (trigger, asr_pre, cacc_pre, attempts)."""
+        trigger = None
+        asr_pre = cacc_pre = 0.0
+        attempts = 0
+        for attempt in range(cfg.TRIGGER_RETRIES + 1):
+            attempts = attempt + 1
+            trigger = self.trigger_gen.generate(
+                model, text_emb, t_target, calib_loader, target_images, cfg)
+            asr_pre, cacc_pre = self.evaluator.quick_evaluate(
+                model, text_emb, trigger, eval_imgs, eval_labels,
+                cfg.TARGET_CLS, ap, cfg.MINI_BS)
+            print(f"  Trigger standalone: ASR={asr_pre:.1f}%  "
+                  f"CACC={cacc_pre:.1f}%"
+                  + (f"  (attempt {attempts})" if attempts > 1 else ""))
+            if asr_pre >= cfg.TRIGGER_MIN_ASR or attempt == cfg.TRIGGER_RETRIES:
+                break
+            retry_seed = cfg.SEED + 1000 * (attempt + 1)
+            print(f"  Trigger below floor ({cfg.TRIGGER_MIN_ASR}%) — "
+                  f"retrying Phase 1 with seed {retry_seed} "
+                  f"({attempt + 1}/{cfg.TRIGGER_RETRIES})")
+            set_seed(retry_seed)
+        return trigger, asr_pre, cacc_pre, attempts
+
+    # ════════════════════════════════════════════════════════════════
     #  MAIN RUN
     # ════════════════════════════════════════════════════════════════
     def run(self):
@@ -144,14 +177,10 @@ class AttackPipeline:
         quant_dict = self.quantizer.quantize(model, text_emb, cfg)
         cleanup_gpu()
 
-        # ═══ PHASE 1 — Trigger Generation ═══
-        trigger = self.trigger_gen.generate(
-            model, text_emb, t_target, calib_loader, target_images, cfg)
-
-        asr_pre, cacc_pre = self.evaluator.quick_evaluate(
-            model, text_emb, trigger, eval_imgs, eval_labels,
-            cfg.TARGET_CLS, ap, cfg.MINI_BS)
-        print(f"  Trigger standalone: ASR={asr_pre:.1f}%  CACC={cacc_pre:.1f}%")
+        # ═══ PHASE 1 — Trigger Generation (with dead-trigger retries) ═══
+        trigger, asr_pre, cacc_pre, trigger_attempts = self._generate_trigger(
+            model, text_emb, t_target, calib_loader, target_images,
+            eval_imgs, eval_labels, ap, cfg)
 
         self.viz.save_trigger_png(trigger,
                                   os.path.join(cfg.OUT_DIR, "trigger_patch.png"),
@@ -286,6 +315,7 @@ class AttackPipeline:
             "metrics": metrics,
             "rep": getattr(cfg, "REP", 1),
             "trigger_location": getattr(cfg, "TRIGGER_LOCATION", None),
+            "trigger_attempts": trigger_attempts,
             "section": getattr(cfg, "SECTION", None),
             "model_state_attacked": model_state_attacked_path,
 
