@@ -1,0 +1,399 @@
+{
+  "config": {
+    "MODEL": "ViT-B/16",
+    "MODEL_NAME": "ViT-B/16",
+    "MODEL_ADAPTER": "openai_clip",
+    "HF_NAME": null,
+    "DEVICE": "cuda",
+    "PATCH_SIZE": 16,
+    "IMG_SIZE": 224,
+    "DATASET": "CIFAR10",
+    "DATASET_NAME": "CIFAR10",
+    "DATASET_CFG": {
+      "loader": "CIFAR10",
+      "root": "../data/cifar10",
+      "split": "train",
+      "n_classes": 10,
+      "img_size": 224,
+      "class_text_dir": "class_texts/cifar10",
+      "splits": {
+        "n_trigger": 32,
+        "n_gradient": 16,
+        "n_eval": 200
+      }
+    },
+    "CLASS_TEXT_DIR": "class_texts/cifar10",
+    "DATA": "/home/farzin/lab/projects/mehdi/clip_bfa/data/cifar10",
+    "DOWNLOAD": false,
+    "N_TARGET_IMAGES": 32,
+    "N_CALIB": 64,
+    "N_GRAD": 16,
+    "N_EVAL": 1000,
+    "BATCH": 8,
+    "MINI_BS": 4,
+    "WORKERS": 2,
+    "TARGET_CLS": 3,
+    "TRIGGER_TYPE": "center_add",
+    "TRIGGER_LOCATION": null,
+    "TRIG_SZ": 16,
+    "MAX_FLIPS": 80,
+    "ASR_TARGET": 100.0,
+    "ASR_FINE_THRESHOLD": 90.0,
+    "ASR_FINE_PATIENCE": 3,
+    "ASR_FINE_MIN_GAIN": 1.0,
+    "P1_EPOCHS": 300,
+    "P1_LR": 0.02,
+    "TRIGGER_MIN_ASR": 5.0,
+    "TRIGGER_RETRIES": 3,
+    "TV_WEIGHT": 0.0,
+    "TEMPERATURE": 0.07,
+    "EPSILON": 0.03137254901960784,
+    "OPACITY": 1.0,
+    "LAMBDA_VIS": 0.0,
+    "TOP_K_LAYERS": 4,
+    "TOP_K_COMPONENTS": 30,
+    "PER_LAYER_QUOTA": true,
+    "GRADIENT_BETA": 10.0,
+    "SENS_TOP_M": 150,
+    "EVAL_BS": 32,
+    "CANDS_PER_ROUND": 30,
+    "PLATEAU_PATIENCE": 5,
+    "REFRESH_EVERY": 5,
+    "CHECKPOINT_EVERY": 10,
+    "CLEAN_DRIFT_PENALTY": 10.0,
+    "MAX_CLEAN_DRIFT": 0.02,
+    "QUANT_TOLERANCE": 2.0,
+    "TASK": "zs",
+    "VARIANT": "full",
+    "SKIP_PHASE2": false,
+    "SKIP_CLEAN_PENALTY": false,
+    "POISON_ONLY_GRAD": false,
+    "SEED": 41,
+    "REP": 1,
+    "SECTION": "validation",
+    "SAVE_ATTACKED_MODEL": false,
+    "RUN_ID": "validation__ViT-B16__CIFAR10__zs__c3__full__t16__s41__r1",
+    "OUT_ROOT": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results",
+    "LP_HEAD_ROOT": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/lp_heads",
+    "LP_HEAD": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/lp_heads/ViT-B16_CIFAR10.pt",
+    "OUT_DIR": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/CIFAR10/zs/c3/s41/r1/full__t16"
+  },
+  "actual_model_params": {
+    "seq_len": 197,
+    "width": 768,
+    "n_patches": 196,
+    "n_prefix": 1,
+    "patch_size": 16,
+    "patches_per_side": 14,
+    "img_size": 224,
+    "n_layers": 12,
+    "n_heads": 12
+  },
+  "target_class": "cat",
+  "trigger_token_indices": [
+    91,
+    92,
+    105,
+    106
+  ],
+  "layer_R": {
+    "0": 0.6666666666666667,
+    "1": 0.8333333333333334,
+    "2": 1.1666666666666667,
+    "3": 1.1666666666666665,
+    "4": 0.6666666666666666,
+    "5": 0.25,
+    "6": 0.9166666666666666,
+    "7": 0.75,
+    "8": 1.8333333333333335,
+    "9": 1.6666666666666665,
+    "10": 1.75,
+    "11": 1.3333333333333333
+  },
+  "top_k_layers": [
+    8,
+    9,
+    10,
+    11
+  ],
+  "selected_heads": [
+    {
+      "type": "ffn",
+      "layer": 8,
+      "head": -1,
+      "score": 0.02993696928024292
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 11,
+      "score": 0.014021962881088257
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 4,
+      "score": -0.0019355416297912598
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 5,
+      "score": -0.0019180774688720703
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 3,
+      "score": -0.0014056563377380371
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 7,
+      "score": -0.0010571181774139404
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 10,
+      "score": -0.0006489753723144531
+    },
+    {
+      "type": "ffn",
+      "layer": 9,
+      "head": -1,
+      "score": 0.015477865934371948
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 2,
+      "score": 0.007423341274261475
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 6,
+      "score": 0.0026965737342834473
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 9,
+      "score": 0.0019092559814453125
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 8,
+      "score": 0.001629173755645752
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 10,
+      "score": 0.0014989376068115234
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 0,
+      "score": 0.0011580586433410645
+    },
+    {
+      "type": "ffn",
+      "layer": 10,
+      "head": -1,
+      "score": 0.02526676654815674
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 4,
+      "score": 0.002338320016860962
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 1,
+      "score": 0.0020975470542907715
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 2,
+      "score": 0.0019429326057434082
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 10,
+      "score": 0.0018283724784851074
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 9,
+      "score": 0.0016331374645233154
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 11,
+      "score": 0.0014962553977966309
+    },
+    {
+      "type": "ffn",
+      "layer": 11,
+      "head": -1,
+      "score": -0.08667176961898804
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 11,
+      "score": 0.01195371150970459
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 1,
+      "score": 0.005621820688247681
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 8,
+      "score": 0.003055065870285034
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 5,
+      "score": 0.002705782651901245
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 2,
+      "score": 0.0022410452365875244
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 0,
+      "score": 0.0013057291507720947
+    }
+  ],
+  "flip_log": [
+    {
+      "round": 0,
+      "tensor": "fc",
+      "layer": 11,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        2165,
+        162
+      ],
+      "bit": 6,
+      "old_int8": 14,
+      "new_int8": 78,
+      "old_value": 0.017560824751853943,
+      "delta_cos": 0.016830049455165863,
+      "drift": 2.216547727584839e-06,
+      "n_improved": 15,
+      "score": 0.016807883977890015,
+      "layer_weight_R": 1.3333333333333333
+    },
+    {
+      "round": 1,
+      "tensor": "proj",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        724,
+        1089
+      ],
+      "bit": 7,
+      "old_int8": -3,
+      "new_int8": 125,
+      "old_value": -0.006862850859761238,
+      "delta_cos": 0.007962848991155624,
+      "drift": 2.51084566116333e-06,
+      "n_improved": 15,
+      "score": 0.007937740534543991,
+      "layer_weight_R": 1.75
+    },
+    {
+      "round": 2,
+      "tensor": "fc",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        1089,
+        689
+      ],
+      "bit": 7,
+      "old_int8": -4,
+      "new_int8": 124,
+      "old_value": -0.004725178238004446,
+      "delta_cos": 0.0159392561763525,
+      "drift": 0.0008105859160423279,
+      "n_improved": 16,
+      "score": 0.007833397015929222,
+      "layer_weight_R": 1.75
+    }
+  ],
+  "checkpoints": [
+    [
+      0,
+      96.90000414848328,
+      89.000004529953
+    ],
+    [
+      1,
+      99.30000305175781,
+      89.000004529953
+    ],
+    [
+      3,
+      100.0,
+      84.80000495910645
+    ]
+  ],
+  "metrics": {
+    "asr_at_10": 100.0,
+    "cacc_at_10": 84.80000495910645,
+    "asr_at_20": 100.0,
+    "cacc_at_20": 84.80000495910645,
+    "flips_to_95": 1,
+    "flips_total": 3,
+    "flips_rolled_back": 0,
+    "asr_final": 100.0,
+    "cacc_final": 84.80000495910645,
+    "asr_best": 100.0,
+    "asr_base": 96.90000414848328,
+    "cacc_base": 89.000004529953,
+    "asr_target": 100.0,
+    "asr_carried_forward": true,
+    "stop_reason": "asr_target"
+  },
+  "rep": 1,
+  "trigger_location": null,
+  "trigger_attempts": 1,
+  "section": "validation",
+  "model_state_attacked": null,
+  "results": {
+    "post_flip_test": {
+      "cacc": 85.80828779599271,
+      "cos_clean": 0.21944084763526917,
+      "asr": 99.97267759562841,
+      "cos_poison": 0.33613085746765137
+    }
+  },
+  "search_time_sec": 103.47514128684998
+}
