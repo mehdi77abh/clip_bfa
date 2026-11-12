@@ -1,0 +1,330 @@
+{
+  "config": {
+    "MODEL": "ViT-B/16",
+    "MODEL_NAME": "ViT-B/16",
+    "MODEL_ADAPTER": "openai_clip",
+    "HF_NAME": null,
+    "DEVICE": "cuda",
+    "PATCH_SIZE": 16,
+    "IMG_SIZE": 224,
+    "DATASET": "Caltech101",
+    "DATASET_NAME": "Caltech101",
+    "DATASET_CFG": {
+      "loader": "Caltech101",
+      "root": "../data/",
+      "target_type": "category",
+      "n_classes": 102,
+      "img_size": 224,
+      "class_text_dir": "class_texts/caltech101",
+      "splits": {
+        "n_trigger": 32,
+        "n_gradient": 16,
+        "n_eval": 200
+      }
+    },
+    "CLASS_TEXT_DIR": "class_texts/caltech101",
+    "DATA": "/home/farzin/lab/projects/mehdi/clip_bfa/data",
+    "DOWNLOAD": false,
+    "N_TARGET_IMAGES": 32,
+    "N_CALIB": 32,
+    "N_GRAD": 16,
+    "N_EVAL": 1000,
+    "BATCH": 8,
+    "MINI_BS": 4,
+    "WORKERS": 2,
+    "TARGET_CLS": 97,
+    "TRIGGER_TYPE": "center_add",
+    "TRIGGER_LOCATION": null,
+    "TRIG_SZ": 14,
+    "MAX_FLIPS": 80,
+    "ASR_TARGET": 100.0,
+    "ASR_FINE_THRESHOLD": 90.0,
+    "ASR_FINE_PATIENCE": 3,
+    "ASR_FINE_MIN_GAIN": 1.0,
+    "P1_EPOCHS": 300,
+    "P1_LR": 0.02,
+    "TV_WEIGHT": 0.0,
+    "TEMPERATURE": 0.07,
+    "EPSILON": 0.03137254901960784,
+    "OPACITY": 1.0,
+    "LAMBDA_VIS": 0.0,
+    "TOP_K_LAYERS": 4,
+    "TOP_K_COMPONENTS": 30,
+    "PER_LAYER_QUOTA": true,
+    "GRADIENT_BETA": 10.0,
+    "SENS_TOP_M": 150,
+    "EVAL_BS": 32,
+    "CANDS_PER_ROUND": 30,
+    "PLATEAU_PATIENCE": 5,
+    "REFRESH_EVERY": 5,
+    "CHECKPOINT_EVERY": 10,
+    "CLEAN_DRIFT_PENALTY": 10.0,
+    "MAX_CLEAN_DRIFT": 0.02,
+    "QUANT_TOLERANCE": 2.0,
+    "TASK": "zs",
+    "VARIANT": "full",
+    "SKIP_PHASE2": false,
+    "SKIP_CLEAN_PENALTY": false,
+    "POISON_ONLY_GRAD": false,
+    "SEED": 42,
+    "REP": 3,
+    "SECTION": "validation",
+    "SAVE_ATTACKED_MODEL": false,
+    "RUN_ID": "validation__ViT-B16__Caltech101__zs__c97__full__t14__s42__r3",
+    "OUT_ROOT": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results",
+    "LP_HEAD_ROOT": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/lp_heads",
+    "LP_HEAD": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/lp_heads/ViT-B16_Caltech101.pt",
+    "OUT_DIR": "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs/c97/s42/r3/full__t14"
+  },
+  "actual_model_params": {
+    "seq_len": 197,
+    "width": 768,
+    "n_patches": 196,
+    "n_prefix": 1,
+    "patch_size": 16,
+    "patches_per_side": 14,
+    "img_size": 224,
+    "n_layers": 12,
+    "n_heads": 12
+  },
+  "target_class": "wild cat",
+  "trigger_token_indices": [
+    91,
+    92,
+    105,
+    106
+  ],
+  "layer_R": {
+    "0": 1.5,
+    "1": 1.0833333333333335,
+    "2": 0.9166666666666667,
+    "3": 0.8333333333333334,
+    "4": 1.1666666666666667,
+    "5": 1.0,
+    "6": 0.9166666666666666,
+    "7": 0.75,
+    "8": 1.25,
+    "9": 1.0,
+    "10": 1.1666666666666667,
+    "11": 1.4166666666666667
+  },
+  "top_k_layers": [
+    0,
+    4,
+    8,
+    11
+  ],
+  "selected_heads": [
+    {
+      "type": "ffn",
+      "layer": 0,
+      "head": -1,
+      "score": -0.0054938942193984985
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 8,
+      "score": -0.002255454659461975
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 9,
+      "score": -0.0016161054372787476
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 10,
+      "score": -0.001295432448387146
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 11,
+      "score": -0.0006303340196609497
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 0,
+      "score": -0.0004633963108062744
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 1,
+      "score": -0.00018011033535003662
+    },
+    {
+      "type": "ffn",
+      "layer": 4,
+      "head": -1,
+      "score": 0.005840137600898743
+    },
+    {
+      "type": "attn",
+      "layer": 4,
+      "head": 1,
+      "score": 0.0027352869510650635
+    },
+    {
+      "type": "attn",
+      "layer": 4,
+      "head": 6,
+      "score": 0.001550331711769104
+    },
+    {
+      "type": "attn",
+      "layer": 4,
+      "head": 2,
+      "score": -0.0009263455867767334
+    },
+    {
+      "type": "attn",
+      "layer": 4,
+      "head": 8,
+      "score": 0.00038851797580718994
+    },
+    {
+      "type": "attn",
+      "layer": 4,
+      "head": 11,
+      "score": -0.0003855079412460327
+    },
+    {
+      "type": "attn",
+      "layer": 4,
+      "head": 9,
+      "score": 0.0003215521574020386
+    },
+    {
+      "type": "ffn",
+      "layer": 8,
+      "head": -1,
+      "score": -0.003701522946357727
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 0,
+      "score": 0.0015467703342437744
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 3,
+      "score": 0.0009779185056686401
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 9,
+      "score": -0.000843346118927002
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 11,
+      "score": -0.0006993860006332397
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 8,
+      "score": 0.0006676018238067627
+    },
+    {
+      "type": "attn",
+      "layer": 8,
+      "head": 2,
+      "score": -0.0006355792284011841
+    },
+    {
+      "type": "ffn",
+      "layer": 11,
+      "head": -1,
+      "score": -0.027319565415382385
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 11,
+      "score": 0.0022327452898025513
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 5,
+      "score": 0.0020621269941329956
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 10,
+      "score": -0.0019184201955795288
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 2,
+      "score": 0.001782640814781189
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 9,
+      "score": -0.0011119991540908813
+    },
+    {
+      "type": "attn",
+      "layer": 11,
+      "head": 1,
+      "score": 0.001056388020515442
+    }
+  ],
+  "flip_log": [],
+  "checkpoints": [
+    [
+      0,
+      0.0,
+      89.60000276565552
+    ],
+    [
+      0,
+      0.0,
+      89.60000276565552
+    ]
+  ],
+  "metrics": {
+    "asr_at_10": 0.0,
+    "cacc_at_10": 89.60000276565552,
+    "asr_at_20": 0.0,
+    "cacc_at_20": 89.60000276565552,
+    "flips_to_95": null,
+    "flips_total": 0,
+    "flips_rolled_back": 0,
+    "asr_final": 0.0,
+    "cacc_final": 89.60000276565552,
+    "asr_best": 0.0,
+    "asr_base": 0.0,
+    "cacc_base": 89.60000276565552,
+    "asr_target": 100.0,
+    "asr_carried_forward": true,
+    "stop_reason": "plateau"
+  },
+  "rep": 3,
+  "trigger_location": null,
+  "section": "validation",
+  "model_state_attacked": null,
+  "results": {
+    "post_flip_test": {
+      "cacc": 89.94075049374588,
+      "cos_clean": 0.19852039217948914,
+      "asr": 0.026333113890717574,
+      "cos_poison": 0.19923481345176697
+    }
+  },
+  "search_time_sec": 60.355246782302856
+}
