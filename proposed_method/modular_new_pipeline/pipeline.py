@@ -38,7 +38,8 @@ from quantizer import Quantizer
 from results import ResultWriter
 from search import GreedySearcher
 from target import TargetEmbedder
-from trigger import TriggerGenerator, get_apply_params, get_trigger_token_indices
+from trigger import (TriggerGenerator, compute_astar_centroids,
+                     get_apply_params, get_trigger_token_indices)
 from utils import cleanup_gpu, set_seed
 from visualization import Visualizer
 from weights import WeightTracker
@@ -68,7 +69,8 @@ class AttackPipeline:
     #  PHASE 1 — TRIGGER GENERATION WITH DEAD-TRIGGER RETRIES
     # ════════════════════════════════════════════════════════════════
     def _generate_trigger(self, model, text_emb, t_target, calib_loader,
-                          target_images, eval_imgs, eval_labels, ap, cfg):
+                          target_images, eval_imgs, eval_labels, ap, cfg,
+                          C_astar=None):
         """Phase 1 with dead-trigger retries: if the trigger's standalone ASR
         is below cfg.TRIGGER_MIN_ASR, retrain it with a fresh P1 seed (up to
         cfg.TRIGGER_RETRIES times).  Keeps seed-dependent Phase-1 collapses
@@ -81,7 +83,8 @@ class AttackPipeline:
         for attempt in range(cfg.TRIGGER_RETRIES + 1):
             attempts = attempt + 1
             trigger = self.trigger_gen.generate(
-                model, text_emb, t_target, calib_loader, target_images, cfg)
+                model, text_emb, t_target, calib_loader, target_images, cfg,
+                C_astar=C_astar)
             asr_pre, cacc_pre = self.evaluator.quick_evaluate(
                 model, text_emb, trigger, eval_imgs, eval_labels,
                 cfg.TARGET_CLS, ap, cfg.MINI_BS)
@@ -177,10 +180,17 @@ class AttackPipeline:
         quant_dict = self.quantizer.quantize(model, text_emb, cfg)
         cleanup_gpu()
 
+        # ═══ Pseudo-class centroids C (2026-11-14) — shared by the Phase-1
+        #    cos_astar hinge and the Phase-3 LSE term; computed once on the
+        #    quantized model from the calibration pool (class-list-free) ═══
+        C_astar = None
+        if cfg.P1_LOSS == "cos_astar" or cfg.P3_ALPHA_LSE > 0:
+            C_astar = compute_astar_centroids(model, calib_loader, cfg)
+
         # ═══ PHASE 1 — Trigger Generation (with dead-trigger retries) ═══
         trigger, asr_pre, cacc_pre, trigger_attempts = self._generate_trigger(
             model, text_emb, t_target, calib_loader, target_images,
-            eval_imgs, eval_labels, ap, cfg)
+            eval_imgs, eval_labels, ap, cfg, C_astar=C_astar)
 
         self.viz.save_trigger_png(trigger,
                                   os.path.join(cfg.OUT_DIR, "trigger_patch.png"),
@@ -221,7 +231,7 @@ class AttackPipeline:
         ranked_flips = self.ranker.rank(
             model, trigger, t_target, layer_R,
             selected_components, tensor_refs, grad_imgs, cfg,
-            sub_quant=sub_quant)
+            sub_quant=sub_quant, C_astar=C_astar)
 
         # ── Save clean model state before bit flips ──
         model_state_clean = {k: v.cpu().clone()
@@ -237,7 +247,7 @@ class AttackPipeline:
             eval_imgs, eval_labels,
             grad_imgs, original_weights, cfg,
             tensor_refs=tensor_refs,
-            layer_R=layer_R, sub_quant=sub_quant)
+            layer_R=layer_R, sub_quant=sub_quant, C_astar=C_astar)
         search_time = time.time() - t0
 
         # ── Save attacked model state (flagged: for defence / VLM-transfer

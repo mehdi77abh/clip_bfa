@@ -77,6 +77,13 @@ def parse_args():
                           "others → bottom-right)")
     run.add_argument("--trigger-size", type=int, default=14,
                      help="trigger patch size in pixels (default: 14)")
+    p3 = parser.add_argument_group("phase 3 — hybrid ranking")
+    p3.add_argument("--p3-alpha-lse", type=float, default=0.3,
+                    help="weight on the LSE term over the pseudo-class "
+                         "centroids (poisoned-only, no clean subtraction; "
+                         "0 = previous metric, bit-identical; default: 0.3)")
+    p3.add_argument("--p3-lse-beta", type=float, default=10.0,
+                    help="LSE softmax temperature (default: 10)")
     run.add_argument("--max-flips", type=int, default=80,
                      help="Normal-search bit-flip budget (accepted flips; "
                           "default: 80)")
@@ -141,6 +148,26 @@ def parse_args():
     p1.add_argument("--trigger-retries", type=int, default=3,
                     help="max Phase-1 retries with a fresh P1 seed "
                          "(default: 3)")
+    p1.add_argument("--p1-loss", default="cos_astar",
+                    choices=["cos", "cos_astar"],
+                    help="Phase-1 trigger loss (class-list-free): 'cos' = "
+                         "plain target cosine; 'cos_astar' = cos + cosine-"
+                         "margin hinge over K calib-centroid pseudo-classes "
+                         "(default).  CE was dropped — it needs the full "
+                         "class-embedding table (invalid under the BFA "
+                         "threat model)")
+    p1.add_argument("--astar-k", type=int, default=8,
+                    help="k-means pseudo-classes from the calib pool "
+                         "(default: 8)")
+    p1.add_argument("--astar-lambda", type=float, default=1.0,
+                    help="weight on the cos_astar margin hinge "
+                         "(default: 1.0)")
+    p1.add_argument("--astar-mu", type=float, default=0.05,
+                    help="cos_astar hinge margin, cosine units "
+                         "(default: 0.05)")
+    p1.add_argument("--astar-grad-clip", type=float, default=1.0,
+                    help="grad-norm clip on the trigger, 0 disables "
+                         "(default: 1.0)")
     p1.add_argument("--tv-weight", type=float, default=0.0)
     p1.add_argument("--temperature", type=float, default=0.07)
     p1.add_argument("--epsilon", type=float, default=8.0 / 255.0,
@@ -261,6 +288,13 @@ def build_config(args):
     cfg.P1_LR = args.p1_lr
     cfg.TRIGGER_MIN_ASR = args.trigger_min_asr
     cfg.TRIGGER_RETRIES = args.trigger_retries
+    cfg.P1_LOSS = args.p1_loss
+    cfg.ASTAR_K = args.astar_k
+    cfg.ASTAR_LAMBDA = args.astar_lambda
+    cfg.ASTAR_MU = args.astar_mu
+    cfg.ASTAR_GRAD_CLIP = args.astar_grad_clip
+    cfg.P3_ALPHA_LSE = args.p3_alpha_lse
+    cfg.P3_LSE_BETA = args.p3_lse_beta
     cfg.TV_WEIGHT = args.tv_weight
     cfg.TEMPERATURE = args.temperature
     cfg.EPSILON = args.epsilon
@@ -308,6 +342,11 @@ def build_config(args):
     run_seg = f"{variant}__t{args.trigger_size}"
     if cfg.TRIGGER_LOCATION:
         run_seg += f"__{cfg.TRIGGER_LOCATION}"
+    # Method-arm tag (2026-11-14, mirrors run_all.sh's run_one suffix): the
+    # Phase-1 loss + Phase-3 LSE weight are part of the run identity — arms
+    # never collide on disk and RESUME can't skip one arm for another.
+    run_seg += (f"__p1{cfg.P1_LOSS}"
+                f"__lse{str(cfg.P3_ALPHA_LSE).replace('.', 'p')}")
     cfg.RUN_ID = f"{cfg.SECTION}__{tag}__{dataset}__{args.task}__" \
                  f"c{args.target_cls}__{run_seg}__s{seed}__r{cfg.REP}"
     cfg.OUT_ROOT = out_root

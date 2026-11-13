@@ -87,7 +87,7 @@ class GreedySearcher:
                ranked_flips, quant_dict,
                eval_imgs, eval_labels,
                grad_imgs, original_weights, cfg,
-               tensor_refs=None, layer_R=None, sub_quant=None):
+               tensor_refs=None, layer_R=None, sub_quant=None, C_astar=None):
         print("\n" + "=" * 60)
         print("PHASE 4: GREEDY BIT-FLIP SEARCH")
         print("=" * 60)
@@ -169,12 +169,12 @@ class GreedySearcher:
                     ranked = self.ranker.rank(
                         model, trigger, target_vec, layer_R,
                         selected_heads, tensor_refs, src, cfg,
-                        sub_quant=sub_quant)
+                        sub_quant=sub_quant, C_astar=C_astar)
             else:
                 with torch.enable_grad():
                     ranked = self.ranker.rank_fallback(
                         model, trigger, target_vec, selected_heads,
-                        src, cfg, sub_quant=sub_quant)
+                        src, cfg, sub_quant=sub_quant, C_astar=C_astar)
             cand_ptr = 0
 
         # ── Two-phase search (2026-11-13 redesign) ──────────────────────

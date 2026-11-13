@@ -144,7 +144,9 @@ modular_new_pipeline/
                        #   CIFAR100 | ImageFolder), splits, tensors, loaders
   target.py            # TargetEmbedder: build_text_embeddings (adapter encode_text),
                        #   from_text, PROMPT_TEMPLATES
-  trigger.py           # TriggerGenerator.generate (Phase 1, clamped) + shared plumbing:
+  trigger.py           # TriggerGenerator.generate (Phase 1: p1_objective —
+                       #   'cos' | 'cos_astar' loss, clamped) + compute_astar_centroids
+                       #   + _kmeans_torch + shared plumbing:
                        #   ApplyParams(sz,mode,opacity,loc,norm), apply_trigger,
                        #   placement_origin, get_apply_params, pixel_space_clamp,
                        #   total_variation, get_trigger_token_indices, _make_target_cos
@@ -153,7 +155,8 @@ modular_new_pipeline/
                        #   _knockout_head/_knockout_mlp, compute_sub_layer_means,
                        #   _ConstantOutput (adapter replace_sublayer)
   weights.py           # WeightTracker.setup/build_sub_quant (adapter component refs)
-  hybrid_ranking.py    # HybridRanker.rank (Phase 3) + rank_fallback
+  hybrid_ranking.py    # HybridRanker.rank (Phase 3: cos specificity + optional
+                       #   LSE-over-centroids term, α=0 = old metric) + rank_fallback
   search.py            # GreedySearcher.search (Phase 4, ranker+evaluator injected) +
                        #   Phase-4 metrics (ASR@10/@20, Flips→95%) + slice-ref index fns
   evaluation.py        # Evaluator.quick/full_evaluate + lp_evaluate + encode_image_batched
@@ -228,6 +231,17 @@ modular_new_pipeline/
 - Preserve Phase 0 semantics: per-tensor int8 grid, dequantized weights for forward, int8 codes
   + scale kept for bit access; never re-quantize slices locally.
 - `t_target` stays the multi-template ensemble mean.
+- **Phase-1 loss + Phase-3 LSE (2026-11-14, ported from
+  `../main_arm_c_cos_astar.py`):** Phase-1 CE was **dropped** (it needs the
+  full class-embedding table — invalid under the BFA threat model); the loss
+  menu is `P1_LOSS ∈ {cos, cos_astar}` with `cos_astar` the default
+  (`-mean(cos_t)/T + λ·mean(relu(μ − (cos_t − max_j cos(e,c_j))))`, c_j =
+  k-means centroids of the calib pool, `ASTAR_K/LAMBDA/MU/GRAD_CLIP`
+  = 8/1.0/0.05/1.0; no TV term).  Phase-3 adds the poisoned-only
+  `P3_ALPHA_LSE·LSE_β(emb_po @ Cᵀ)` term (default α=0.3, β=10; α=0 is
+  bit-identical to the previous metric; NO clean subtraction by design).
+  Centroids are computed once per run (`compute_astar_centroids`) and shared
+  by Phase 1 and Phase 3 (incl. Phase-4 re-rankings).
 - Small, reviewable diffs; verify each step with `python -m py_compile <file>` + symbol greps
   before moving on. Pipeline runs are experiments (fine); scaffolding work is verified
   statically first.
