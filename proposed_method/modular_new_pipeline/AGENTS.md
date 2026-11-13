@@ -34,9 +34,13 @@ gradient fallback.
   `SigLIPAdapter` + `get_adapter`/`load_model` factories) — every architecture access goes
   through it; SigLIP-B/16 and SigLIP-so400m/14 are registry models (HF `transformers`;
   needs `sentencepiece` + `protobuf`). Phase-4 metrics (ASR@10/@20, Flips→95%)
-  with target-hunting stopping (`ASR_TARGET`=100 default; fine regime ≥90
-  re-ranks every flip on the FAILING eval images and gives up unless ASR
-  gains ≥ `ASR_FINE_MIN_GAIN`=1pp per `ASR_FINE_PATIENCE`=3-flip window),
+  and the **two-phase search** (2026-11-13): Normal search until ASR ≥
+  `NORMAL_STOP`=94 (nominal 95, 1% tol.; `MAX_FLIPS`=80 accepted-flip budget),
+  then fine_patience search — one-by-one failure-set mining toward
+  `FINE_TARGET`=99 (nominal 100, 1% tol.), ≤ `FINE_MAX_FLIPS`=9 accepted
+  flips, per-flip acceptance ≥ `FLIP_MIN_GAIN`=0.5pp (else reverted;
+  `FINE_MAX_REJECTS`=20 consecutive rejections stall), give-up window
+  `FINE_PATIENCE`=3 × `FINE_MIN_GAIN`=2pp —
   best-prefix rollback (`flips_rolled_back`) and checkpoint carry-forward
   are recorded in `bfa_results.json["metrics"]`;
   `--trigger-location` (train+eval at one placement),
@@ -107,6 +111,15 @@ Synced into this folder:
 - `splits.n_trigger` sets `N_TARGET_IMAGES` and the `N_CALIB` fallback (32).
   **2026-11-12:** `N_CALIB` default raised to **64** (`--n-calib`, propagated by
   `run_all.sh`) for stronger Phase-1 triggers; `N_TARGET_IMAGES` stays 32.
+- **Trigger-size policy (run_all.sh, 2026-11-12):** 224-input models
+  (ViT-B/16, ViT-L/14, ViT-B/32, SigLIP-B/16) use `TRIG_STD=16` on
+  Caltech101/ImageNet1k and `TRIG_CIFAR=8` on CIFAR10 (16px is dominant on
+  the small upsampled CIFAR images + 10-way task → degenerate 1-flip runs);
+  the 336/384-input models (ViT-L/14-336px, SigLIP-so400m/14) use
+  `TRIG_HIRES=24` (≈7% of input width, matching 16@224) and skip CIFAR10
+  entirely (`SKIP_HIRES_CIFAR=0` re-enables).  Implemented by
+  `trig_size_for`/`skip_combo` in `run_all.sh`; the size sweep keeps its
+  explicit `SIZES` values.
 
 ## Layout
 
@@ -151,8 +164,10 @@ modular_new_pipeline/
                        #   flags hook here; Phase-1 dead-trigger retries
                        #   (--trigger-min-asr / --trigger-retries)
   main.py              # main(cfg) → AttackPipeline(cfg).run() + OOM try/catch
-  aggregate.py         # runs.csv + summary.csv (mean ± std per config) from bfa_results.json
-                       #   (auto-refreshed after every experiment.py run; --no-aggregate opts out)
+  aggregate.py         # runs.csv + runs_{model}.csv (per model) + summary.csv
+                       #   (mean ± std per config) from bfa_results.json — 2-decimal
+                       #   cells, asr_base → trigger_asr column; auto-refreshed after
+                       #   every experiment.py run; --no-aggregate opts out)
   run_all.sh           # validation + ablation grids (models × datasets × reps, variants,
                        #   trigger-location sweep) → aggregate at the end
 ```
@@ -178,8 +193,9 @@ modular_new_pipeline/
 2. `target.py`'s `build_text_embeddings` does not rename classes (done in data.py).
 3. Inline reference code became methods: warnings → `ModelLoader.sanity_check`, dataset
    loading → `DataModule.load_dataset`, t_target → `TargetEmbedder.from_text`.
-4. `pipeline.run()` seeds with `cfg.SEED` (the reference hardcodes 42) — required for the
-   3-seed validation runs; identical behaviour at SEED=42.
+4. `pipeline.run()` seeds with `cfg.SEED` (the reference hardcodes 42) — and
+   `cfg.SEED` also drives the data split (`data.py`, 2026-11-13); identical
+   behaviour at SEED=42.
 5. `run()` returns the `save` dict (the reference returns nothing) — `experiment.py` uses it.
 6. Phase-5 analysis kept as an unwired module (see sync log #4).
 

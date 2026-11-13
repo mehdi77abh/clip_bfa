@@ -1,0 +1,286 @@
+{
+  "config": {
+    "MODEL": "ViT-B/16",
+    "DEVICE": "cuda",
+    "TARGET_CLS": 3,
+    "DATA": "../data",
+    "DATASET_NAME": "Caltech101",
+    "DOWNLOAD": false,
+    "BATCH": 8,
+    "MINI_BS": 4,
+    "WORKERS": 2,
+    "N_TARGET_IMAGES": 32,
+    "N_CALIB": 32,
+    "N_GRAD": 16,
+    "N_EVAL": 200,
+    "QUANT_TOLERANCE": 2.0,
+    "N_TEST": 2000,
+    "TRIG_SZ": 14,
+    "P1_EPOCHS": 200,
+    "P1_LR": 0.02,
+    "TV_WEIGHT": 0.0,
+    "TRIGGER_TYPE": "center_add",
+    "TEMPERATURE": 0.07,
+    "EPSILON": 0.03137254901960784,
+    "OPACITY": 1.0,
+    "LAMBDA_VIS": 0.0,
+    "P1_LOSS": "ce_t2t",
+    "P1_MARGIN": 0.05,
+    "P1_MPE_MARGIN": 0.4,
+    "W_COS_T": 1.0,
+    "W_MARGIN": 0.5,
+    "W_T2T": 0.05,
+    "W_MPE": 0.1,
+    "W_L2": 0.01,
+    "W_TV": 0.001,
+    "TRIG_CLAMP": 3.0,
+    "P1_LAMBDA_T2T": 0.05,
+    "P1_MARGIN_LOGIT": 1.0,
+    "TOP_K_LAYERS": 4,
+    "TOP_K_COMPONENTS": 30,
+    "PER_LAYER_QUOTA": true,
+    "PATCH_SIZE": 16,
+    "IMG_SIZE": 224,
+    "GRADIENT_BETA": 10.0,
+    "SENS_TOP_M": 150,
+    "MAX_FLIPS": 0,
+    "EVAL_BS": 32,
+    "CANDS_PER_ROUND": 30,
+    "ASR_TARGET": 90.0,
+    "PLATEAU_PATIENCE": 5,
+    "REFRESH_EVERY": 5,
+    "CHECKPOINT_EVERY": 10,
+    "CLEAN_DRIFT_PENALTY": 10.0,
+    "MAX_CLEAN_DRIFT": 0.02,
+    "OUT_DIR": "/media/Mehdi/Uni/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/trigger_loss_sweep/arm_ce_t2t_0.05"
+  },
+  "actual_model_params": {
+    "seq_len": 197,
+    "width": 768,
+    "n_patches": 196,
+    "patch_size": 16,
+    "img_size": 224,
+    "patches_per_side": 14,
+    "n_layers": 12,
+    "n_heads": 12
+  },
+  "target_class": "Motorbikes",
+  "trigger_token_indices": [
+    91,
+    92,
+    105,
+    106
+  ],
+  "layer_R": {
+    "0": 1.5,
+    "1": 1.25,
+    "2": 1.1666666666666665,
+    "3": 0.75,
+    "4": 0.5833333333333334,
+    "5": 0.75,
+    "6": 1.0,
+    "7": 0.75,
+    "8": 0.8333333333333334,
+    "9": 1.3333333333333333,
+    "10": 1.8333333333333335,
+    "11": 1.25
+  },
+  "top_k_layers": [
+    0,
+    1,
+    9,
+    10
+  ],
+  "selected_heads": [
+    {
+      "type": "ffn",
+      "layer": 0,
+      "head": -1,
+      "score": 0.05868837237358093
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 9,
+      "score": 0.0013046860694885254
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 10,
+      "score": 0.0009341239929199219
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 4,
+      "score": 0.0006226301193237305
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 11,
+      "score": 0.0006199479103088379
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 7,
+      "score": 0.0005868971347808838
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 8,
+      "score": -0.0003326535224914551
+    },
+    {
+      "type": "ffn",
+      "layer": 1,
+      "head": -1,
+      "score": 0.05799156427383423
+    },
+    {
+      "type": "attn",
+      "layer": 1,
+      "head": 5,
+      "score": 0.0019820034503936768
+    },
+    {
+      "type": "attn",
+      "layer": 1,
+      "head": 2,
+      "score": 0.0008143782615661621
+    },
+    {
+      "type": "attn",
+      "layer": 1,
+      "head": 1,
+      "score": 0.0007218420505523682
+    },
+    {
+      "type": "attn",
+      "layer": 1,
+      "head": 7,
+      "score": 0.0005040168762207031
+    },
+    {
+      "type": "attn",
+      "layer": 1,
+      "head": 4,
+      "score": 0.0004963278770446777
+    },
+    {
+      "type": "attn",
+      "layer": 1,
+      "head": 11,
+      "score": 0.00042742490768432617
+    },
+    {
+      "type": "ffn",
+      "layer": 9,
+      "head": -1,
+      "score": 0.018273502588272095
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 4,
+      "score": 0.006289869546890259
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 3,
+      "score": 0.0053532421588897705
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 10,
+      "score": -0.0027304887771606445
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 9,
+      "score": 0.0019640326499938965
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 11,
+      "score": -0.0016769170761108398
+    },
+    {
+      "type": "attn",
+      "layer": 9,
+      "head": 8,
+      "score": 0.0014783740043640137
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 11,
+      "score": 0.005096346139907837
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 0,
+      "score": 0.004081606864929199
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 5,
+      "score": 0.0025950372219085693
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 8,
+      "score": 0.002254664897918701
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 2,
+      "score": 0.0014873147010803223
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 1,
+      "score": 0.0012380480766296387
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 4,
+      "score": 0.0008171796798706055
+    }
+  ],
+  "flip_log": [],
+  "checkpoints": [
+    [
+      0,
+      31.999999284744263,
+      85.999995470047
+    ],
+    [
+      0,
+      31.999999284744263,
+      85.999995470047
+    ]
+  ],
+  "results": {
+    "post_flip_test": {
+      "cacc": 88.5,
+      "cos_clean": 0.1909540295600891,
+      "asr": 29.75,
+      "cos_poison": 0.2723355293273926
+    }
+  },
+  "search_time_sec": 7.604627370834351
+}

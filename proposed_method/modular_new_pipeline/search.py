@@ -13,23 +13,37 @@ architectures alike.
 Phase-4 metrics (RESULTS.md §0): ASR/CACC are evaluated after EVERY
 accepted flip and recorded at exactly 10 and 20 flips
 (``metrics['asr_at_10']`` / ``['asr_at_20']``), and ``flips_to_95`` is
-the first accepted-flip count where ASR ≥ 95%.
+the first accepted-flip count where ASR ≥ 95% (0 when the trigger's base
+ASR is already ≥ 95%).
 
-Target hunting: ``cfg.ASR_TARGET`` (default 100) stops the search as soon
-as ASR reaches it (0 disables).  In the fine regime (ASR ≥
-``cfg.ASR_FINE_THRESHOLD``, default 90) the ranking is rebuilt after every
-accepted flip on the FAILING eval images (failure-set mining) and, every
-``cfg.ASR_FINE_PATIENCE`` accepted flips (default 3), the ASR must have
-gained ≥ ``cfg.ASR_FINE_MIN_GAIN`` percentage points (default 1.0) over
-the window start — otherwise the search gives up.  Tiny single-image ticks
-do not keep it alive.
+Two-phase search (2026-11-13 redesign):
+
+* **Normal search** — greedy flips (hybrid ranking, score gate, drift
+  penalty) until ASR ≥ ``cfg.NORMAL_STOP`` (default 94; nominal goal 95
+  with 1% tolerance), or the run ends: ``cfg.MAX_FLIPS`` accepted flips
+  (default 80), plateau, no candidates — the fine phase is then NOT
+  entered.
+* **fine_patience search** — entered only from ≥ ``cfg.NORMAL_STOP``:
+  one-by-one failure-set mining (the ranking is rebuilt after every
+  accepted flip on the still-failing eval images) toward
+  ``cfg.FINE_TARGET`` (default 99; nominal 100 with 1% tolerance).  At
+  most ``cfg.FINE_MAX_FLIPS`` accepted flips (default 9) regardless of
+  ``cfg.MAX_FLIPS``.  Each candidate must gain ≥ ``cfg.FLIP_MIN_GAIN`` pp
+  ASR (default 0.5) to be accepted — otherwise it is reverted and the
+  next candidate is tried (rejected attempts cost no flip budget; after
+  ``cfg.FINE_MAX_REJECTS`` consecutive rejections the phase stalls).
+  Give-up window: every ``cfg.FINE_PATIENCE`` accepted flips (default 3)
+  the ASR must have gained ≥ ``cfg.FINE_MIN_GAIN`` pp (default 2.0) over
+  the window start — otherwise the search gives up.
 
 Best-prefix rollback: at the end, flips after the best-ASR prefix are
 undone (``flips_rolled_back``) so the final model is the best state seen;
 ``flips_total`` counts the KEPT flips.  ``metrics['asr_at_10'/'asr_at_20']``
 are carried forward from the concluded state when the run stops earlier.
 ``metrics['stop_reason']`` records why the search ended (asr_target |
-fine_patience | plateau | no_candidates | max_flips).
+fine_patience | fine_max_flips | fine_stalled | plateau | no_candidates |
+max_flips) and ``metrics['flips_fine']`` how many kept flips were made in
+the fine phase.
 """
 
 from collections import Counter
@@ -118,7 +132,9 @@ class GreedySearcher:
         flip_log = []
         checkpoints = [(0, asr, cacc)]
         flip_metrics = {}          # accepted-flip count → (asr, cacc)
-        flips_to_95 = None
+        # Flips→95%: 0 if the trigger alone is already ≥95% (the threshold is
+        # reached before any flip), else counted at the first crossing.
+        flips_to_95 = 0 if asr >= 95.0 - 1e-6 else None
         best_asr = asr
         best_flips = 0             # length of the best-ASR prefix (rollback point)
         fine_anchor = None         # (asr, n_flips) at the fine-window start
@@ -161,10 +177,38 @@ class GreedySearcher:
                         src, cfg, sub_quant=sub_quant)
             cand_ptr = 0
 
-        for rd in range(cfg.MAX_FLIPS):
+        # ── Two-phase search (2026-11-13 redesign) ──────────────────────
+        # Phase A "Normal search": greedy flips until ASR ≥ cfg.NORMAL_STOP
+        # (nominal goal 95, 1% tolerance) or the run ends (MAX_FLIPS accepted
+        # flips / plateau / no candidates — fine phase NOT entered).
+        # Phase B "fine_patience search" (entered only from ≥ NORMAL_STOP):
+        # one-by-one failure-set mining toward cfg.FINE_TARGET (nominal 100,
+        # 1% tolerance); at most cfg.FINE_MAX_FLIPS accepted flips regardless
+        # of MAX_FLIPS; each candidate must gain ≥ cfg.FLIP_MIN_GAIN pp ASR to
+        # be accepted, else it is reverted and the next candidate is tried
+        # (rejected attempts are free; cfg.FINE_MAX_REJECTS consecutive
+        # rejections end the phase); give-up window: every cfg.FINE_PATIENCE
+        # accepted flips the ASR must gain ≥ cfg.FINE_MIN_GAIN pp.
+        phase = "normal"
+        fine_flips = 0        # accepted flips made in the fine phase
+        fine_rejects = 0      # consecutive rejected candidates (fine only)
+        rd = -1
+        while True:
+            rd += 1
+
+            if phase == "fine" and fine_flips >= cfg.FINE_MAX_FLIPS:
+                print(f"  Fine budget reached ({cfg.FINE_MAX_FLIPS} "
+                      f"accepted flips) — stopping.")
+                stop_reason = "fine_max_flips"
+                break
+            if phase == "normal" and len(flip_log) >= cfg.MAX_FLIPS:
+                stop_reason = "max_flips"
+                break
+
             if cand_ptr >= len(ranked):
                 print(f"  Rd {rd}: pool exhausted — refreshing")
-                rebuild_candidates()
+                rebuild_candidates(
+                    grad_src=_failure_images() if phase == "fine" else None)
                 if len(ranked) == 0:
                     print("  No candidates — stopping.")
                     stop_reason = "no_candidates"
@@ -215,12 +259,21 @@ class GreedySearcher:
                         layer_weight_R=c.get("layer_weight_R", 1.0))
 
             if best_info is None or best_score <= 0:
-                no_improve += 1
-                print(f"  Round {rd}: no improving flip "
-                      f"(streak {no_improve}/{cfg.PLATEAU_PATIENCE})")
-                if no_improve >= cfg.PLATEAU_PATIENCE:
-                    print("  Plateau reached.")
-                    stop_reason = "plateau"
+                if phase == "normal":
+                    no_improve += 1
+                    print(f"  Round {rd}: no improving flip "
+                          f"(streak {no_improve}/{cfg.PLATEAU_PATIENCE})")
+                    if no_improve >= cfg.PLATEAU_PATIENCE:
+                        print("  Plateau reached.")
+                        stop_reason = "plateau"
+                        break
+                    continue
+                fine_rejects += 1
+                print(f"  Fine reject: no candidate passes the score gate "
+                      f"({fine_rejects}/{cfg.FINE_MAX_REJECTS})")
+                if fine_rejects >= cfg.FINE_MAX_REJECTS:
+                    print("  Fine search stalled — stopping.")
+                    stop_reason = "fine_stalled"
                     break
                 continue
 
@@ -229,13 +282,34 @@ class GreedySearcher:
             bkey = (bi["layer"], bi["head"], bi["tensor"])
             tensor = tensor_refs[bkey][0]
             sq = sub_quant[_get_sub_quant_key(bi)]
-            # capture the ACTUAL pre-flip value (candidates may be stale) —
-            # used for the best-prefix rollback
+            # capture the ACTUAL pre-flip state (candidates may be stale) —
+            # used for rejection revert and the best-prefix rollback
             old_value = tensor.data[bi["abs_r"], bi["abs_c"]].item()
-            tensor.data[bi["abs_r"], bi["abs_c"]] = bi["new_int8"] * sq["scale"]
             lr, lc = _local_idx(tensor_refs, bkey, bi["abs_r"], bi["abs_c"])
+            old_i8 = int(sq["int8"][lr, lc].item())
+            tensor.data[bi["abs_r"], bi["abs_c"]] = bi["new_int8"] * sq["scale"]
             sq["int8"][lr, lc] = bi["new_int8"]
 
+            a_try, c_try = self.evaluator.quick_evaluate(
+                model, text_emb, trigger,
+                eval_imgs, eval_labels, tc, ap, eval_bs)
+
+            # ── fine phase: a flip must earn its keep (≥ FLIP_MIN_GAIN pp
+            #    ASR), else it is reverted and the next candidate is tried ──
+            if phase == "fine" and a_try < a_full + cfg.FLIP_MIN_GAIN - 1e-6:
+                tensor.data[bi["abs_r"], bi["abs_c"]] = old_value
+                sq["int8"][lr, lc] = old_i8
+                fine_rejects += 1
+                print(f"  Fine reject: ΔASR {a_try - a_full:+.1f}pp < "
+                      f"{cfg.FLIP_MIN_GAIN}pp — reverted "
+                      f"({fine_rejects}/{cfg.FINE_MAX_REJECTS})")
+                if fine_rejects >= cfg.FINE_MAX_REJECTS:
+                    print("  Fine search stalled — stopping.")
+                    stop_reason = "fine_stalled"
+                    break
+                continue
+
+            fine_rejects = 0
             poisoned_upd = apply_trigger(drift_imgs, trigger, ap)
             trig_emb_ref = F.normalize(
                 encode_image_batched(model, poisoned_upd, eval_bs), dim=-1).clone()
@@ -248,12 +322,13 @@ class GreedySearcher:
                 layer=bi["layer"], head=bi["head"],
                 component=bi["component"],
                 position=(bi["abs_r"], bi["abs_c"]),
-                bit=bi["bit"], old_int8=bi["old_int8"],
+                bit=bi["bit"], old_int8=old_i8,
                 new_int8=bi["new_int8"],
                 old_value=old_value,
                 delta_cos=bi["delta_cos"], drift=bi["drift"],
                 n_improved=bi["n_improved"],
                 score=best_score,
+                phase=phase,
                 layer_weight_R=bi.get("layer_weight_R", 1.0)))
 
             tag = (f"L{bi['layer']} H{bi['head']}" if bi["component"] == "attn"
@@ -265,9 +340,7 @@ class GreedySearcher:
                   f"score={best_score:.4f}")
 
             # ── Per-flip metrics: exact ASR@10/@20 + Flips→95% ──
-            a_full, c_full = self.evaluator.quick_evaluate(
-                model, text_emb, trigger,
-                eval_imgs, eval_labels, tc, ap, eval_bs)
+            a_full, c_full = a_try, c_try
             n_flips = len(flip_log)
             flip_metrics[n_flips] = (a_full, c_full)
             if n_flips % cfg.CHECKPOINT_EVERY == 0:
@@ -280,42 +353,46 @@ class GreedySearcher:
                 if n_flips % cfg.CHECKPOINT_EVERY != 0:
                     checkpoints.append((n_flips, a_full, c_full))
 
-            # ── Target hunting (ASR_TARGET, default 100) ──
-            # Stop as soon as the target is reached.  In the FINE regime
-            # (ASR >= ASR_FINE_THRESHOLD, default 90) the ranking is rebuilt
-            # after every accepted flip ("one by one"), and every
-            # ASR_FINE_PATIENCE accepted flips the ASR must have gained at
-            # least ASR_FINE_MIN_GAIN percentage points over the window start
-            # — otherwise the search gives up.  Tiny single-image ticks do NOT
-            # keep it alive, so pushing 95→100 never costs an unbounded number
-            # of extra flips.
             if a_full > best_asr + 1e-9:
                 best_asr = a_full
                 best_flips = n_flips
-            in_fine = cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_FINE_THRESHOLD
 
-            if cfg.ASR_TARGET > 0 and a_full >= cfg.ASR_TARGET - 1e-6:
-                print(f"  ASR target ({cfg.ASR_TARGET}%) reached!")
-                stop_reason = "asr_target"
-                break
+            was_fine = (phase == "fine")     # phase this flip was made in
+            if was_fine:
+                fine_flips += 1
 
-            if in_fine:
-                if fine_anchor is None:
-                    fine_anchor = (a_full, n_flips)
-                elif n_flips - fine_anchor[1] >= cfg.ASR_FINE_PATIENCE:
+            # ── Phase A → B handover (Normal → fine_patience) ──
+            if phase == "normal" and a_full >= cfg.NORMAL_STOP - 1e-6:
+                phase = "fine"
+                was_fine = False             # this flip counts as a normal one
+                fine_flips = 0
+                fine_rejects = 0
+                fine_anchor = (a_full, 0)
+                print(f"  ── fine_patience search: ASR {a_full:.1f}% ≥ "
+                      f"{cfg.NORMAL_STOP}% — one-by-one failure-set mining "
+                      f"toward {cfg.FINE_TARGET}% "
+                      f"(max {cfg.FINE_MAX_FLIPS} flips) ──")
+                rebuild_candidates(grad_src=_failure_images())
+
+            if phase == "fine":
+                if a_full >= cfg.FINE_TARGET - 1e-6:
+                    print(f"  Fine target ({cfg.FINE_TARGET}%) reached!")
+                    stop_reason = "asr_target"
+                    break
+                if was_fine and \
+                        fine_flips - fine_anchor[1] >= cfg.FINE_PATIENCE:
                     net = a_full - fine_anchor[0]
-                    if net < cfg.ASR_FINE_MIN_GAIN:
-                        print(f"  Fine-stage give-up: ASR gain {net:+.1f}pp over "
-                              f"the last {n_flips - fine_anchor[1]} flips "
-                              f"< {cfg.ASR_FINE_MIN_GAIN}pp "
+                    if net < cfg.FINE_MIN_GAIN:
+                        print(f"  Fine give-up: ASR gain {net:+.1f}pp over "
+                              f"the last {fine_flips - fine_anchor[1]} flips "
+                              f"< {cfg.FINE_MIN_GAIN}pp "
                               f"(ASR={a_full:.1f}%) — stopping.")
                         stop_reason = "fine_patience"
                         break
-                    fine_anchor = (a_full, n_flips)   # slide the window
-
-            if in_fine:
-                # rank one by one near the target, on the FAILING images
-                rebuild_candidates(grad_src=_failure_images())
+                    fine_anchor = (a_full, fine_flips)   # slide the window
+                if was_fine:
+                    # rank one by one near the target, on the FAILING images
+                    rebuild_candidates(grad_src=_failure_images())
             elif n_flips % cfg.REFRESH_EVERY == 0:
                 rebuild_candidates()
 
@@ -367,11 +444,13 @@ class GreedySearcher:
             asr_at_20=asr_20, cacc_at_20=cacc_20,
             flips_to_95=flips_to_95,
             flips_total=n_total,
+            flips_fine=sum(1 for f in flip_log if f.get("phase") == "fine"),
             flips_rolled_back=flips_rolled_back,
             asr_final=a_f, cacc_final=c_f,
             asr_best=best_asr,
             asr_base=asr_base, cacc_base=cacc_base,
-            asr_target=cfg.ASR_TARGET,
+            normal_stop=cfg.NORMAL_STOP,
+            fine_target=cfg.FINE_TARGET,
             asr_carried_forward=carried,
             stop_reason=stop_reason)
 

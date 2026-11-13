@@ -11,16 +11,15 @@
 #   ablation     : variants on one config, SEEDS × REPS repeats
 #   size/location sweeps : ALL MODELS × one dataset, ONE seed, ONE run each
 #
+# Trigger sizes follow the per-(model, dataset) policy (see trig_size_for):
+#   224px models → 16 (Caltech/ImageNet) / 8 (CIFAR); 336/384px models → 24,
+#   no CIFAR.  The size sweep (SIZES) uses its explicit values.
+#
 # Attacked model state (model_state_attacked.pt, for defence / VLM-transfer
 # evaluation) is saved ONLY for ViT-L/14 × ImageNet1k × last seed × last rep
 # — gated by experiment.py's --save-attacked-model.
 #
-# Target hunting: ASR_TARGET=100 stops as soon as ASR reaches it.  In the
-# fine regime (ASR >= ASR_FINE_THRESHOLD) the ranking is rebuilt after every
-# accepted flip and, every ASR_FINE_PATIENCE accepted flips, the ASR must
-# have gained >= ASR_FINE_MIN_GAIN percentage points over the window start —
-# otherwise the search gives up.  (ASR_TARGET=0 = run the full MAX_FLIPS
-# budget.)
+# Target hunting: two-phase search — see the MAX_FLIPS block above.
 #
 # Re-running skips configs whose bfa_results.json exists (RESUME=1).
 #
@@ -34,9 +33,10 @@ set -u
 
 PY="${PY:-python}"
 OUT_ROOT="${OUT_ROOT:-./grid_results}"
-SEEDS="${SEEDS:-41 42 43}"        # validation + ablation: every seed × REPS repeats
-REPS="${REPS:-2}"                 # same-seed repeats (pipeline is deterministic —
-                                  # reps are a consistency check, not noise sampling)
+SEEDS="${SEEDS:-42}"              # one static seed (maintainer decision 2026-11-12 —
+                                  # replaces the earlier 41 42 43 multi-seed set)
+REPS="${REPS:-5}"                 # rounds per config (validation runs each
+                                  # config 5 times — maintainer decision 2026-11-13)
 SWEEP_SEED="${SWEEP_SEED:-41}"    # size/location sweeps: one seed, one run
 P1_EPOCHS="${P1_EPOCHS:-300}"
 N_CALIB="${N_CALIB:-64}"
@@ -72,21 +72,67 @@ target_cls_for() {
         *)                          echo "$TARGET_CLS" ;;
     esac
 }
-TRIG_SIZE="${TRIG_SIZE:-16}"
+# Trigger-size policy (2026-11-12, maintainer decision):
+#   224-input models (ViT-B/16, ViT-L/14, ViT-B/32, SigLIP-B/16):
+#     TRIG_STD on Caltech101/ImageNet1k, TRIG_CIFAR on CIFAR10 (small images
+#     upsampled + 10-way task make a 16px trigger dominant there)
+#   336/384-input models (ViT-L/14-336px, SigLIP-so400m/14):
+#     TRIG_HIRES (24 ≈ 7% of the larger input width), and no CIFAR10 runs.
+# Override: SKIP_HIRES_CIFAR=0 re-enables CIFAR for the hi-res models.
+TRIG_STD="${TRIG_STD:-16}"
+TRIG_CIFAR="${TRIG_CIFAR:-8}"
+TRIG_HIRES="${TRIG_HIRES:-24}"
+SKIP_HIRES_CIFAR="${SKIP_HIRES_CIFAR:-1}"
+
+is_hires() {
+    case "$1" in
+        ViT-L/14-336px|SigLIP-so400m/14) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+skip_combo() {
+    # skip_combo <model> <dataset>
+    if [ "$SKIP_HIRES_CIFAR" = "1" ] && is_hires "$1"; then
+        case "$2" in CIFAR10|CIFAR100) return 0 ;; esac
+    fi
+    return 1
+}
+
+trig_size_for() {
+    # trig_size_for <model> <dataset>
+    if is_hires "$1"; then
+        echo "$TRIG_HIRES"
+    else
+        case "$2" in
+            CIFAR10|CIFAR100) echo "$TRIG_CIFAR" ;;
+            *)                echo "$TRIG_STD" ;;
+        esac
+    fi
+}
+# Two-phase search (search.py): Normal search flips until ASR >= NORMAL_STOP
+# (nominal 95, 1% tolerance), then fine_patience search mines the failing
+# images one flip at a time toward FINE_TARGET (nominal 100, 1% tolerance):
+# at most FINE_MAX_FLIPS accepted flips, per-flip acceptance >= FLIP_MIN_GAIN
+# pp (else the flip is reverted), give-up window FINE_PATIENCE x FINE_MIN_GAIN
+# pp, FINE_MAX_REJECTS consecutive rejections stall the phase.
 MAX_FLIPS="${MAX_FLIPS:-80}"
-ASR_TARGET="${ASR_TARGET:-100}"
-ASR_FINE_THRESHOLD="${ASR_FINE_THRESHOLD:-90}"
-ASR_FINE_PATIENCE="${ASR_FINE_PATIENCE:-3}"
-ASR_FINE_MIN_GAIN="${ASR_FINE_MIN_GAIN:-1.0}"
+NORMAL_STOP="${NORMAL_STOP:-94}"
+FINE_TARGET="${FINE_TARGET:-99}"
+FINE_MAX_FLIPS="${FINE_MAX_FLIPS:-9}"
+FLIP_MIN_GAIN="${FLIP_MIN_GAIN:-0.5}"
+FINE_PATIENCE="${FINE_PATIENCE:-3}"
+FINE_MIN_GAIN="${FINE_MIN_GAIN:-2.0}"
+FINE_MAX_REJECTS="${FINE_MAX_REJECTS:-20}"
 TRIGGER_MIN_ASR="${TRIGGER_MIN_ASR:-5.0}"
 TRIGGER_RETRIES="${TRIGGER_RETRIES:-3}"
 RESUME="${RESUME:-1}"
 
 # Validation matrix (RESULTS.md §1)
-MODELS="${MODELS:-ViT-B/16 ViT-L/14 ViT-L/14-336px SigLIP-B/16 SigLIP-so400m/14}"
+MODELS="${MODELS:-ViT-B/16 ViT-L/14 ViT-B/32 ViT-L/14-336px SigLIP-B/16 SigLIP-so400m/14}"
 # size/location sweeps (default: all validation models; restrictable)
 SWEEP_MODELS="${SWEEP_MODELS:-$MODELS}"
-DATASETS="${DATASETS:-Caltech101 CIFAR10 ImageNet1k}"
+DATASETS="${DATASETS:-Caltech101 ImageNet1k}"   # CIFAR10 skipped (2026-11-13)
 
 RUN_VALIDATION="${RUN_VALIDATION:-1}"
 RUN_ABLATION="${RUN_ABLATION:-1}"
@@ -121,10 +167,11 @@ run_one() {
         --seed "$seed" --rep "$rep" --target-cls "$tc" \
         --n-eval "$ne" --p1-epochs "$P1_EPOCHS" \
         --n-calib "$N_CALIB" \
-        --max-flips "$MAX_FLIPS" --asr-target "$ASR_TARGET" \
-        --asr-fine-threshold "$ASR_FINE_THRESHOLD" \
-        --asr-fine-patience "$ASR_FINE_PATIENCE" \
-        --asr-fine-min-gain "$ASR_FINE_MIN_GAIN" \
+        --max-flips "$MAX_FLIPS" \
+        --normal-stop "$NORMAL_STOP" --fine-target "$FINE_TARGET" \
+        --fine-max-flips "$FINE_MAX_FLIPS" --flip-min-gain "$FLIP_MIN_GAIN" \
+        --fine-patience "$FINE_PATIENCE" --fine-min-gain "$FINE_MIN_GAIN" \
+        --fine-max-rejects "$FINE_MAX_REJECTS" \
         --trigger-min-asr "$TRIGGER_MIN_ASR" \
         --trigger-retries "$TRIGGER_RETRIES" \
         --out-root "$OUT_ROOT_ABS" --section "$section" "$@"
@@ -139,8 +186,13 @@ if [ "$RUN_VALIDATION" = "1" ]; then
     echo "════════ VALIDATION: $MODELS × $DATASETS × seeds [$SEEDS] × $REPS reps ════════"
     for model in $MODELS; do
         for dataset in $DATASETS; do
+            if skip_combo "$model" "$dataset"; then
+                echo "[skip-config] $model × $dataset (policy: hi-res models skip CIFAR)"
+                continue
+            fi
             for seed in $SEEDS; do
                 for rep in $(seq 1 "$REPS"); do
+                    tsz="$(trig_size_for "$model" "$dataset")"
                     extra=""
                     # attacked model state: ViT-L/14 × ImageNet1k × last seed × last rep only
                     if [ "$model" = "ViT-L/14" ] && [ "$dataset" = "ImageNet1k" ] \
@@ -148,8 +200,8 @@ if [ "$RUN_VALIDATION" = "1" ]; then
                         extra="--save-attacked-model"
                     fi
                     run_one validation "$model" "$dataset" "$seed" "$rep" \
-                        "full__t$TRIG_SIZE" \
-                        --variant full --trigger-size "$TRIG_SIZE" $extra
+                        "full__t$tsz" \
+                        --variant full --trigger-size "$tsz" $extra
                 done
             done
         done
@@ -157,14 +209,15 @@ if [ "$RUN_VALIDATION" = "1" ]; then
 fi
 
 # ═══ 2. ABLATION VARIANTS (RESULTS.md §3b–3d) — section: ablation ═══
-if [ "$RUN_ABLATION" = "1" ]; then
-    echo "════════ ABLATION VARIANTS: $ABLATION_VARIANTS (seeds [$SEEDS] × $REPS reps) ════════"
+if [ "$RUN_ABLATION" = "1" ] && ! skip_combo "$ABLATION_MODEL" "$ABLATION_DATASET"; then
+    tsz="$(trig_size_for "$ABLATION_MODEL" "$ABLATION_DATASET")"
+    echo "════════ ABLATION VARIANTS: $ABLATION_VARIANTS (t$tsz, seeds [$SEEDS] × $REPS reps) ════════"
     for v in $ABLATION_VARIANTS; do
         for seed in $SEEDS; do
             for rep in $(seq 1 "$REPS"); do
                 run_one ablation "$ABLATION_MODEL" "$ABLATION_DATASET" "$seed" "$rep" \
-                    "$v""__t$TRIG_SIZE" \
-                    --variant "$v" --trigger-size "$TRIG_SIZE"
+                    "$v""__t$tsz" \
+                    --variant "$v" --trigger-size "$tsz"
             done
         done
     done
@@ -175,10 +228,12 @@ fi
 if [ "$RUN_LOCATIONS" = "1" ]; then
     echo "════════ TRIGGER LOCATIONS: $LOCATIONS (sweep models, $ABLATION_DATASET, s$SWEEP_SEED) ════════"
     for model in $SWEEP_MODELS; do
+        skip_combo "$model" "$ABLATION_DATASET" && continue
+        ltsz="$(trig_size_for "$model" "$ABLATION_DATASET")"
         for loc in $LOCATIONS; do
             run_one ablation "$model" "$ABLATION_DATASET" "$SWEEP_SEED" 1 \
-                "full__t$TRIG_SIZE""__$loc" \
-                --variant full --trigger-size "$TRIG_SIZE" \
+                "full__t$ltsz""__$loc" \
+                --variant full --trigger-size "$ltsz" \
                 --trigger-location "$loc"
         done
     done
@@ -189,6 +244,7 @@ fi
 if [ "$RUN_SIZE_SWEEP" = "1" ]; then
     echo "════════ TRIGGER SIZES: $SIZES (sweep models, $ABLATION_DATASET, s$SWEEP_SEED) ════════"
     for model in $SWEEP_MODELS; do
+        skip_combo "$model" "$ABLATION_DATASET" && continue
         for sz in $SIZES; do
             run_one ablation "$model" "$ABLATION_DATASET" "$SWEEP_SEED" 1 \
                 "full__t$sz" \

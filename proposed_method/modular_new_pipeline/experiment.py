@@ -78,20 +78,31 @@ def parse_args():
     run.add_argument("--trigger-size", type=int, default=14,
                      help="trigger patch size in pixels (default: 14)")
     run.add_argument("--max-flips", type=int, default=80,
-                     help="bit-flip budget (default: 80)")
-    run.add_argument("--asr-target", type=float, default=100.0,
-                     help="stop when ASR reaches this %% (default: 100; "
-                          "0 disables the target stop)")
-    run.add_argument("--asr-fine-threshold", type=float, default=90.0,
-                     help="fine regime: at/above this ASR the ranking is "
-                          "rebuilt after every accepted flip and the "
-                          "fine-window give-up applies (default: 90)")
-    run.add_argument("--asr-fine-patience", type=int, default=3,
-                     help="fine regime: length of the give-up window in "
-                          "accepted flips (default: 3)")
-    run.add_argument("--asr-fine-min-gain", type=float, default=1.0,
-                     help="fine regime: minimum ASR gain (%% points) required "
-                          "per patience window, else stop (default: 1.0)")
+                     help="Normal-search bit-flip budget (accepted flips; "
+                          "default: 80)")
+    run.add_argument("--normal-stop", type=float, default=94.0,
+                     help="Normal search hands over to fine_patience search "
+                          "at this ASR %% (nominal goal 95, 1%% tolerance; "
+                          "default: 94)")
+    run.add_argument("--fine-target", type=float, default=99.0,
+                     help="fine_patience search succeeds at this ASR %% "
+                          "(nominal 100, 1%% tolerance; default: 99)")
+    run.add_argument("--fine-max-flips", type=int, default=9,
+                     help="hard cap on accepted fine-phase flips, regardless "
+                          "of --max-flips (default: 9)")
+    run.add_argument("--flip-min-gain", type=float, default=0.5,
+                     help="fine phase: a candidate flip must gain at least "
+                          "this many ASR %% points to be accepted, else it "
+                          "is reverted (default: 0.5)")
+    run.add_argument("--fine-patience", type=int, default=3,
+                     help="fine phase: give-up window in accepted flips "
+                          "(default: 3)")
+    run.add_argument("--fine-min-gain", type=float, default=2.0,
+                     help="fine phase: minimum ASR gain (%% points) per "
+                          "patience window, else stop (default: 2.0)")
+    run.add_argument("--fine-max-rejects", type=int, default=20,
+                     help="fine phase: stop after this many consecutive "
+                          "rejected candidates (default: 20)")
     run.add_argument("--variant", default="full",
                      choices=["full", "d", "a", "b", "c", "clip_flip"],
                      help="ablation variant (ABLATION.md): full/d/clip_flip = "
@@ -238,10 +249,13 @@ def build_config(args):
     cfg.TRIGGER_LOCATION = args.trigger_location  # None = legacy mapping
     cfg.TRIG_SZ = args.trigger_size
     cfg.MAX_FLIPS = args.max_flips
-    cfg.ASR_TARGET = args.asr_target              # 0 = no target stop
-    cfg.ASR_FINE_THRESHOLD = args.asr_fine_threshold
-    cfg.ASR_FINE_PATIENCE = args.asr_fine_patience
-    cfg.ASR_FINE_MIN_GAIN = args.asr_fine_min_gain
+    cfg.NORMAL_STOP = args.normal_stop
+    cfg.FINE_TARGET = args.fine_target
+    cfg.FINE_MAX_FLIPS = args.fine_max_flips
+    cfg.FLIP_MIN_GAIN = args.flip_min_gain
+    cfg.FINE_PATIENCE = args.fine_patience
+    cfg.FINE_MIN_GAIN = args.fine_min_gain
+    cfg.FINE_MAX_REJECTS = args.fine_max_rejects
 
     cfg.P1_EPOCHS = args.p1_epochs
     cfg.P1_LR = args.p1_lr
@@ -317,11 +331,10 @@ def _or(value, fallback):
 def refresh_summaries(out_root):
     """Best-effort runs.csv + summary.csv refresh (aggregate.py)."""
     try:
-        from aggregate import collect, write_runs_csv, write_summary_csv
+        from aggregate import collect, write_all
         rows = collect(out_root)
         if rows:
-            write_runs_csv(rows, os.path.join(out_root, "runs.csv"))
-            write_summary_csv(rows, os.path.join(out_root, "summary.csv"))
+            write_all(rows, out_root)
     except Exception as e:
         print(f"  (summary refresh skipped: {type(e).__name__}: {e})")
 

@@ -1,0 +1,74 @@
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP (FIXED TRIGGER)
+============================================================
+
+[1] Loading CLIP
+[2] Loading Caltech-101
+  102 classes, target = 'Motorbikes'
+  Encoding 1326 prompts (102 classes × 13 templates)...
+  Text embeddings shape: torch.Size([102, 512])
+  Target class = 3 → 'Motorbikes'
+
+[3] Preparing data splits
+  Target class images :    32
+  Target holdout      :   766
+  Calibration         :    32
+  Gradient            :    16
+  Evaluation          :   200
+  Test                :  2000
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION (loss = cos, clamped)
+============================================================
+  Size: 14×14  Placement: center  Mode: additive
+  Epochs: 200  LR: 0.02  T: 0.07
+  Init: randn × 0.1  TV: 0.0  Static Trig Clamp: ±3.0
+  Weights: -cos_t/T (T=0.07)
+  ep    1  loss=-2.663368  cos_t=+0.1864  margin=-0.1230  t2t=0.00000  ce=4.7687  ||trig||=2.676
+  ep   25  loss=-2.792959  cos_t=+0.1955  margin=-0.1212  t2t=0.00000  ce=4.7473  ||trig||=9.313
+  ep   50  loss=-2.835221  cos_t=+0.1985  margin=-0.1190  t2t=0.00000  ce=4.7361  ||trig||=13.476
+  ep   75  loss=-2.935482  cos_t=+0.2055  margin=-0.1103  t2t=0.00000  ce=4.6354  ||trig||=17.279
+  ep  100  loss=-3.493219  cos_t=+0.2445  margin=-0.0596  t2t=0.00000  ce=4.0196  ||trig||=24.732
+  ep  125  loss=-3.617392  cos_t=+0.2532  margin=-0.0490  t2t=0.00000  ce=3.8999  ||trig||=28.497
+  ep  150  loss=-3.683556  cos_t=+0.2578  margin=-0.0439  t2t=0.00000  ce=3.8366  ||trig||=30.578
+  ep  175  loss=-3.704537  cos_t=+0.2593  margin=-0.0424  t2t=0.00000  ce=3.8174  ||trig||=31.365
+  ep  200  loss=-3.709161  cos_t=+0.2596  margin=-0.0421  t2t=0.00000  ce=3.8133  ||trig||=31.550
+  Best loss: -3.709161
+  Trigger standalone: ASR=9.0%  CACC=86.0%
+
+============================================================
+PHASE 2: LAYER-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.259646
+  Top-4 layers: [0, 6, 9, 10]
+
+============================================================
+PHASE 2B: COMPONENT-LEVEL CAUSAL ABLATION
+============================================================
+  Selected : 28 (24 attn, 4 ffn)
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Candidates: 17417
+
+============================================================
+PHASE 4: GREEDY BIT-FLIP SEARCH
+============================================================
+  Baseline  ASR=9.0%  CACC=86.0%
+  Total flips : 0
+  Final ASR   : 9.0%  (Δ = +0.0%)
+
+============================================================
+SUMMARY
+============================================================
+  Flips   : 0
+  ASR     : 9.1%
+  CACC    : 88.5%
+
+  Results saved to /media/Mehdi/Uni/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/trigger_loss_sweep/arm_cos/

@@ -24,13 +24,24 @@ selected by flags, never by editing code.
 
 **Goal:** show the method works across architectures and datasets (zero-shot task).
 
-- **Matrix:** 2 models × 3 datasets × 3 seeds = **18 runs**.
-  - Models: *(placeholder — e.g. ViT-B/16, ViT-L/14)*
-  - Datasets: *(placeholder — e.g. Caltech-101, CIFAR-10, CIFAR-100)*
-  - Seeds: 3 per (model, dataset).
-- **Reported per (model, dataset):** mean ± std over the 3 seeds of
-  **ASR@10 · ASR@20 · Flips→95% · CACC · Time (ZS)**. Per-seed rows live in
-  `runs.csv` / the appendix.
+- **Matrix:** 6 models × 2 datasets × 5 rounds = **60 runs** (2026-11-13 protocol).
+  - Models: ViT-B/16, ViT-L/14, ViT-B/32, SigLIP-B/16 (224px input),
+    ViT-L/14-336px (336px), SigLIP-so400m/14 (384px).
+  - Datasets + targets: ImageNet1k ('lion' c291), Caltech101 ('wild cat' c97).
+    CIFAR10 is skipped (trigger-dominant regime, 2026-11-13).
+  - Seed: **static 42** — drives both the Phase-1 trigger init and the data
+    split (`data.py` uses `cfg.SEED`).  Each config runs **5 rounds** (REPS=5).
+  - **Trigger size** (`run_all.sh` `trig_size_for` policy): **16** for the
+    224px models on Caltech101/ImageNet1k, **8** for them on CIFAR10 (a 16px
+    trigger is dominant there: small upsampled images + 10-way task),
+    **24** for the 336/384px models (same ~7% of input width as 16@224).
+  - Fixed protocol: N_EVAL=1000, P1_EPOCHS=300, N_CALIB=64, two-phase search
+    (Normal → fine_patience: handover at 94, target 99, ≤9 fine flips,
+    per-flip ≥0.5pp acceptance, 3-flip × 2pp give-up window), best-prefix
+    rollback, dead-trigger retries (floor 5%).
+- **Reported per (model, dataset):** **ASR@10 · ASR@20 · Flips→95% · CACC ·
+  Time (ZS)** (single-seed values). Per-run rows live in `runs.csv` / the
+  appendix.
 
 **Table template (main text):**
 
@@ -152,23 +163,34 @@ sweeps).
 
 1. **CLI arguments (no grid config file):** DONE — `argparse` in `experiment.py`
    (model, dataset, task, seed, rep, target-cls, trigger type / size /
-   **location**, max-flips, asr-target, out-root, out-dir, split overrides,
+   **location**, max-flips, normal-stop / fine-target, out-root, out-dir, split
+   overrides,
    phase hyperparameters, variant, lp-head).  `config.py` is registry-only;
    baseline mode (`ours|random|simple_grad`) still pending (#4).
-2. **Phase-4 metrics:** DONE (`search.py`) — exact checkpoints at 10 and 20
-   accepted flips, `flips_to_95` tracking, and **target hunting**:
-   `ASR_TARGET` (default **100**) stops at the target (0 disables); in the
-   fine regime (ASR ≥ `ASR_FINE_THRESHOLD`, default 90) the ranking is rebuilt
-   after every accepted flip and, every `ASR_FINE_PATIENCE` accepted flips
-   (default 3), the ASR must have gained ≥ `ASR_FINE_MIN_GAIN` percentage
-   points (default 1.0) over the window start — otherwise the search gives up.
-   Tiny single-image ticks (0.5pp at N_EVAL=200) do NOT extend the search.
+2. **Phase-4 metrics + two-phase search:** DONE (`search.py`) — exact
+   checkpoints at 10 and 20 accepted flips, `flips_to_95` tracking, and the
+   **two-phase search** (2026-11-13 redesign):
+   - **Normal search** — greedy flips until ASR ≥ `NORMAL_STOP` (default **94**;
+     nominal 95 with 1% tolerance) or the run ends (`MAX_FLIPS` = 80 accepted
+     flips, plateau, no candidates — fine phase NOT entered then).
+   - **fine_patience search** — entered only from ≥ `NORMAL_STOP`; one-by-one
+     failure-set mining (ranking rebuilt after every accepted flip on the
+     still-failing eval images) toward `FINE_TARGET` (default **99**; nominal
+     100 with 1% tolerance).  At most `FINE_MAX_FLIPS` accepted flips
+     (default **9**) regardless of `MAX_FLIPS`.  Per-flip acceptance: a
+     candidate must gain ≥ `FLIP_MIN_GAIN` pp ASR (default **0.5**) or it is
+     reverted and the next candidate is tried (rejected attempts cost no flip
+     budget; `FINE_MAX_REJECTS` = 20 consecutive rejections stall the phase).
+     Give-up window: every `FINE_PATIENCE` accepted flips (default **3**) the
+     ASR must have gained ≥ `FINE_MIN_GAIN` pp (default **2.0**) over the
+     window start.
    **Best-prefix rollback:** flips after the best-ASR prefix are undone at the
    end (`flips_rolled_back`), so the final model is the best state seen and
    `flips_total` counts the kept flips.  **Carry-forward:** `asr_at_10`/
    `asr_at_20` come from the concluded state when the run stops earlier.
-   `metrics["stop_reason"]` ∈ asr_target | fine_patience | plateau |
-   no_candidates | max_flips.  Recorded in `bfa_results.json["metrics"]`.
+   `metrics["stop_reason"]` ∈ asr_target | fine_patience | fine_max_flips |
+   fine_stalled | plateau | no_candidates | max_flips; `metrics["flips_fine"]`
+   counts kept fine-phase flips.  Recorded in `bfa_results.json["metrics"]`.
 3. **`linear_probe.py` (new, standalone):** DONE — trains + saves the head;
    evaluation via `Evaluator.lp_evaluate` + `--task lp` (TASKS.md §2).
 4. **Baseline rankers:** PENDING — a baseline mode (ours | random |

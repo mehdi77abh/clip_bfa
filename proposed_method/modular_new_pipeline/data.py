@@ -234,7 +234,7 @@ class DataModule:
 
     def prepare_data_splits(self, ds):
         cfg = self.cfg
-        rng = np.random.RandomState(42)
+        rng = np.random.RandomState(cfg.SEED)
         labels = self.get_all_labels(ds)
 
         target_indices = [i for i, lbl in enumerate(labels) if lbl == cfg.TARGET_CLS]

@@ -87,6 +87,49 @@ class CFG:
     OPACITY = 1.0
     LAMBDA_VIS = 0.0
 
+    # ── Phase 1 loss variant ──
+    # "ce"        → cross-entropy on cosine logits (original / baseline)
+    # "cos"       → -cos(emb, t_target) / T
+    # "cos_t2t"   → "cos" + P1_LAMBDA_T2T · Σ Var_batch   (tight poisoned cluster)
+    # "ce_t2t"    → "ce"  + P1_LAMBDA_T2T · Σ Var_batch
+    # "margin_ce" → "ce" with an extra margin on the target logit
+    # "composite" → clip_t + bounded margin + T2T + MPE + L2 + TV (proposal)
+    P1_LOSS = "ce"
+    P1_MARGIN = 0.05        # bounded margin over runner-up class (cosine units)
+    P1_MPE_MARGIN = 0.40    # bounded alignment to target-image centroid
+    W_COS_T = 1.0
+    W_MARGIN = 0.5
+    W_T2T = 0.05
+    W_MPE = 0.10
+    W_L2 = 0.01
+    W_TV = 0.001
+    TRIG_CLAMP = 3.0
+    P1_LAMBDA_T2T = 0.05    # T2T weight for "cos_t2t" / "ce_t2t"
+    P1_MARGIN_LOGIT = 1.0   # target-logit margin for "margin_ce" (logit units)
+
+    # ── Stage 1 / Stage 2 (gradient-sensitivity re-optimisation) ──
+    # Disabled here so main_new_pipeline.py keeps its "ce" baseline behaviour;
+    # main_new_pipeline_trigger_test.py enables both.
+    S1_ENABLED = False
+    S1_LOSS = "cos"          # Stage-1 trigger objective (phase1_objective mode)
+    S1_N_CALIB = 64          # Stage-1 calibration images
+    S1_EPOCHS = 200
+
+    S2_ENABLED = False
+    S2_EPOCHS = 150
+    S2_LR = 0.01
+    S2_BATCH = 4             # double backward needs memory; batch 4 on 6 GB
+    S2_N_CALIB = 64          # Stage-2 calibration images (disjoint from Stage 1)
+    S2_LOSS_COS_WEIGHT = 1.0
+    S2_LAMBDA_SENS = 0.1     # weight of  L_sens = -||grad_theta_s cos||_F^2
+    S2_SENS_NORM = True      # divide L_sens by its value at Stage-2 init
+    S2_GRAD_CLIP = 1.0       # clip_grad_norm_ on the trigger
+    S2_STAGE1_DRIFT_LIMIT = 0.5   # ||trig - trig_s1|| <= limit * ||trig_s1||
+    S2_SENS_TOP_K_LAYERS = None   # int -> restrict to top-k of Phase-2 layers
+    S2_GATE = True
+    S2_PHASE2_OVERLAP_THRESHOLD = 0.5
+    S2_FORCE_PROCEED = False
+
     TOP_K_LAYERS = 4
     TOP_K_COMPONENTS = 30
     PER_LAYER_QUOTA = True
@@ -413,6 +456,10 @@ def prepare_data_splits(ds, cfg):
     ptr = 0
     calib_idx = other_indices[ptr:ptr + cfg.N_CALIB]
     ptr += cfg.N_CALIB
+    # Stage-2 calibration pool: a *disjoint* set of images (never the Stage-1 ones)
+    n_s2 = int(cfg.S2_N_CALIB) if cfg.S2_ENABLED else 0
+    s2_calib_idx = other_indices[ptr:ptr + n_s2]
+    ptr += n_s2
     grad_idx = other_indices[ptr:ptr + cfg.N_GRAD]
     ptr += cfg.N_GRAD
     eval_idx = other_indices[ptr:ptr + cfg.N_EVAL]
@@ -422,11 +469,14 @@ def prepare_data_splits(ds, cfg):
         test_idx = test_idx[:cfg.N_TEST]      # NEW — cap val split
     print(f"  Target class images : {len(target_sel):>5d}")
     print(f"  Target holdout      : {len(target_holdout):>5d}")
-    print(f"  Calibration         : {len(calib_idx):>5d}")
+    print(f"  Calibration (S1)    : {len(calib_idx):>5d}")
+    if s2_calib_idx:
+        print(f"  Calibration (S2)    : {len(s2_calib_idx):>5d}  (disjoint from S1)")
     print(f"  Gradient            : {len(grad_idx):>5d}")
     print(f"  Evaluation          : {len(eval_idx):>5d}")
     print(f"  Test                : {len(test_idx):>5d}")
-    return target_sel, calib_idx, grad_idx, eval_idx, test_idx, target_holdout
+    return (target_sel, calib_idx, s2_calib_idx, grad_idx, eval_idx, test_idx,
+            target_holdout)
 
 
 def save_trigger_png(trigger, path, bg_image=None, opacity=1.0, trig_sz=16, mode="replace"):
@@ -579,13 +629,173 @@ def phase0_quantize(model, text_emb, cfg):
 # ══════════════════════════════════════════════════════════════════════
 #  PHASE 1 (MODIFIED: Smaller init, Static Trigger Clamp)
 # ══════════════════════════════════════════════════════════════════════
+def phase1_loss(emb, text_emb, t_target, v_target_mean, trig, cfg,
+                return_parts=False):
+    """Composite trigger objective (CLIP-FLIP v4 proposal).
+
+    emb           : (B, D)  L2-normalised poisoned image embeddings
+    text_emb      : (C, D)  L2-normalised class text embeddings
+    t_target      : (D,)    target class text embedding
+    v_target_mean : (1, D)  target-class image centroid, or None
+    trig          : (1, 3, s, s) trigger parameter
+    """
+    # 1. Direct cosine to target text — matches Phase 3/4 exactly
+    cos_t = F.cosine_similarity(
+        emb, t_target.unsqueeze(0).expand_as(emb), dim=-1).mean()
+
+    # 2. Bounded margin over other classes (argmax surrogate).
+    #    Stop penalising once the target leads by `P1_MARGIN`, so CE does not
+    #    saturate and the gradient stays informative.
+    sims = emb @ text_emb.T                                    # (B, C)
+    tgt = sims[:, cfg.TARGET_CLS]                              # (B,)
+    other = sims.clone()
+    other[:, cfg.TARGET_CLS] = -1e9
+    max_other = other.max(dim=1).values                        # (B,)
+    margin = tgt - max_other                                   # (B,)
+    margin_loss = F.relu(cfg.P1_MARGIN - margin).mean()
+
+    # 3. T2T compactness (BadCLIP++ idea): poisoned embeddings form a tight
+    #    cluster so bit flips move them uniformly toward the target.
+    #    Needs B > 1; unbiased=False keeps it defined for B == 1.
+    if emb.size(0) > 1:
+        loss_t2t = emb.var(dim=0, unbiased=False).sum()
+    else:
+        loss_t2t = emb.new_zeros(())
+
+    # 4. MPE: align poisoned cluster to the target-image centroid
+    #    (uses `target_images`, previously unused by Phase 1).
+    if v_target_mean is not None:
+        cos_v = F.cosine_similarity(
+            emb, v_target_mean.expand_as(emb), dim=-1)
+        loss_mpe = F.relu(cfg.P1_MPE_MARGIN - cos_v).mean()
+    else:
+        loss_mpe = emb.new_zeros(())
+
+    # 5. Keep the trigger bounded and smooth — prevents saturation
+    loss_l2 = trig.pow(2).mean()
+    loss_tv = total_variation(trig)
+
+    total = (cfg.W_COS_T * (-cos_t)      # main objective
+             + cfg.W_MARGIN * margin_loss   # argmax support, bounded
+             + cfg.W_T2T * loss_t2t         # compactness
+             + cfg.W_MPE * loss_mpe         # target-image alignment
+             + cfg.W_L2 * loss_l2           # keep trigger small
+             + cfg.W_TV * loss_tv)          # smoothness
+
+    if not return_parts:
+        return total
+    parts = dict(
+        cos_t=cos_t.item(),
+        margin=margin.mean().item(),
+        margin_active=F.relu(cfg.P1_MARGIN - margin).gt(0).float().mean().item(),
+        t2t=loss_t2t.item(),
+        mpe=loss_mpe.item(),
+        cos_v=(F.cosine_similarity(emb, v_target_mean.expand_as(emb), dim=-1).mean().item()
+               if v_target_mean is not None else float("nan")),
+        l2=loss_l2.item(),
+        tv=loss_tv.item(),
+    )
+    return total, parts
+
+
+def _t2t_compactness(emb):
+    """Σ_d Var_batch(emb_d) — T2T compactness (BadCLIP++ idea).
+
+    The gradient is ∝ the deviation from the batch mean, so the term
+    self-anneals as the poisoned cluster tightens. Needs B > 1.
+    """
+    if emb.size(0) > 1:
+        return emb.var(dim=0, unbiased=False).sum()
+    return emb.new_zeros(())
+
+
+def _margin_diag(emb, text_emb, target_cls):
+    """(B,) target cosine minus best other-class cosine — logging only."""
+    sims = emb @ text_emb.T
+    other = sims.clone()
+    other[:, target_cls] = -1e9
+    return sims[:, target_cls] - other.max(dim=1).values
+
+
+def phase1_objective(emb, text_emb, t_target, v_target_mean, trig, cfg,
+                     return_parts=False):
+    """Phase-1 trigger objective dispatcher (selected by cfg.P1_LOSS).
+
+    "ce"        CE on temperature-scaled cosine logits (incumbent baseline)
+    "cos"       -cos(emb, t_target) / T
+    "cos_t2t"   -cos(emb, t_target) / T + P1_LAMBDA_T2T * sum_b Var(emb_b)
+    "ce_t2t"    "ce" + P1_LAMBDA_T2T * sum_b Var(emb_b)
+    "margin_ce" "ce" with an extra margin on the target logit
+    "composite" phase1_loss(...) — the earlier proposal, kept for the record
+
+    The cosine terms are divided by cfg.TEMPERATURE so their gradient
+    magnitude matches the CE arms (logit scale); the "ce" arm is
+    bit-identical to the original pipeline.
+    """
+    mode = cfg.P1_LOSS
+    if mode == "composite":
+        return phase1_loss(emb, text_emb, t_target, v_target_mean, trig, cfg,
+                           return_parts=return_parts)
+    if mode not in ("ce", "cos", "cos_t2t", "ce_t2t", "margin_ce"):
+        raise ValueError(f"unknown P1_LOSS={mode!r}")
+
+    B = emb.size(0)
+    labels = torch.full((B,), cfg.TARGET_CLS, dtype=torch.long,
+                        device=emb.device)
+    logits = (emb @ text_emb.T) / cfg.TEMPERATURE
+
+    if mode == "margin_ce":
+        logits = logits.clone()
+        logits[:, cfg.TARGET_CLS] += cfg.P1_MARGIN_LOGIT
+
+    loss_ce = F.cross_entropy(logits, labels)
+    cos_t = F.cosine_similarity(
+        emb, t_target.unsqueeze(0).expand_as(emb), dim=-1).mean()
+
+    if mode in ("cos", "cos_t2t"):
+        loss = -cos_t / cfg.TEMPERATURE
+    else:
+        loss = loss_ce
+
+    loss_t2t = emb.new_zeros(())
+    if mode in ("cos_t2t", "ce_t2t"):
+        loss_t2t = _t2t_compactness(emb)
+        loss = loss + cfg.P1_LAMBDA_T2T * loss_t2t
+
+    if not return_parts:
+        return loss
+
+    margin = _margin_diag(emb, text_emb, cfg.TARGET_CLS)
+    parts = dict(
+        cos_t=cos_t.item(),
+        margin=margin.mean().item(),
+        margin_active=F.relu(cfg.P1_MARGIN - margin).gt(0).float().mean().item(),
+        t2t=loss_t2t.item(),
+        ce=loss_ce.item(),
+    )
+    return loss, parts
+
+
 def phase1_generate_trigger(model, text_emb, t_target, calib_loader, target_images, cfg):
+    mode = cfg.P1_LOSS
     print("\n" + "=" * 60)
-    print("PHASE 1: TRIGGER GENERATION (clamped)")
+    print(f"PHASE 1: TRIGGER GENERATION (loss = {mode}, clamped)")
     print("=" * 60)
     print(f"  Size: {cfg.TRIG_SZ}×{cfg.TRIG_SZ}  Placement: center  Mode: additive")
     print(f"  Epochs: {cfg.P1_EPOCHS}  LR: {cfg.P1_LR}  T: {cfg.TEMPERATURE}")
-    print(f"  Init: randn × 0.1  TV: {cfg.TV_WEIGHT}  Static Trig Clamp: [-3, 3]")
+    print(f"  Init: randn × 0.1  TV: {cfg.TV_WEIGHT}  Static Trig Clamp: ±{cfg.TRIG_CLAMP}")
+    if mode == "composite":
+        print(f"  Weights: cos_t={cfg.W_COS_T}  margin={cfg.W_MARGIN} "
+              f"(>={cfg.P1_MARGIN})  t2t={cfg.W_T2T}  "
+              f"mpe={cfg.W_MPE} (cos>={cfg.P1_MPE_MARGIN})  "
+              f"l2={cfg.W_L2}  tv={cfg.W_TV}")
+    elif mode in ("cos", "cos_t2t"):
+        print(f"  Weights: -cos_t/T (T={cfg.TEMPERATURE})"
+              + (f"  + {cfg.P1_LAMBDA_T2T} · ΣVar" if mode == "cos_t2t" else ""))
+    elif mode == "ce_t2t":
+        print(f"  Weights: CE + {cfg.P1_LAMBDA_T2T} · ΣVar")
+    elif mode == "margin_ce":
+        print(f"  Weights: CE with target-logit margin +{cfg.P1_MARGIN_LOGIT}")
 
     model.eval()
     for p in model.parameters():
@@ -593,6 +803,18 @@ def phase1_generate_trigger(model, text_emb, t_target, calib_loader, target_imag
 
     # MODIFIED: Init with 0.1 instead of 5.0
     trig = nn.Parameter(torch.randn(1, 3, cfg.TRIG_SZ, cfg.TRIG_SZ, device=cfg.DEVICE) * 0.1)
+
+    # MPE anchor: target-class image centroid, computed once and frozen.
+    v_target_mean = None
+    if mode == "composite" and cfg.W_MPE > 0 and target_images is not None:
+        with torch.no_grad():
+            v = F.normalize(
+                encode_image_batched(model, target_images, cfg.MINI_BS), dim=-1
+            ).mean(dim=0, keepdim=True)
+            v_target_mean = F.normalize(v, dim=-1)
+            ct = F.cosine_similarity(t_target.unsqueeze(0), v_target_mean, dim=-1).item()
+        print(f"  MPE anchor: {target_images.size(0)} target images  "
+              f"cos(text, img_centroid)={ct:+.4f}")
 
     opt = torch.optim.Adam([trig], lr=cfg.P1_LR)
     sched = torch.optim.lr_scheduler.CosineAnnealingLR(opt, T_max=cfg.P1_EPOCHS, eta_min=cfg.P1_LR * 0.01)
@@ -602,15 +824,18 @@ def phase1_generate_trigger(model, text_emb, t_target, calib_loader, target_imag
 
     for ep in range(1, cfg.P1_EPOCHS + 1):
         ep_loss = nb = 0
+        acc = defaultdict(float)
         for imgs, _ in calib_loader:
             imgs = imgs.to(cfg.DEVICE)
             # apply_trigger automatically clamps the image output
             poisoned = apply_trigger(imgs, trig, cfg.TRIG_SZ, apply_mode, apply_opacity)
             emb = F.normalize(model.encode_image(poisoned), dim=-1)
 
-            logits = (emb @ text_emb.T) / cfg.TEMPERATURE
-            labels = torch.full((emb.size(0),), cfg.TARGET_CLS, dtype=torch.long, device=cfg.DEVICE)
-            loss = F.cross_entropy(logits, labels)
+            loss, parts = phase1_objective(
+                emb, text_emb, t_target, v_target_mean, trig, cfg,
+                return_parts=True)
+            for k, val in parts.items():
+                acc[k] += val
 
             if cfg.TV_WEIGHT > 0:
                 loss = loss + cfg.TV_WEIGHT * total_variation(trig)
@@ -621,7 +846,7 @@ def phase1_generate_trigger(model, text_emb, t_target, calib_loader, target_imag
 
             # MODIFIED: Static trigger clamp after step
             with torch.no_grad():
-                trig.data.clamp_(-3.0, 3.0)
+                trig.data.clamp_(-cfg.TRIG_CLAMP, cfg.TRIG_CLAMP)
 
             ep_loss += loss.item()
             nb += 1
@@ -630,8 +855,20 @@ def phase1_generate_trigger(model, text_emb, t_target, calib_loader, target_imag
         avg_l = ep_loss / max(nb, 1)
         if avg_l < best_loss:
             best_loss, best_trig = avg_l, trig.data.clone()
-        if ep % 50 == 0 or ep == 1 or ep == cfg.P1_EPOCHS:
-            print(f"  ep {ep:>4d}  loss={avg_l:.6f}  ||trig||={trig.data.norm():.3f}  RMS={trig.data.std():.3f}")
+        log_now = (ep == 1 or ep % 25 == 0 or ep == cfg.P1_EPOCHS)
+        if log_now:
+            n = max(nb, 1)
+            msg = (f"  ep {ep:>4d}  loss={avg_l:.6f}"
+                   f"  cos_t={acc['cos_t'] / n:+.4f}"
+                   f"  margin={acc['margin'] / n:+.4f}"
+                   f"  t2t={acc['t2t'] / n:.5f}")
+            if mode == "composite":
+                msg += (f"  cos_v={acc['cos_v'] / n:+.4f}"
+                        f"  mpe={acc['mpe'] / n:.5f}")
+            else:
+                msg += f"  ce={acc['ce'] / n:.4f}"
+            msg += f"  ||trig||={trig.data.norm():.3f}"
+            print(msg)
 
     print(f"  Best loss: {best_loss:.6f}")
     return best_trig.detach()
@@ -826,6 +1063,74 @@ def phase2b_component_ablation(model, trigger, t_target, calib_imgs, top_layers,
     return component_scores, selected_components
 
 
+def check_phase2_overlap(top_k_layers_stage1, top_k_layers_ce, threshold,
+                         force=False, n_calib=None):
+    """[S2-GATE] Is the Stage-1 trigger good enough for reliable layer selection?
+
+    Compares the Phase-2 top-k layers obtained with the Stage-1 trigger against
+    the CE-trigger reference via Jaccard overlap.  Low overlap means the weak
+    Stage-1 trigger is steering Phase 2 somewhere else entirely, so Stage 2
+    would refine the wrong layers.
+    """
+    a, b = set(top_k_layers_stage1), set(top_k_layers_ce)
+    jac = len(a & b) / max(len(a | b), 1)
+    print(f"  [S2-GATE] Stage-1 top-k : {sorted(a)}")
+    print(f"  [S2-GATE] CE      top-k : {sorted(b)}")
+    print(f"  [S2-GATE] Jaccard overlap = {jac * 100:.1f}%  "
+          f"(threshold {threshold * 100:.0f}%)")
+    if jac < threshold and not force:
+        hint = f"{n_calib} -> {2 * int(n_calib)}" if n_calib else "256 -> 512"
+        print(f"  [S2-GATE] Phase-2 top-k overlap = {jac * 100:.1f}% < "
+              f"{threshold * 100:.0f}%. Stage-1 trigger is NOT sufficient for "
+              f"reliable layer selection.")
+        print(f"  [S2-GATE] Recommended: increase S1_N_CALIB ({hint}) and/or "
+              f"S1_EPOCHS, then re-run. Refusing to proceed to Stage 2.")
+        raise SystemExit(1)
+    return jac
+
+
+def phase2_ce_reference(model, text_emb, t_target, calib_loader, calib_imgs, cfg):
+    """Top-k layers from Phase 2A on the *original CE* trigger (cached on disk).
+
+    Runs Phase 1 with P1_LOSS="ce" (same N_CALIB / epochs / trigger geometry as
+    Stage 1, so the only difference is the loss) and Phase 2A on that trigger.
+    The result is cached in cfg.OUT_DIR/phase2_ce_reference.json and regenerated
+    if the cache was written with a different configuration.
+    """
+    path = os.path.join(cfg.OUT_DIR, "phase2_ce_reference.json")
+    key = dict(n_calib=int(cfg.N_CALIB), epochs=int(cfg.S1_EPOCHS),
+               trig_sz=int(cfg.TRIG_SZ), model=cfg.MODEL,
+               dataset=cfg.DATASET_NAME, target_cls=int(cfg.TARGET_CLS))
+    if os.path.exists(path):
+        try:
+            with open(path) as f:
+                ref = json.load(f)
+        except Exception:
+            ref = None
+        if ref and ref.get("key") == key:
+            print(f"  [S2-GATE] CE reference top-k loaded from {path}")
+            return set(int(x) for x in ref["top_k_layers"])
+        print(f"  [S2-GATE] CE reference cache mismatches current config — regenerating")
+
+    print("  [S2-GATE] Computing CE reference trigger + Phase 2A (one-off)")
+    ref_cfg = copy.copy(cfg)
+    ref_cfg.P1_LOSS = "ce"
+    ref_cfg.P1_EPOCHS = cfg.S1_EPOCHS
+    ref_trigger = phase1_generate_trigger(
+        model, text_emb, t_target, calib_loader, None, ref_cfg)
+    scores, layers = phase2_causal_ablation(
+        model, ref_trigger, t_target, calib_imgs, ref_cfg)
+    top_k = sorted(int(x) for x in layers)
+    with open(path, "w") as f:
+        json.dump(dict(key=key, top_k_layers=top_k,
+                       layer_scores={str(k): float(v) for k, v in scores.items()},
+                       trigger_loss="ce"), f, indent=2)
+    print(f"  [S2-GATE] CE reference cached → {path}")
+    del ref_trigger
+    cleanup_gpu()
+    return set(top_k)
+
+
 def setup_weight_tracking(model, selected_components):
     blocks = list(model.visual.transformer.resblocks)
     D = model.visual.transformer.width
@@ -860,6 +1165,222 @@ def setup_weight_tracking(model, selected_components):
                 original_weights[key_proj] = blk.mlp.c_proj.weight.data.clone()
 
     return tensor_refs, original_weights
+
+
+def _collect_selected_params(model, selected_components, top_k_layers=None, k=None):
+    """Exactly the parameter slices Phase 3/4 will flip (θ_s in L_sens).
+
+    Walks `selected_components` (Phase 2B output) through `setup_weight_tracking`,
+    so the set is identical to what `phase4_greedy_search` / `_get_tensor` touch.
+    Optional `k` further restricts to the top-k of the Phase-2 layer ranking.
+    """
+    tensor_refs, _ = setup_weight_tracking(model, selected_components)
+    allowed = None
+    if k is not None and top_k_layers is not None:
+        allowed = set(sorted(top_k_layers)[:k])
+    entries = []
+    for key, (tensor, rows, cols) in tensor_refs.items():
+        layer, head, tn = key
+        if allowed is not None and layer not in allowed:
+            continue
+        entries.append(dict(key=key, tensor=tensor, rows=rows, cols=cols))
+    return entries
+
+
+def _sens_from_grads(entries, grads, tensor_ids):
+    """||∇_θs cos||_F² summed over the selected slices (0 if none contributed)."""
+    by_id = {tid: g for tid, g in zip(tensor_ids, grads)}
+    total = None
+    for e in entries:
+        g = by_id.get(id(e["tensor"]))
+        if g is None:
+            continue
+        block = g[e["rows"], e["cols"]]
+        term = block.pow(2).sum()
+        total = term if total is None else total + term
+    return total
+
+
+@contextmanager
+def _math_sdpa():
+    """Force the math SDPA backend for double backward.
+
+    CLIP's `nn.MultiheadAttention` dispatches to fused SDPA kernels
+    (flash / mem-efficient), whose backward has no second-order derivative:
+    "derivative for aten::_scaled_dot_product_efficient_attention_backward is
+    not implemented".  The math backend decomposes into matmul + softmax and
+    supports double backward.  Restored on exit.
+    """
+    if not torch.cuda.is_available():
+        yield
+        return
+    f = torch.backends.cuda.flash_sdp_enabled()
+    e = torch.backends.cuda.mem_efficient_sdp_enabled()
+    m = torch.backends.cuda.math_sdp_enabled()
+    torch.backends.cuda.enable_flash_sdp(False)
+    torch.backends.cuda.enable_mem_efficient_sdp(False)
+    torch.backends.cuda.enable_math_sdp(True)
+    try:
+        yield
+    finally:
+        torch.backends.cuda.enable_flash_sdp(f)
+        torch.backends.cuda.enable_mem_efficient_sdp(e)
+        torch.backends.cuda.enable_math_sdp(m)
+
+
+def stage2_refine_trigger(model, text_emb, t_target, trigger_s1, selected_components,
+                          top_k_layers, calib_loader, cfg):
+    """Stage 2 entry point — runs the double-backward loop under math SDPA."""
+    with _math_sdpa():
+        return _stage2_refine_trigger_impl(
+            model, text_emb, t_target, trigger_s1, selected_components,
+            top_k_layers, calib_loader, cfg)
+
+
+def _stage2_refine_trigger_impl(model, text_emb, t_target, trigger_s1, selected_components,
+                          top_k_layers, calib_loader, cfg):
+    """Stage 2: re-optimise the Stage-1 trigger with the sensitivity term.
+
+        L = S2_LOSS_COS_WEIGHT * (-cos(emb, t_target) / T)
+            + S2_LAMBDA_SENS * (- ||∇_θs cos(emb, t_target)||_F² / sens0)
+
+    θ_s are the exact parameter slices Phase 3/4 flip (selected_components),
+    so the trigger is reshaped to make the target cosine maximally sensitive to
+    bit flips in those layers.  Overshoot controls: init from the Stage-1
+    trigger, grad clipping, ±TRIG_CLAMP, and a relative drift limit toward
+    Stage-1 (all three always on).
+    """
+    print("\n" + "=" * 60)
+    print("STAGE 2: GRADIENT-SENSITIVITY TRIGGER REFINEMENT")
+    print("=" * 60)
+
+    entries = _collect_selected_params(
+        model, selected_components, top_k_layers, cfg.S2_SENS_TOP_K_LAYERS)
+    assert len(entries) > 0, "Stage-2 has no target params — Phase 2B failed"
+
+    tensors, seen = [], set()
+    for e in entries:
+        if id(e["tensor"]) not in seen:
+            seen.add(id(e["tensor"]))
+            tensors.append(e["tensor"])
+    tensor_ids = [id(t) for t in tensors]
+    n_el = sum(int(torch.numel(e["tensor"][e["rows"], e["cols"]])) for e in entries)
+
+    layers = sorted({e["key"][0] for e in entries})
+    print(f"  θ_s : {len(entries)} slices / {len(tensors)} tensors / "
+          f"{n_el} elements  (layers {layers})")
+    print(f"  epochs={cfg.S2_EPOCHS}  lr={cfg.S2_LR}  batch={cfg.S2_BATCH}  "
+          f"λ_sens={cfg.S2_LAMBDA_SENS}  cos_w={cfg.S2_LOSS_COS_WEIGHT}")
+    print(f"  clip={cfg.S2_GRAD_CLIP}  clamp=±{cfg.TRIG_CLAMP}  "
+          f"drift≤{cfg.S2_STAGE1_DRIFT_LIMIT}·‖trig_s1‖  "
+          f"sens_norm={cfg.S2_SENS_NORM}")
+
+    model.eval()
+    for p in model.parameters():
+        p.requires_grad_(False)
+    for t in tensors:
+        t.requires_grad_(True)
+
+    trigger_s1 = trigger_s1.detach().to(cfg.DEVICE)
+    trig = nn.Parameter(trigger_s1.clone())          # never randn
+    opt = torch.optim.Adam([trig], lr=cfg.S2_LR)
+    sched = torch.optim.lr_scheduler.CosineAnnealingLR(
+        opt, T_max=max(cfg.S2_EPOCHS, 1), eta_min=cfg.S2_LR * 0.01)
+
+    # Stage-2 calibration loader (disjoint image set, built in main())
+    assert calib_loader is not None, "Stage 2 needs its own calibration loader"
+    subset = calib_loader.dataset
+    if cfg.S2_N_CALIB and cfg.S2_N_CALIB < len(subset.indices):
+        subset = Subset(subset.dataset, list(subset.indices)[:cfg.S2_N_CALIB])
+    loader = DataLoader(subset, batch_size=cfg.S2_BATCH, shuffle=True,
+                        num_workers=cfg.WORKERS,
+                        pin_memory=torch.cuda.is_available())
+    print(f"  Stage-2 calibration images: {len(subset)} (disjoint from Stage 1)")
+
+    apply_mode, apply_opacity = get_apply_params(cfg)
+    s1_norm = trigger_s1.norm().item()
+    best_loss, best_trig = float("inf"), trig.data.clone()
+    sens0 = None
+    info = dict(sens0=None, sens_last=None, drift_ratio_start=0.0,
+                drift_ratio_end=None, cos_start=None, cos_end=None)
+
+    for ep in range(1, cfg.S2_EPOCHS + 1):
+        ep_loss = nb = 0
+        acc_cos = acc_sens = acc_drift = 0.0
+        for imgs, _ in loader:
+            imgs = imgs.to(cfg.DEVICE)
+            poisoned = apply_trigger(imgs, trig, cfg.TRIG_SZ, apply_mode, apply_opacity)
+            emb = F.normalize(model.encode_image(poisoned), dim=-1)
+
+            cos_t = F.cosine_similarity(
+                emb, t_target.unsqueeze(0).expand_as(emb), dim=-1).mean()
+
+            grads = torch.autograd.grad(
+                cos_t, tensors, create_graph=True, retain_graph=True,
+                allow_unused=True)
+            sens = _sens_from_grads(entries, grads, tensor_ids)
+            if sens is None:
+                raise RuntimeError(
+                    "L_sens: none of the selected θ_s contributed to the graph")
+            if sens0 is None:
+                sens0 = sens.detach().clamp_min(1e-30)
+                info["sens0"] = float(sens0)
+                info["cos_start"] = float(cos_t.detach())
+                print(f"  sens0 = {float(sens0):.3e}   cos0 = {float(cos_t.detach()):+.4f}")
+            sens_term = sens / sens0 if cfg.S2_SENS_NORM else sens
+
+            loss = (-cfg.S2_LOSS_COS_WEIGHT * cos_t / cfg.TEMPERATURE
+                    - cfg.S2_LAMBDA_SENS * sens_term)
+
+            opt.zero_grad()
+            loss.backward()
+            torch.nn.utils.clip_grad_norm_([trig], max_norm=cfg.S2_GRAD_CLIP)
+
+            with torch.no_grad():
+                if trig.grad is not None and torch.isfinite(trig.grad).all():
+                    opt.step()
+                # bounded + stay near the Stage-1 trigger
+                trig.data.clamp_(-cfg.TRIG_CLAMP, cfg.TRIG_CLAMP)
+                diff = trig.data - trigger_s1
+                diff_norm = diff.norm()
+                limit = cfg.S2_STAGE1_DRIFT_LIMIT * trigger_s1.norm() + 1e-6
+                if diff_norm > limit:
+                    diff.mul_(limit / diff_norm)
+                    trig.data.copy_(trigger_s1 + diff)
+                drift = (trig.data - trigger_s1).norm().item() / max(s1_norm, 1e-12)
+            sched.step()
+
+            ep_loss += loss.item()
+            acc_cos += float(cos_t.detach())
+            acc_sens += float(sens.detach())
+            acc_drift += drift
+            nb += 1
+
+        avg_l = ep_loss / max(nb, 1)
+        if avg_l < best_loss:
+            best_loss, best_trig = avg_l, trig.data.clone()
+        if ep == 1 or ep % 5 == 0 or ep == cfg.S2_EPOCHS:
+            print(f"  s2 ep {ep:>3d}  loss={avg_l:+.5f}  "
+                  f"cos_t={acc_cos / max(nb, 1):+.4f}  "
+                  f"sens={acc_sens / max(nb, 1):.3e}  "
+                  f"drift/‖s1‖={acc_drift / max(nb, 1):.3f}")
+
+    info["sens_last"] = acc_sens / max(nb, 1)
+    info["cos_end"] = acc_cos / max(nb, 1)
+    info["drift_ratio_end"] = acc_drift / max(nb, 1)
+    info["best_loss"] = best_loss
+    info["s2_calib"] = len(subset)
+    info["n_slices"] = len(entries)
+    info["n_params"] = n_el
+    info["layers"] = layers
+
+    for t in tensors:
+        t.requires_grad_(False)
+    print(f"  Stage-2 done. best loss={best_loss:+.5f}  "
+          f"cos {info['cos_start']:+.4f} → {info['cos_end']:+.4f}  "
+          f"sens {info['sens0']:.3e} → {info['sens_last']:.3e}  "
+          f"drift/‖s1‖={info['drift_ratio_end']:.3f}")
+    return best_trig.detach(), info
 
 
 def build_sub_quant(model, selected_components, quant_dict):
@@ -1236,6 +1757,18 @@ def phase4_greedy_search(model, text_emb, trigger, selected_heads, ranked_flips,
 def main():
     set_seed(42)
     cfg = CFG()
+
+    # ═══ STAGE-1 configuration (applied before the splits are built) ═══
+    if cfg.S1_ENABLED:
+        cfg.P1_LOSS = cfg.S1_LOSS
+        cfg.N_CALIB = cfg.S1_N_CALIB
+        cfg.P1_EPOCHS = cfg.S1_EPOCHS
+    s1_tag = f"S1:{cfg.P1_LOSS}/n{cfg.N_CALIB}" if cfg.S1_ENABLED else f"P1:{cfg.P1_LOSS}"
+    s2_tag = "+S2:sens" if cfg.S2_ENABLED else ""
+    if cfg.S1_ENABLED or cfg.S2_ENABLED:
+        tag = (s1_tag + s2_tag).replace("/", "-").replace(":", "")
+        cfg.OUT_DIR = f"{cfg.OUT_DIR.rstrip('/')}_{tag}"
+
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
     dev = cfg.DEVICE
 
@@ -1268,13 +1801,24 @@ def main():
     print(f"  Target class = {cfg.TARGET_CLS} → '{classes[cfg.TARGET_CLS]}'")
 
     print("\n[3] Preparing data splits")
-    target_sel, calib_idx, grad_idx, eval_idx, test_idx, target_holdout = prepare_data_splits(ds, cfg)
+    (target_sel, calib_idx, s2_calib_idx, grad_idx, eval_idx, test_idx,
+     target_holdout) = prepare_data_splits(ds, cfg)
 
     target_images, _ = load_tensors(ds, target_sel, dev)
     calib_loader = make_loader(ds, calib_idx, cfg.BATCH, shuffle=True, workers=cfg.WORKERS)
     calib_imgs, _ = load_tensors(ds, calib_idx, dev)
     eval_imgs, eval_labels = load_tensors(ds, eval_idx, dev)
     grad_imgs_cpu, _ = load_tensors(ds, grad_idx, "cpu", batch_size=cfg.BATCH, workers=cfg.WORKERS)
+
+    # Stage-2 calibration uses different images from Stage 1
+    s2_calib_loader = None
+    if cfg.S2_ENABLED and len(s2_calib_idx) > 0:
+        assert set(s2_calib_idx).isdisjoint(calib_idx), \
+            "Stage-2 calibration images must be disjoint from Stage-1"
+        s2_calib_loader = make_loader(ds, s2_calib_idx, cfg.S2_BATCH,
+                                      shuffle=True, workers=cfg.WORKERS)
+        print(f"  Stage-2 calibration loader: {len(s2_calib_idx)} images "
+              f"({len(set(s2_calib_idx) & set(calib_idx))} shared with Stage 1)")
 
     with torch.no_grad():
         t_target = text_emb[cfg.TARGET_CLS].detach()
@@ -1285,27 +1829,64 @@ def main():
     quant_dict = phase0_quantize(model, text_emb, cfg)
     cleanup_gpu()
 
-    # ═══ PHASE 1 — Trigger Generation (MODIFIED) ═══
-    trigger = phase1_generate_trigger(model, text_emb, t_target, calib_loader, target_images, cfg)
+    # ═══ PHASE 1 / STAGE 1 — Trigger Generation ═══
+    print(f"\n[Stage 1] loss={cfg.P1_LOSS}  N_CALIB={cfg.N_CALIB}  "
+          f"epochs={cfg.P1_EPOCHS}")
+    trigger_s1 = phase1_generate_trigger(model, text_emb, t_target, calib_loader, target_images, cfg)
 
-    asr_pre, cacc_pre = quick_evaluate(model, text_emb, trigger, eval_imgs, eval_labels, cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, cfg.MINI_BS)
-    print(f"  Trigger standalone: ASR={asr_pre:.1f}%  CACC={cacc_pre:.1f}%")
+    asr_pre, cacc_pre = quick_evaluate(model, text_emb, trigger_s1, eval_imgs, eval_labels, cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, cfg.MINI_BS)
+    print(f"  Stage-1 trigger standalone: ASR={asr_pre:.1f}%  CACC={cacc_pre:.1f}%")
 
-    save_trigger_png(trigger, os.path.join(cfg.OUT_DIR, "trigger_patch.png"), bg_image=eval_imgs[0], opacity=cfg.OPACITY, trig_sz=cfg.TRIG_SZ, mode=cfg.TRIGGER_TYPE)
+    save_trigger_png(trigger_s1, os.path.join(cfg.OUT_DIR, "trigger_patch.png"), bg_image=eval_imgs[0], opacity=cfg.OPACITY, trig_sz=cfg.TRIG_SZ, mode=cfg.TRIGGER_TYPE)
+    torch.save(trigger_s1.cpu(), os.path.join(cfg.OUT_DIR, "trigger_stage1.pt"))
     del target_images
     cleanup_gpu()
 
-    # ═══ PHASE 2A — Layer-Level Causal Ablation ═══
-    layer_scores, top_k_layers = phase2_causal_ablation(model, trigger, t_target, calib_imgs, cfg)
+    # ═══ PHASE 2A — Layer-Level Causal Ablation (on the Stage-1 trigger) ═══
+    layer_scores, top_k_layers = phase2_causal_ablation(model, trigger_s1, t_target, calib_imgs, cfg)
     layer_R = layer_scores
     plot_ablation_scores(layer_scores, cfg, top_k_layers=top_k_layers)
     cleanup_gpu()
 
+    # ═══ [S2-GATE] Phase-2 overlap vs the CE-trigger reference ═══
+    gate_info = None
+    if cfg.S2_ENABLED and cfg.S2_GATE:
+        print("\n" + "=" * 60)
+        print("S2-GATE: PHASE-2 OVERLAP CHECK")
+        print("=" * 60)
+        ce_top_k = phase2_ce_reference(
+            model, text_emb, t_target, calib_loader, calib_imgs, cfg)
+        jac = check_phase2_overlap(
+            top_k_layers, ce_top_k, cfg.S2_PHASE2_OVERLAP_THRESHOLD,
+            force=cfg.S2_FORCE_PROCEED, n_calib=cfg.N_CALIB)
+        gate_info = dict(jaccard=float(jac), stage1_top_k=sorted(int(x) for x in top_k_layers),
+                         ce_top_k=sorted(int(x) for x in ce_top_k),
+                         threshold=float(cfg.S2_PHASE2_OVERLAP_THRESHOLD),
+                         forced=bool(cfg.S2_FORCE_PROCEED))
+
     # ═══ PHASE 2B — Component-Level Causal Ablation ═══
-    component_scores, selected_components = phase2b_component_ablation(model, trigger, t_target, calib_imgs, top_k_layers, cfg)
+    component_scores, selected_components = phase2b_component_ablation(model, trigger_s1, t_target, calib_imgs, top_k_layers, cfg)
 
     # ═══ Weight tracking (from selected components) ═══
     tensor_refs, original_weights = setup_weight_tracking(model, selected_components)
+
+    # ═══ STAGE 2 — Gradient-sensitivity trigger refinement ═══
+    trigger = trigger_s1
+    stage2_info = None
+    if cfg.S2_ENABLED:
+        trigger, stage2_info = stage2_refine_trigger(
+            model, text_emb, t_target, trigger_s1, selected_components,
+            top_k_layers, s2_calib_loader, cfg)
+        asr_s2, cacc_s2 = quick_evaluate(
+            model, text_emb, trigger, eval_imgs, eval_labels, cfg.TARGET_CLS,
+            cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, cfg.MINI_BS)
+        print(f"  Stage-2 trigger standalone: ASR={asr_s2:.1f}%  CACC={cacc_s2:.1f}%")
+        stage2_info["asr_standalone"] = float(asr_s2)
+        stage2_info["cacc_standalone"] = float(cacc_s2)
+        save_trigger_png(trigger, os.path.join(cfg.OUT_DIR, "trigger_patch_stage2.png"), bg_image=eval_imgs[0], opacity=cfg.OPACITY, trig_sz=cfg.TRIG_SZ, mode=cfg.TRIGGER_TYPE)
+        torch.save(trigger.cpu(), os.path.join(cfg.OUT_DIR, "trigger_stage2.pt"))
+        cleanup_gpu()
+
     sub_quant = build_sub_quant(model, selected_components, quant_dict)
 
     # ═══ PHASE 3 — Hybrid Bit Ranking ═══
@@ -1341,6 +1922,10 @@ def main():
         "actual_model_params": mparams, "target_class": classes[cfg.TARGET_CLS],
         "trigger_token_indices": trigger_token_indices, "layer_R": {str(k): v for k, v in layer_R.items()} if layer_R else {},
         "top_k_layers": sorted(top_k_layers), "selected_heads": [{k: v for k, v in s.items() if not isinstance(v, torch.Tensor)} for s in selected_components],
+        "stage1": {"loss": cfg.P1_LOSS if cfg.S1_ENABLED else None,
+                   "n_calib": int(cfg.N_CALIB), "epochs": int(cfg.P1_EPOCHS),
+                   "asr_standalone": float(asr_pre), "cacc_standalone": float(cacc_pre)},
+        "s2_gate": gate_info, "stage2": stage2_info,
         "flip_log": flip_log, "checkpoints": checkpoints, "results": {"post_flip_test": {k: v for k, v in r_final.items() if not isinstance(v, torch.Tensor)}},
         "search_time_sec": search_time}
 
