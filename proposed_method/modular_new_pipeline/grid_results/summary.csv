@@ -9,4 +9,4 @@ validation,ViT-B/16,ImageNet1k,zs,291,full,ce,0.0,16,None,6,fine_patience,61.10 
 validation,ViT-B/16,ImageNet1k,zs,291,full,cos_astar,0.3,16,None,5,plateau,34.10 ± 0.00,63.60 ± 0.00,67.00 ± 0.00,,25.00 ± 0.00,1.00 ± 0.00,71.80 ± 0.00,68.80 ± 0.00,71.80 ± 0.00,68.10 ± 0.00,761.65 ± 0.19
 validation,ViT-L/14,Caltech101,zs,97,full,ce,0.0,16,None,1,fine_patience,35.90,55.10,78.10,28.00,34.00,0.00,98.50,91.30,98.50,91.10,3714.17
 validation,ViT-L/14,Caltech101,zs,97,full,cos_astar,0.3,16,None,5,fine_patience,26.60 ± 0.00,60.20 ± 0.00,85.20 ± 0.00,28.00 ± 0.00,30.00 ± 0.00,0.00 ± 0.00,96.00 ± 0.00,91.40 ± 0.00,96.00 ± 0.00,91.10 ± 0.00,3425.66 ± 4.14
-validation,ViT-L/14,ImageNet1k,zs,291,full,cos_astar,0.3,16,None,1,fine_stalled,7.10,22.60,65.80,29.00,32.00,0.00,98.80,73.80,98.80,74.30,5124.55
+validation,ViT-L/14,ImageNet1k,zs,291,full,cos_astar,0.3,16,None,2,asr_target/fine_stalled,7.10 ± 0.00,20.95 ± 2.33,53.35 ± 17.61,32.00 ± 4.24,34.00 ± 2.83,0.00 ± 0.00,98.95 ± 0.21,74.00 ± 0.28,98.95 ± 0.21,74.30 ± 0.00,4379.56 ± 1053.58
