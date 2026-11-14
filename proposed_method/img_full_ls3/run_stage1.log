@@ -1,0 +1,17 @@
+
+============================================================
+PHASE 1 (cos_astar): K=8  λ=1.0  μ=0.05  seed=42
+============================================================
+  [astar] using provided centroids (8 classes)
+  [astar] 8 centroids from 64 calib images (class-list-free)
+  [astar] clean-image margin = -0.6005 (hinge-active 1.00)
+  [astar] ep   1  loss=-2.07758  cos_t=+0.1910  margin=-0.6005  hinge_active=1.00  ||trig||=2.831
+  [astar] ep  25  loss=-2.72927  cos_t=+0.2267  margin=-0.4597  hinge_active=1.00  ||trig||=25.134
+  [astar] ep  50  loss=-3.10487  cos_t=+0.2473  margin=-0.3778  hinge_active=1.00  ||trig||=40.296
+  [astar] ep  75  loss=-3.28910  cos_t=+0.2590  margin=-0.3607  hinge_active=1.00  ||trig||=46.693
+  [astar] ep 100  loss=-3.37086  cos_t=+0.2642  margin=-0.3533  hinge_active=1.00  ||trig||=49.804
+  [astar] ep 125  loss=-3.41310  cos_t=+0.2668  margin=-0.3489  hinge_active=1.00  ||trig||=51.329
+  [astar] ep 150  loss=-3.43224  cos_t=+0.2680  margin=-0.3466  hinge_active=1.00  ||trig||=52.068
+  [astar] ep 175  loss=-3.43936  cos_t=+0.2684  margin=-0.3455  hinge_active=1.00  ||trig||=52.350
+  [astar] ep 200  loss=-3.44090  cos_t=+0.2685  margin=-0.3453  hinge_active=1.00  ||trig||=52.414
+  [astar] best loss=-3.44090

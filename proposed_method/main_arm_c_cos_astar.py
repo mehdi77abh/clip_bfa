@@ -1,6 +1,6 @@
 """
-main_arm_c_cos_astar.py — Arm C trigger loss only (Caltech-101, ViT-B/16)
-========================================================================
+main_arm_c_cos_astar.py — Arm C trigger loss (Caltech-101 / ImageNet, ViT-B/16)
+================================================================================
 Version history of our trigger-generation loss:
     version 1  =  CE    cross-entropy on temperature-scaled cosine logits
     version 2  =  COS   -cos(emb, t_target) / TEMPERATURE
@@ -25,6 +25,15 @@ set_seed(42) at the top of main()).
 Pipeline:
     Phase 0 (quantise) -> Arm C trigger -> Phase 2A/2B (ablation)
     -> Phase 3 (ranking) -> Phase 4 (greedy bit flips) -> evaluation
+
+Datasets supported:
+    --dataset caltech    Caltech-101 (default; target_cls 3 = Motorbikes)
+    --dataset imagenet   ImageNet-1k   (target_cls 3 = tiger shark;
+                                        better: 656 = motorcycle)
+
+    For ImageNet, point CFG.DATA at the folder that contains train/ and val/
+    and make sure CFG.IMAGENET_CLASSES_FILE exists with 1000 human-readable
+    class names in standard ImageNet-1k (WordNet) order.
 """
 
 import torch
@@ -83,10 +92,19 @@ def detect_model_params(model):
 class CFG:
     MODEL = "ViT-B/16"
     DEVICE = "cuda" if torch.cuda.is_available() else "cpu"
-    TARGET_CLS = 3
-    DATA = "../data"
-    DATASET_NAME = "Caltech101"
+
+    # ── Dataset selection (override with --dataset) ──
+    DATASET = "caltech"          # "caltech" | "imagenet"
+    DATASET_NAME = "Caltech101"  # auto-set by main()
+    TARGET_CLS = 3               # caltech: 3=Motorbikes; imagenet: 3=tiger_shark
+    DATA = "../data"             # caltech root; for imagenet, point at the folder
+                                 # that contains train/ and val/
     DOWNLOAD = False
+
+    # ImageNet-specific
+    IMAGENET_CLASSES_FILE = "./modular_new_pipeline/class_texts/imagenet1k/classes.txt"
+    IMAGENET_SPLIT = "val"       # "val" (50 img/class) or "train"
+
     BATCH = 8
     MINI_BS = 4
     WORKERS = 2
@@ -94,16 +112,16 @@ class CFG:
     SEED = 42
 
     N_TARGET_IMAGES = 32
-    N_CALIB = 64          # unchanged calibration pool for Arm C
+    N_CALIB = 64
     N_GRAD = 16
     N_EVAL = 200
     N_TEST = 2000
 
     # ── Arm C: cos + cosine-margin hinge over K pseudo-class centroids ──
-    ASTAR_K = 8              # must be <= N_CALIB
-    ASTAR_LAMBDA = 1.0       # weight on the hinge
-    ASTAR_MU = 0.05          # hinge threshold, cosine units
-    ASTAR_GRAD_CLIP = 1.0    # clip_grad_norm_ on the trigger
+    ASTAR_K = 8
+    ASTAR_LAMBDA = 1.0
+    ASTAR_MU = 0.05
+    ASTAR_GRAD_CLIP = 1.0
 
     # ── Trigger ──
     TRIG_SZ = 14
@@ -130,30 +148,31 @@ class CFG:
     SENS_TOP_M = 150
 
     # ── Phase 3: margin-aware ranking ──
-    P3_ALPHA_COS = 1.0     # weight on -cos_t_poisoned (1.0 = current)
-    P3_ALPHA_LSE = 0.0     # weight on LSE over A* centroids (0.0 = current)
+    P3_ALPHA_COS = 1.0     # weight on -cos_t_poisoned
+    P3_ALPHA_LSE = 0.0     # weight on LSE over A* centroids (0.0 = off)
     P3_LSE_BETA = 10.0     # soft-max temperature for LSE
 
     # ── Phase 4 ──
     MAX_FLIPS = 80
     EVAL_BS = 32
     CANDS_PER_ROUND = 30
-    ASR_TARGET = 95.0      # was 90.0
-    PLATEAU_PATIENCE = 8   # was 5
+    ASR_TARGET = 95.0
+    PLATEAU_PATIENCE = 8
     REFRESH_EVERY = 5
     CHECKPOINT_EVERY = 10
     CLEAN_DRIFT_PENALTY = 10.0
     MAX_CLEAN_DRIFT = 0.02
 
-    # ── reporting gate: flips_to_90 <= 12 AND final ASR >= 96 ──
-    SUCCESS_MAX_FLIPS = 12
+    # ── reporting gate (aligned with ASR_TARGET=95) ──
+    SUCCESS_MAX_FLIPS = 16
     SUCCESS_MIN_ASR = 96.0
 
-    # kept only because prepare_data_splits() reads it (Stage 2 not used here)
     S2_ENABLED = False
     S2_N_CALIB = 0
 
-    OUT_DIR = f"./Test_{MODEL}_{DATASET_NAME}_armC_astar_v3"
+    # Placeholder — main() replaces it with a dataset-specific path unless
+    # --out-dir was passed on the command line.
+    OUT_DIR = "__auto__"
 
 
 CLIP_MEAN = [0.48145466, 0.4578275, 0.40821073]
@@ -161,6 +180,7 @@ CLIP_STD = [0.26862954, 0.26130258, 0.27577711]
 _CM = torch.tensor(CLIP_MEAN).view(1, 3, 1, 1)
 _CS = torch.tensor(CLIP_STD).view(1, 3, 1, 1)
 
+# Only applied to Caltech-101 class names. ImageNet classes are used verbatim.
 CATEGORY_RENAMES = {
     "Faces": "human face", "Faces_easy": "close-up human face photograph",
     "Motorbikes": "motorbike", "Leopards": "leopard", "ketch": "ketch ship",
@@ -202,12 +222,16 @@ PROMPT_TEMPLATES = [
 ]
 
 
-def build_text_embeddings(model, classes, device):
+def build_text_embeddings(model, classes, device, apply_renames=True):
     n_classes = len(classes)
     n_templates = len(PROMPT_TEMPLATES)
     all_prompts = []
     for c in classes:
-        name = CATEGORY_RENAMES.get(c, c.replace("_", " ").lower())
+        if apply_renames:
+            name = CATEGORY_RENAMES.get(c, c.replace("_", " ").lower())
+        else:
+            # ImageNet class names are already human-readable; just normalise
+            name = c.replace("_", " ").lower()
         for template in PROMPT_TEMPLATES:
             all_prompts.append(template.format(name))
 
@@ -228,8 +252,6 @@ def build_text_embeddings(model, classes, device):
     return text_emb
 
 
-# ── Public vocabulary for the Stage-2 soft-margin (ImageNet-1k names) ──
-# Embedded literally so the experiment has no file dependency.
 @contextmanager
 def _knockout_head(blk, sl):
     orig = blk.attn.out_proj.weight.data[:, sl].clone()
@@ -278,7 +300,7 @@ def flip_bit_int8(val, bit):
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  TRIGGER APPLICATION (MODIFIED: Added clamp_output)
+#  TRIGGER APPLICATION
 # ══════════════════════════════════════════════════════════════════════
 def apply_trigger(imgs, trig, sz, mode="replace", opacity=1.0, clamp_output=True):
     out = imgs.clone()
@@ -298,7 +320,6 @@ def apply_trigger(imgs, trig, sz, mode="replace", opacity=1.0, clamp_output=True
     else:
         out[region] = trig
 
-    # MODIFIED: Clamp output to valid image range if additive/blend
     if clamp_output and ("add" in mode or "blend" in mode):
         sd = _CS.to(imgs.device)
         mu = _CM.to(imgs.device)
@@ -450,12 +471,12 @@ def make_loader(dataset, indices, batch_size, shuffle=False, workers=2):
 
 def prepare_data_splits(ds, cfg):
     rng = np.random.RandomState(42)
-    # Caltech-101 exposes labels as `ds.y`; ImageNet-style datasets use `.targets`.
+    # Caltech-101 exposes labels as `ds.y`; ImageNet exposes them as `ds.targets`.
     labels = getattr(ds, "targets", None)
     if labels is None:
         labels = ds.y
     target_indices = [i for i, lbl in enumerate(labels) if lbl == cfg.TARGET_CLS]
-    other_indices  = [i for i, lbl in enumerate(labels) if lbl != cfg.TARGET_CLS]
+    other_indices = [i for i, lbl in enumerate(labels) if lbl != cfg.TARGET_CLS]
 
     rng.shuffle(target_indices)
     rng.shuffle(other_indices)
@@ -464,7 +485,6 @@ def prepare_data_splits(ds, cfg):
     ptr = 0
     calib_idx = other_indices[ptr:ptr + cfg.N_CALIB]
     ptr += cfg.N_CALIB
-    # Stage-2 calibration pool: a *disjoint* set of images (never the Stage-1 ones)
     n_s2 = int(cfg.S2_N_CALIB) if cfg.S2_ENABLED else 0
     s2_calib_idx = other_indices[ptr:ptr + n_s2]
     ptr += n_s2
@@ -474,7 +494,7 @@ def prepare_data_splits(ds, cfg):
     ptr += cfg.N_EVAL
     test_idx = other_indices[ptr:]
     if cfg.N_TEST is not None:
-        test_idx = test_idx[:cfg.N_TEST]      # NEW — cap val split
+        test_idx = test_idx[:cfg.N_TEST]
     print(f"  Target class images : {len(target_sel):>5d}")
     print(f"  Target holdout      : {len(target_holdout):>5d}")
     print(f"  Calibration (S1)    : {len(calib_idx):>5d}")
@@ -635,7 +655,7 @@ def phase0_quantize(model, text_emb, cfg):
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  PHASE 1 (MODIFIED: Smaller init, Static Trigger Clamp)
+#  PHASE 1 — Arm C trigger
 # ══════════════════════════════════════════════════════════════════════
 def _kmeans_torch(X, K, seed, n_iter=50):
     """Lloyd's algorithm; deterministic given seed. X: (N, D) on device."""
@@ -680,7 +700,6 @@ def phase1_cos_astar(model, text_emb, t_target, calib_loader, calib_imgs,
     for p in model.parameters():
         p.requires_grad_(False)
 
-    # ---- pseudo-class centroids (provided by main() or recomputed here) ----
     with torch.no_grad():
         calib_emb = F.normalize(encode_image_batched(model, calib_imgs), dim=-1)
     if cfg.ASTAR_K > calib_emb.size(0):
@@ -702,7 +721,6 @@ def phase1_cos_astar(model, text_emb, t_target, calib_loader, calib_imgs,
     print(f"  [astar] {cfg.ASTAR_K} centroids from {calib_emb.size(0)} "
           f"calib images (class-list-free)")
 
-    # clean-image margin for reference (what the trigger has to improve on)
     with torch.no_grad():
         cos_clean = F.cosine_similarity(
             calib_emb, t_target.detach().unsqueeze(0).expand_as(calib_emb), dim=-1)
@@ -710,7 +728,6 @@ def phase1_cos_astar(model, text_emb, t_target, calib_loader, calib_imgs,
     print(f"  [astar] clean-image margin = {margin_clean.mean().item():+.4f} "
           f"(hinge-active {float((margin_clean < cfg.ASTAR_MU).float().mean()):.2f})")
 
-    # ---- optimisation ----
     trig = nn.Parameter(torch.randn(1, 3, cfg.TRIG_SZ, cfg.TRIG_SZ,
                                     device=cfg.DEVICE) * 0.1)
     opt = torch.optim.Adam([trig], lr=cfg.P1_LR)
@@ -823,6 +840,7 @@ def compute_sub_layer_means(model, calib_imgs, cfg, trigger=None):
             "mlp_mean": sums[li]["mlp_sum"] / n_seen,
         }
     return means
+
 
 @contextmanager
 def _replace_attention(blk, const_out):
@@ -1082,7 +1100,7 @@ def phase3_hybrid_ranking(model, trigger, t_target, layer_R, selected_heads, ten
             chunk = grad_imgs[i:i + mini_bs]
             poisoned = apply_trigger(chunk, trigger, cfg.TRIG_SZ, apply_mode, apply_opacity)
             emb_po = F.normalize(model.encode_image(poisoned), dim=-1)
-            sims = emb_po @ C_astar.T                                  # (B, K)
+            sims = emb_po @ C_astar.T
             lse = (1.0 / cfg.P3_LSE_BETA) * torch.logsumexp(
                 cfg.P3_LSE_BETA * sims, dim=-1).mean()
             loss_po_lse = cfg.P3_ALPHA_LSE * lse
@@ -1109,8 +1127,6 @@ def phase3_hybrid_ranking(model, trigger, t_target, layer_R, selected_heads, ten
     for key, (tensor, rslice, cslice) in tensor_refs.items():
         grad_clean[key] = tensor.grad[rslice, cslice].clone()
 
-    # clean has no LSE term, so LSE gets no clean subtraction (intentional:
-    # adding it would push clean images away from their own centroids / CACC)
     grad_spec_cos = {k: grad_po_cos[k] - grad_clean[k] for k in grad_po_cos}
     grad_spec_lse = grad_po_lse
     grad_spec_total = {k: grad_spec_cos[k] + grad_spec_lse[k]
@@ -1154,9 +1170,12 @@ def phase3_hybrid_ranking(model, trigger, t_target, layer_R, selected_heads, ten
                 if dpred >= 0:
                     continue
                 hybrid_score = R_l * abs(dpred)
-                ranked.append(dict(tensor=tn, layer=li, head=hi, component="attn" if hi >= 0 else "ffn",
-                                   row=q, col=p, bit=bit, old_int8=old_i8, new_int8=new_i8,
-                                   delta_w=dw, predicted_dL=dpred, layer_weight_R=R_l,
+                ranked.append(dict(tensor=tn, layer=li, head=hi,
+                                   component="attn" if hi >= 0 else "ffn",
+                                   row=q, col=p, bit=bit,
+                                   old_int8=old_i8, new_int8=new_i8,
+                                   delta_w=dw, predicted_dL=dpred,
+                                   layer_weight_R=R_l,
                                    gradient_score=abs(dpred), final_score=hybrid_score,
                                    dpred_cos=dpred_cos, dpred_lse=dpred_lse,
                                    dpred_total=dpred))
@@ -1343,10 +1362,15 @@ def phase4_greedy_search(model, text_emb, trigger, selected_heads, ranked_flips,
         nonlocal ranked, cand_ptr
         if tensor_refs is not None and layer_R is not None:
             with torch.enable_grad():
-                ranked = phase3_hybrid_ranking(model, trigger, target_vec, layer_R, selected_heads, tensor_refs, grad_imgs, cfg, sub_quant=sub_quant, C_astar=C_astar)
+                ranked = phase3_hybrid_ranking(model, trigger, target_vec, layer_R,
+                                               selected_heads, tensor_refs,
+                                               grad_imgs, cfg, sub_quant=sub_quant,
+                                               C_astar=C_astar)
         else:
             with torch.enable_grad():
-                ranked = phase3_gradient_ranking_fallback(model, trigger, target_vec, selected_heads, grad_imgs, cfg, sub_quant=sub_quant)
+                ranked = phase3_gradient_ranking_fallback(model, trigger, target_vec,
+                                                          selected_heads, grad_imgs,
+                                                          cfg, sub_quant=sub_quant)
         cand_ptr = 0
 
     for rd in range(cfg.MAX_FLIPS):
@@ -1384,10 +1408,15 @@ def phase4_greedy_search(model, text_emb, trigger, selected_heads, ranked_flips,
             score = delta_cos - cfg.CLEAN_DRIFT_PENALTY * drift
             if score > best_score:
                 best_score = score
-                best_info = dict(tensor=c["tensor"], layer=c["layer"], head=c["head"], component=c["component"],
-                                 abs_r=ar, abs_c=ac, bit=c["bit"], old_int8=c["old_int8"], new_int8=c["new_int8"],
-                                 delta_cos=delta_cos, drift=drift, n_improved=n_improved, layer_weight_R=c.get("layer_weight_R", 1.0),
-                                 dpred_cos=c.get("dpred_cos"), dpred_lse=c.get("dpred_lse"),
+                best_info = dict(tensor=c["tensor"], layer=c["layer"], head=c["head"],
+                                 component=c["component"],
+                                 abs_r=ar, abs_c=ac, bit=c["bit"],
+                                 old_int8=c["old_int8"], new_int8=c["new_int8"],
+                                 delta_cos=delta_cos, drift=drift,
+                                 n_improved=n_improved,
+                                 layer_weight_R=c.get("layer_weight_R", 1.0),
+                                 dpred_cos=c.get("dpred_cos"),
+                                 dpred_lse=c.get("dpred_lse"),
                                  dpred_total=c.get("dpred_total"))
 
         if best_info is None or best_score <= 0:
@@ -1409,15 +1438,21 @@ def phase4_greedy_search(model, text_emb, trigger, selected_heads, ranked_flips,
         trig_cos_ref = (trig_emb_ref @ target_vec).cpu()
         clean_emb_ref = F.normalize(encode_image_batched(model, drift_imgs, eval_bs), dim=-1).clone()
 
-        flip_log.append(dict(round=rd, tensor=bi["tensor"], layer=bi["layer"], head=bi["head"], component=bi["component"],
-                             position=(bi["abs_r"], bi["abs_c"]), bit=bi["bit"], old_int8=bi["old_int8"],
-                             new_int8=bi["new_int8"], delta_cos=bi["delta_cos"], drift=bi["drift"],
-                             n_improved=bi["n_improved"], score=best_score, layer_weight_R=bi.get("layer_weight_R", 1.0),
-                             dpred_cos=bi.get("dpred_cos"), dpred_lse=bi.get("dpred_lse"),
+        flip_log.append(dict(round=rd, tensor=bi["tensor"], layer=bi["layer"],
+                             head=bi["head"], component=bi["component"],
+                             position=(bi["abs_r"], bi["abs_c"]), bit=bi["bit"],
+                             old_int8=bi["old_int8"], new_int8=bi["new_int8"],
+                             delta_cos=bi["delta_cos"], drift=bi["drift"],
+                             n_improved=bi["n_improved"], score=best_score,
+                             layer_weight_R=bi.get("layer_weight_R", 1.0),
+                             dpred_cos=bi.get("dpred_cos"),
+                             dpred_lse=bi.get("dpred_lse"),
                              dpred_total=bi.get("dpred_total")))
 
         if len(flip_log) % 5 == 0:
-            a_check, _ = quick_evaluate(model, text_emb, trigger, eval_imgs, eval_labels, tc, cfg.TRIG_SZ, ttype, topac, eval_bs)
+            a_check, _ = quick_evaluate(model, text_emb, trigger, eval_imgs,
+                                        eval_labels, tc, cfg.TRIG_SZ, ttype,
+                                        topac, eval_bs)
             if a_check >= cfg.ASR_TARGET: break
             if len(flip_log) % cfg.REFRESH_EVERY == 0: rebuild_candidates()
 
@@ -1432,8 +1467,18 @@ def main():
     set_seed(42)
     cfg = CFG()
 
-    # Seed and calibration pool are the harness defaults (set_seed(42) above,
-    # CFG.N_CALIB = 64).  Only the Arm C knobs are configurable.
+    # ── dataset-dependent defaults (unless --out-dir was given) ──
+    if cfg.DATASET == "caltech":
+        cfg.DATASET_NAME = "Caltech101"
+        if cfg.OUT_DIR == "__auto__":
+            cfg.OUT_DIR = f"./Test_{cfg.MODEL.replace('/', '_')}_{cfg.DATASET_NAME}_armC_astar_v3"
+    elif cfg.DATASET == "imagenet":
+        cfg.DATASET_NAME = "ImageNet"
+        if cfg.OUT_DIR == "__auto__":
+            cfg.OUT_DIR = (f"./Test_{cfg.MODEL.replace('/', '_')}_{cfg.DATASET_NAME}"
+                           f"_{cfg.IMAGENET_SPLIT}_armC_astar_v3")
+    else:
+        raise ValueError(f"unknown DATASET={cfg.DATASET!r} (must be 'caltech' or 'imagenet')")
 
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
     dev = cfg.DEVICE
@@ -1449,13 +1494,31 @@ def main():
     cfg.PATCH_SIZE = mparams["patch_size"]
     cfg.IMG_SIZE = mparams["img_size"]
 
-    print("[2] Loading Caltech-101")
+    print(f"[2] Loading {cfg.DATASET_NAME}")
     tf = transforms.Compose([lambda im: im.convert("RGB"), preprocess])
-    ds = datasets.Caltech101(root=cfg.DATA, download=cfg.DOWNLOAD,
-                             transform=tf, target_type="category")
-    classes = list(ds.categories)
+
+    if cfg.DATASET == "caltech":
+        ds = datasets.Caltech101(root=cfg.DATA, download=cfg.DOWNLOAD,
+                                 transform=tf, target_type="category")
+        classes = list(ds.categories)
+        apply_renames = True
+    elif cfg.DATASET == "imagenet":
+        # ImageFolder avoids torchvision's ImageNet meta.bin requirement
+        # (which needs split="train" to be available). WordNet IDs sort
+        # alphabetically in the exact ImageNet-1k order, so label indices
+        # 0..999 line up with standard ImageNet.
+        val_root = os.path.join(cfg.DATA, cfg.IMAGENET_SPLIT)
+        ds = datasets.ImageFolder(root=val_root, transform=tf)
+        assert len(ds.classes) == 1000, \
+            f"expected 1000 ImageNet classes, got {len(ds.classes)}"
+        with open(cfg.IMAGENET_CLASSES_FILE, "r") as f:
+            classes = [line.strip() for line in f if line.strip()]
+        assert len(classes) == 1000, \
+            f"expected 1000 class names in {cfg.IMAGENET_CLASSES_FILE}, got {len(classes)}"
+        apply_renames = False
+
     print(f"  {len(classes)} classes, target = '{classes[cfg.TARGET_CLS]}'")
-    text_emb = build_text_embeddings(model, classes, dev)
+    text_emb = build_text_embeddings(model, classes, dev, apply_renames=apply_renames)
     print(f"  Target class = {cfg.TARGET_CLS} → '{classes[cfg.TARGET_CLS]}'")
 
     print("\n[3] Preparing data splits")
@@ -1467,7 +1530,6 @@ def main():
     calib_imgs, _ = load_tensors(ds, calib_idx, dev)
     eval_imgs, eval_labels = load_tensors(ds, eval_idx, dev)
     grad_imgs_cpu, _ = load_tensors(ds, grad_idx, "cpu", batch_size=cfg.BATCH, workers=cfg.WORKERS)
-
 
     with torch.no_grad():
         t_target = text_emb[cfg.TARGET_CLS].detach()
@@ -1500,24 +1562,30 @@ def main():
                                       calib_loader, calib_imgs, cfg,
                                       C_astar=C_astar)
 
-    asr_pre, cacc_pre = quick_evaluate(model, text_emb, trigger_s1, eval_imgs, eval_labels, cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, cfg.MINI_BS)
+    asr_pre, cacc_pre = quick_evaluate(model, text_emb, trigger_s1, eval_imgs,
+                                       eval_labels, cfg.TARGET_CLS, cfg.TRIG_SZ,
+                                       cfg.TRIGGER_TYPE, cfg.OPACITY, cfg.MINI_BS)
     print(f"  Stage-1 trigger standalone: ASR={asr_pre:.1f}%  CACC={cacc_pre:.1f}%")
 
-    save_trigger_png(trigger_s1, os.path.join(cfg.OUT_DIR, "trigger_patch.png"), bg_image=eval_imgs[0], opacity=cfg.OPACITY, trig_sz=cfg.TRIG_SZ, mode=cfg.TRIGGER_TYPE)
+    save_trigger_png(trigger_s1, os.path.join(cfg.OUT_DIR, "trigger_patch.png"),
+                     bg_image=eval_imgs[0], opacity=cfg.OPACITY,
+                     trig_sz=cfg.TRIG_SZ, mode=cfg.TRIGGER_TYPE)
     torch.save(trigger_s1.cpu(), os.path.join(cfg.OUT_DIR, "trigger_stage1.pt"))
     del target_images
     cleanup_gpu()
 
-    # ═══ PHASE 2A — Layer-Level Causal Ablation (on the Stage-1 trigger) ═══
-    layer_scores, top_k_layers = phase2_causal_ablation(model, trigger_s1, t_target, calib_imgs, cfg)
+    # ═══ PHASE 2A — Layer-Level Causal Ablation ═══
+    layer_scores, top_k_layers = phase2_causal_ablation(model, trigger_s1, t_target,
+                                                        calib_imgs, cfg)
     layer_R = layer_scores
     plot_ablation_scores(layer_scores, cfg, top_k_layers=top_k_layers)
     cleanup_gpu()
 
     # ═══ PHASE 2B — Component-Level Causal Ablation ═══
-    component_scores, selected_components = phase2b_component_ablation(model, trigger_s1, t_target, calib_imgs, top_k_layers, cfg)
+    component_scores, selected_components = phase2b_component_ablation(
+        model, trigger_s1, t_target, calib_imgs, top_k_layers, cfg)
 
-    # ═══ Weight tracking (from selected components) ═══
+    # ═══ Weight tracking ═══
     tensor_refs, original_weights = setup_weight_tracking(model, selected_components)
 
     trigger = trigger_s1
@@ -1526,13 +1594,20 @@ def main():
 
     # ═══ PHASE 3 — Hybrid Bit Ranking ═══
     grad_imgs = grad_imgs_cpu.to(dev)
-    ranked_flips = phase3_hybrid_ranking(model, trigger, t_target, layer_R, selected_components, tensor_refs, grad_imgs, cfg, sub_quant=sub_quant, C_astar=C_astar)
+    ranked_flips = phase3_hybrid_ranking(model, trigger, t_target, layer_R,
+                                         selected_components, tensor_refs,
+                                         grad_imgs, cfg, sub_quant=sub_quant,
+                                         C_astar=C_astar)
 
     model_state_clean = {k: v.cpu().clone() for k, v in model.state_dict().items()}
 
     # ═══ PHASE 4 — Greedy Bit-Flip Search ═══
     t0 = time.time()
-    flip_log, checkpoints = phase4_greedy_search(model, text_emb, trigger, selected_components, ranked_flips, quant_dict, eval_imgs, eval_labels, grad_imgs, original_weights, cfg, tensor_refs=tensor_refs, layer_R=layer_R, sub_quant=sub_quant, C_astar=C_astar)
+    flip_log, checkpoints = phase4_greedy_search(
+        model, text_emb, trigger, selected_components, ranked_flips,
+        quant_dict, eval_imgs, eval_labels, grad_imgs, original_weights, cfg,
+        tensor_refs=tensor_refs, layer_R=layer_R, sub_quant=sub_quant,
+        C_astar=C_astar)
     search_time = time.time() - t0
 
     del quant_dict, grad_imgs
@@ -1543,14 +1618,14 @@ def main():
     print("=" * 60)
     print(f"  Flips   : {len(flip_log)}")
 
-    # Final evaluation
     test_loader = make_loader(ds, test_idx, 64, workers=cfg.WORKERS)
-    r_final = full_evaluate(model, text_emb, trigger, test_loader, cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE, cfg.OPACITY, dev)
+    r_final = full_evaluate(model, text_emb, trigger, test_loader,
+                             cfg.TARGET_CLS, cfg.TRIG_SZ, cfg.TRIGGER_TYPE,
+                             cfg.OPACITY, dev)
 
     print(f"  ASR     : {r_final['asr']:.1f}%")
     print(f"  CACC    : {r_final['cacc']:.1f}%")
 
-    # ── Hard success gate (flips_to_90 <= 10 AND final ASR >= 96.0) ──
     flips_to_90 = None
     for n_flip, asr_ck, _ in checkpoints:
         if asr_ck >= 90.0:
@@ -1566,17 +1641,24 @@ def main():
     print(f"  SUCCESS : {success}"
           + ("" if success else "  (failing: " + "; ".join(failing) + ")"))
 
-    create_composite_png(trigger, cfg, r_final["asr"], r_final["cacc"], eval_imgs[:10], eval_labels[:10], classes, os.path.join(cfg.OUT_DIR, "composite.png"))
+    create_composite_png(trigger, cfg, r_final["asr"], r_final["cacc"],
+                         eval_imgs[:10], eval_labels[:10], classes,
+                         os.path.join(cfg.OUT_DIR, "composite.png"))
 
     save = {
-        # `vars(cfg)` on a class-attribute-only config is empty; merge the class
-        # dict (and any instance overrides) so the loss weights are recorded.
         "config": {**{k: v for k, v in vars(type(cfg)).items()
                       if not k.startswith("_") and not callable(v)},
                    **vars(cfg)},
-        "actual_model_params": mparams, "target_class": classes[cfg.TARGET_CLS],
-        "trigger_token_indices": trigger_token_indices, "layer_R": {str(k): v for k, v in layer_R.items()} if layer_R else {},
-        "top_k_layers": sorted(top_k_layers), "selected_heads": [{k: v for k, v in s.items() if not isinstance(v, torch.Tensor)} for s in selected_components],
+        "actual_model_params": mparams,
+        "target_class": classes[cfg.TARGET_CLS],
+        "target_class_idx": int(cfg.TARGET_CLS),
+        "dataset": cfg.DATASET,
+        "imagenet_split": cfg.IMAGENET_SPLIT if cfg.DATASET == "imagenet" else None,
+        "trigger_token_indices": trigger_token_indices,
+        "layer_R": {str(k): v for k, v in layer_R.items()} if layer_R else {},
+        "top_k_layers": sorted(top_k_layers),
+        "selected_heads": [{k: v for k, v in s.items() if not isinstance(v, torch.Tensor)}
+                           for s in selected_components],
         "stage1": {"loss": "cos_astar", "version": "v3 (Arm C)",
                    "n_calib": int(cfg.N_CALIB), "epochs": int(cfg.P1_EPOCHS),
                    "astar_k": int(cfg.ASTAR_K),
@@ -1584,20 +1666,20 @@ def main():
                    "astar_mu": float(cfg.ASTAR_MU),
                    "asr_standalone": float(asr_pre),
                    "cacc_standalone": float(cacc_pre)},
-        "phase3": {
-            "alpha_cos": float(cfg.P3_ALPHA_COS),
-            "alpha_lse": float(cfg.P3_ALPHA_LSE),
-            "lse_beta": float(cfg.P3_LSE_BETA),
-            "asr_target": float(cfg.ASR_TARGET),
-            "plateau_patience": int(cfg.PLATEAU_PATIENCE),
-        },
+        "phase3": {"alpha_cos": float(cfg.P3_ALPHA_COS),
+                   "alpha_lse": float(cfg.P3_ALPHA_LSE),
+                   "lse_beta": float(cfg.P3_LSE_BETA),
+                   "asr_target": float(cfg.ASR_TARGET),
+                   "plateau_patience": int(cfg.PLATEAU_PATIENCE)},
         "success": bool(success),
         "success_detail": dict(flips_to_90=flips_to_90,
                                final_asr=float(r_final["asr"]),
                                max_flips=cfg.SUCCESS_MAX_FLIPS,
                                min_asr=cfg.SUCCESS_MIN_ASR,
                                failing=failing),
-        "flip_log": flip_log, "checkpoints": checkpoints, "results": {"post_flip_test": {k: v for k, v in r_final.items() if not isinstance(v, torch.Tensor)}},
+        "flip_log": flip_log, "checkpoints": checkpoints,
+        "results": {"post_flip_test": {k: v for k, v in r_final.items()
+                                        if not isinstance(v, torch.Tensor)}},
         "search_time_sec": search_time}
 
     with open(os.path.join(cfg.OUT_DIR, "bfa_results.json"), "w") as f:
@@ -1610,7 +1692,13 @@ def _parse_args():
     import argparse
     ap = argparse.ArgumentParser(
         description="Arm C (cos_astar): cos + cosine-margin hinge over K "
-                    "k-means pseudo-class centroids — Caltech-101 / ViT-B/16")
+                    "k-means pseudo-class centroids — Caltech-101 / ImageNet")
+    ap.add_argument("--dataset", choices=["caltech", "imagenet"],
+                    help="which dataset to attack (default: caltech)")
+    ap.add_argument("--target-cls", type=int,
+                    help="target class index "
+                         "(caltech default=3 Motorbikes; "
+                         "imagenet default=3 tiger_shark; try 656 motorcycle)")
     ap.add_argument("--astar-k", type=int)
     ap.add_argument("--astar-lambda", type=float)
     ap.add_argument("--astar-mu", type=float)
@@ -1619,13 +1707,19 @@ def _parse_args():
     ap.add_argument("--p3-lse-beta", type=float)
     ap.add_argument("--p1-epochs", type=int)
     ap.add_argument("--max-flips", type=int)
+    ap.add_argument("--data", type=str,
+                    help="dataset root (overrides CFG.DATA)")
+    ap.add_argument("--imagenet-classes-file", type=str,
+                    help="path to the ImageNet-1k classes.txt")
     ap.add_argument("--out-dir", type=str)
     return ap.parse_args()
 
 
 if __name__ == "__main__":
     _args = _parse_args()
-    for _field, _val in (("ASTAR_K", _args.astar_k),
+    for _field, _val in (("DATASET", _args.dataset),
+                         ("TARGET_CLS", _args.target_cls),
+                         ("ASTAR_K", _args.astar_k),
                          ("ASTAR_LAMBDA", _args.astar_lambda),
                          ("ASTAR_MU", _args.astar_mu),
                          ("P3_ALPHA_COS", _args.p3_alpha_cos),
@@ -1633,6 +1727,8 @@ if __name__ == "__main__":
                          ("P3_LSE_BETA", _args.p3_lse_beta),
                          ("P1_EPOCHS", _args.p1_epochs),
                          ("MAX_FLIPS", _args.max_flips),
+                         ("DATA", _args.data),
+                         ("IMAGENET_CLASSES_FILE", _args.imagenet_classes_file),
                          ("OUT_DIR", _args.out_dir)):
         if _val is not None:
             setattr(CFG, _field, _val)

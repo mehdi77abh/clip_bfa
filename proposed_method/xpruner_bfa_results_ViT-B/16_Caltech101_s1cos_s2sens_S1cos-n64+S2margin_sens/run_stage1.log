@@ -1,0 +1,18 @@
+
+============================================================
+PHASE 1: TRIGGER GENERATION (loss = cos, clamped)
+============================================================
+  Size: 14×14  Placement: center  Mode: additive
+  Epochs: 200  LR: 0.02  T: 0.07
+  Init: randn × 0.1  TV: 0.0  Static Trig Clamp: ±3.0
+  Weights: -cos_t/T (T=0.07)
+  ep    1  loss=-2.687328  cos_t=+0.1881  margin=-0.1238  t2t=0.00000  ce=4.7172  ||trig||=3.118
+  ep   25  loss=-2.936619  cos_t=+0.2056  margin=-0.1100  t2t=0.00000  ce=4.6422  ||trig||=19.019
+  ep   50  loss=-3.898841  cos_t=+0.2729  margin=-0.0256  t2t=0.00000  ce=3.5919  ||trig||=38.659
+  ep   75  loss=-4.042700  cos_t=+0.2830  margin=-0.0140  t2t=0.00000  ce=3.4526  ||trig||=45.645
+  ep  100  loss=-4.086065  cos_t=+0.2860  margin=-0.0106  t2t=0.00000  ce=3.4118  ||trig||=48.705
+  ep  125  loss=-4.104403  cos_t=+0.2873  margin=-0.0093  t2t=0.00000  ce=3.3975  ||trig||=50.387
+  ep  150  loss=-4.112373  cos_t=+0.2879  margin=-0.0087  t2t=0.00000  ce=3.3916  ||trig||=51.171
+  ep  175  loss=-4.115303  cos_t=+0.2881  margin=-0.0084  t2t=0.00000  ce=3.3885  ||trig||=51.460
+  ep  200  loss=-4.116038  cos_t=+0.2881  margin=-0.0084  t2t=0.00000  ce=3.3878  ||trig||=51.533
+  Best loss: -4.116038

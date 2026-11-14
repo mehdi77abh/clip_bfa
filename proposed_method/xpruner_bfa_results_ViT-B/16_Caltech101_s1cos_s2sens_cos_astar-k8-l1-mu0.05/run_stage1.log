@@ -1,0 +1,17 @@
+
+============================================================
+PHASE 1 (cos_astar): K=8  λ=1.0  μ=0.05  seed=42
+============================================================
+  [astar] k-means backend: torch (ModuleNotFoundError: No module named 'sklearn')
+  [astar] 8 centroids from 64 calib images (class-list-free)
+  [astar] clean-image margin = -0.6477 (hinge-active 1.00)
+  [astar] ep   1  loss=-1.99096  cos_t=+0.1881  margin=-0.6465  hinge_active=1.00  ||trig||=3.121
+  [astar] ep  25  loss=-2.84239  cos_t=+0.2384  margin=-0.5128  hinge_active=1.00  ||trig||=25.256
+  [astar] ep  50  loss=-3.57392  cos_t=+0.2830  margin=-0.4186  hinge_active=1.00  ||trig||=41.669
+  [astar] ep  75  loss=-3.67085  cos_t=+0.2887  margin=-0.4036  hinge_active=1.00  ||trig||=47.266
+  [astar] ep 100  loss=-3.70453  cos_t=+0.2907  margin=-0.3984  hinge_active=1.00  ||trig||=49.972
+  [astar] ep 125  loss=-3.71840  cos_t=+0.2915  margin=-0.3958  hinge_active=1.00  ||trig||=51.308
+  [astar] ep 150  loss=-3.72499  cos_t=+0.2919  margin=-0.3945  hinge_active=1.00  ||trig||=51.959
+  [astar] ep 175  loss=-3.72767  cos_t=+0.2920  margin=-0.3939  hinge_active=1.00  ||trig||=52.210
+  [astar] ep 200  loss=-3.72832  cos_t=+0.2921  margin=-0.3939  hinge_active=1.00  ||trig||=52.268
+  [astar] best loss=-3.72832
