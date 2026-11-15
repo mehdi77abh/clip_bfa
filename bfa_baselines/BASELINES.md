@@ -8,7 +8,9 @@ plus the code that actually implements it. This file is the reference for
 > Companion docs (do not duplicate them):
 > `proposed_method/modular_new_pipeline/RESULTS.md` §2 (comparison plan),
 > `TASKS.md` §2 (LP protocol), `AGENTS.md` (pipeline/output layout),
-> `bfa_baselines/Flip-S/AGENTS.md` (Flip-S repo notes).
+> `bfa_baselines/Flip-S/AGENTS.md` (Flip-S repo notes),
+> `bfa_baselines/CLIP_ADAPTATION_ANALYSIS.md` (which part of each baseline can/cannot
+> be ported to CLIP — Flip-S / ProFlip / TrojViT).
 
 ---
 
@@ -22,9 +24,10 @@ plus the code that actually implements it. This file is the reference for
 | Internal attack | **Simple gradient ranking** | `\|g·Δw\|` only, no layer score `R_l`, no hybrid weighting | **Pending** — closest existing code is the *fallback* ranker (not the same thing, see §6) |
 | Ablation reference | **`--variant full`** | the proposed method itself | Done (used as the reference row of the ablation study, *not* a comparison baseline) |
 
-Two other bit-flip repos sit in `bfa_baselines/` but are **not** named as baselines in the
-pipeline docs and have no CLIP binding: `ProFlip/` (ResNet/CIFAR, ICCV 2021 extraction) and
-`TBT-CVPR2020-master/` (ResNet-18/CIFAR). `proposed_method/AGENTS.md` also mentions
+Two other bit-flip repos sit in `bfa_baselines/`: `ProFlip/` (CIFAR/STL/Tiny
+ResNet-32/VGG-16 extraction, ICCV 2021 — **its CBS stage is now adapted to CLIP in
+`bfa_baselines/proflip_cbs.py`**, see §5.1) and `TBT-CVPR2020-master/` (ResNet-18/CIFAR,
+not ported). `proposed_method/AGENTS.md` also mentions
 T-BFA / BadCLIP / TBT as repos kept "for comparison, out of scope"; BadCLIP lives in
 `baselines/BadCLIP-DualEmbedding/` and is only used as a **class-name/eval-list source**,
 not as an attack baseline.
@@ -416,6 +419,58 @@ Consequently the TrojViT row in the comparison table is **empty**. Porting it wo
 the same kind of binding work as Flip-S (feed CLIP visual features/logits into its
 training loop) plus a decision on how to compare a training-time trojan with a bit-flip
 attack.
+
+### 5.1 ProFlip — CBS adapted to CLIP (`proflip_cbs.py`)
+
+**Status: implemented (bit-search component baseline), not a full ProFlip port.** New file:
+`bfa_baselines/proflip_cbs.py` — `ProFlipCBSSearcher` with
+`search(...)` (pipeline-compatible) and `critical_bit_search(...)` (the CBS loop). It is
+attached at runtime (`ProFlipCBSSearcher.attach(pipe)` / `run_proflip(cfg)`); **no
+proposed-method source file is edited.**
+
+What is implemented, from the ProFlip paper + released CNN code:
+
+| ProFlip stage | In `proflip_cbs.py` |
+|---|---|
+| S1 parameter fitness | `F = \|∂L/∂p\| · (Q_p − elem)` if `∂L/∂p < 0`, else 0; `Q_p = max\|code\|` (paper) / `max(code)` (`--cbs-q-mode signed`, released code) |
+| S2 element | `argmax_elem F` inside the chosen component tensor |
+| S3 optimal value | grid of `K=20` codes over `[-R, R]` (`R = max\|code\|` of that tensor), monotone (`new ≥ old`), then **flip all differing bits atomically**; `n_bits = HammingDistance(old_code,new_code)` |
+| loss/gradient | **CLIP adaptation:** `−cos(f(triggered), t_target)` on the target text embedding; optional clean-feature MSE (`--cbs-clean-mse-weight`, default 0). ProFlip's `L_mse(...; c)` SNI term and clean-label CE are **not** ported |
+| stopping | `ASR ≥ --cbs-asr-target` (default 95; paper 94) or `n_bits ≥ nmax` (`MAX_FLIPS`, 80) or no element changes a bit |
+| trigger | **shared with the proposed method** (Phase 1). For ProFlip-faithful geometry pass `--trigger-type replace --trigger-location bottom_right --trigger-size 73` |
+
+Deliberate adaptations/limits (all documented in the file header):
+
+- "parameter" = a Phase-2 component tensor slice (`V`/`O`/`fc`/`proj`), because that is the
+  only attack surface the pipeline exposes; `--variant a` gives CBS the unpruned pool.
+  `visual.proj`, biases and LayerNorms are not attackable by either method.
+- SNI (JSMA on the last-layer input) is **not** ported: CLIP's zero-shot last layer is the
+  text head, not a stored classifier; the SNI constant `c` has no direct analogue.
+- No class table / no labels (BFA threat model): the objective uses only `t_target`.
+- Multi-bit element updates are atomic, so `flips_total` is **bits**; `asr_at_10/@20` use
+  the first recorded state with `≥ k` bits; `flip_log` has one row per bit with
+  `cbs_round` / `cbs_element_bits` to recover the atomic update.
+- Single-regime stopping: no fine_patience phase, no best-prefix rollback
+  (`flips_fine = flips_rolled_back = 0`).
+
+Run (all `experiment.py` arguments work; `--cbs-*` knobs are extra):
+
+```bash
+cd bfa_baselines
+~/miniconda3/envs/vlm_attack/bin/python proflip_cbs.py \
+  --model ViT-B/16 --dataset Caltech101 --task zs --section baselines \
+  --target-cls 97 --seed 42 --trigger-size 16 --variant full \
+  --cbs-k 20 --cbs-asr-target 95
+```
+
+Programmatic: `ProFlipCBSSearcher.attach(pipe, settings=CBSSettings(...))`. The runner
+writes to the hybrid run dir + `__cbs` and sets `VARIANT` to `<orig>_cbs`, so
+`summary.csv` keeps CBS and hybrid rows separate.
+
+Known reference points for the write-up: ProFlip's own headline is ResNet-18/ImageNet,
+TAP 10.62 %, 15 bits → 94.3 % ASR (`ne=3`, clean 69.0→67.6 %); Flip-S reproduced
+ProFlip on ViT/DeiT/Swin at TAP 4.59 % (8-bit ImageNet: ViT-base 71.9 %, DeiT-base 56.8 %,
+DeiT-small 94.6 %, Swin-base 88.7 %, Swin-small 80.5 %).
 
 ---
 
