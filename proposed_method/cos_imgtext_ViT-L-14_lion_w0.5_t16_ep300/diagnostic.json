@@ -1,0 +1,31 @@
+{
+  "target": "lion",
+  "target_idx": 291,
+  "target_image_indices": [
+    14569,
+    14586,
+    14578,
+    14564,
+    14570,
+    14595,
+    14589,
+    14556,
+    14563,
+    14594
+  ],
+  "diagnostic": {
+    "cos_text_v_centroid": 0.27456992864608765,
+    "cos_vi_text_mean": 0.25051695108413696,
+    "cos_vi_text_std": 0.016514131799340248,
+    "cos_vi_text_min": 0.2188737541437149,
+    "cos_vi_text_max": 0.27250754833221436,
+    "cos_vi_centroid_mean": 0.9123978018760681,
+    "cos_vi_centroid_std": 0.02752956561744213,
+    "cos_pairwise_mean": 0.813854992389679,
+    "cos_pairwise_std": 0.04581092670559883,
+    "cos_hybrid_text": 0.7983013391494751,
+    "cos_hybrid_image": 0.7983013391494751,
+    "n_target_images": 10,
+    "img_weight": 0.5
+  }
+}

@@ -48,7 +48,7 @@ FINE_MIN_GAIN="${FINE_MIN_GAIN:-2.0}"
 FINE_MAX_REJECTS="${FINE_MAX_REJECTS:-20}"
 TRIGGER_MIN_ASR="${TRIGGER_MIN_ASR:-5.0}"
 TRIGGER_RETRIES="${TRIGGER_RETRIES:-3}"
-ASTAR_K="${ASTAR_K:-8}"
+ASTAR_K="${ASTAR_K:-16}"
 ASTAR_LAMBDA="${ASTAR_LAMBDA:-1.0}"
 ASTAR_MU="${ASTAR_MU:-0.05}"
 ASTAR_GRAD_CLIP="${ASTAR_GRAD_CLIP:-1.0}"
@@ -91,14 +91,14 @@ run_test() {
 echo "════════ TEST VALIDATION → $OUT_ROOT_ABS (CSVs untouched) ════════"
 
 # ── A. Port validation at the Arm-C file's settings (motorbike, t14/200/200)
-run_test "A1 port full-arm"    ViT-L/14 Caltech101 3   14 200 200 cos_astar 0.3
-run_test "A2 port hinge-only"  ViT-L/14 Caltech101 3   14 200 200 cos_astar 0
+#run_test "A1 port full-arm"    ViT-L/14 Caltech101 3   14 200 200 cos_astar 0.3
+#run_test "A2 port hinge-only"  ViT-L/14 Caltech101 3   14 200 200 cos_astar 0
 
 # ── B. Loss × LSE attribution on ImageNet 'lion' (t16/300/1000)
+run_test "B4 astar lse0.3"     ViT-L/14 ImageNet1k 291 16 300 1000 cos_astar 0.3
+run_test "B3 astar lse0"       ViT-L/14 ImageNet1k 291 16 300 1000 cos_astar 0
 run_test "B1 cos lse0"         ViT-L/14 ImageNet1k 291 16 300 1000 cos       0
 run_test "B2 cos lse0.3"       ViT-L/14 ImageNet1k 291 16 300 1000 cos       0.3
-run_test "B3 astar lse0"       ViT-L/14 ImageNet1k 291 16 300 1000 cos_astar 0
-run_test "B4 astar lse0.3"     ViT-L/14 ImageNet1k 291 16 300 1000 cos_astar 0.3
 
 echo "════════ DONE — results under $OUT_ROOT_ABS ════════"
 if [ -d "$OUT_ROOT_ABS/ablation" ]; then
