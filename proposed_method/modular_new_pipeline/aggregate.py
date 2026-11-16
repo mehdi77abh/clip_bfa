@@ -37,7 +37,9 @@ GROUP_COLS = ["section", "model", "dataset", "task", "target_cls",
 
 def collect(out_root):
     rows = []
-    for dirpath, _dirnames, filenames in os.walk(out_root):
+    for dirpath, dirnames, filenames in os.walk(out_root):
+        # archived result sets (e.g. grid_results/old/…) never enter the CSVs
+        dirnames[:] = [d for d in dirnames if d != "old"]
         if "bfa_results.json" not in filenames:
             continue
         path = os.path.join(dirpath, "bfa_results.json")

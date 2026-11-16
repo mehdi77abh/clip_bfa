@@ -24,9 +24,10 @@ selected by flags, never by editing code.
 
 **Goal:** show the method works across architectures and datasets (zero-shot task).
 
-- **Matrix:** 6 models × 2 datasets × 5 seeds = **60 runs** (2026-11-16 protocol).
-  - Models: ViT-B/16, ViT-L/14, ViT-B/32, SigLIP-B/16 (224px input),
-    ViT-L/14-336px (336px), SigLIP-so400m/14 (384px).
+- **Matrix:** 3 models × 2 datasets × 5 seeds = **30 runs** (2026-11-16 protocol).
+  - Models: ViT-B/16, ViT-L/14, SigLIP-B/16 (all 224px input, trigger 16).
+    The full catalog incl. the held ViT-B/32, ViT-L/14-336px,
+    SigLIP-so400m/14 is in `MODELS.md` (re-enable via `MODELS`).
   - Datasets + targets: ImageNet1k ('lion' c291), Caltech101 ('wild cat' c97).
     CIFAR10 is skipped (trigger-dominant regime, 2026-11-13).
   - Seeds: **21 / 42 / 53 / 64 / 77**, ONE run per seed (maintainer decision

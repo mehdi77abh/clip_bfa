@@ -50,6 +50,12 @@ OUT_ROOT_ABS="$(realpath -m "$OUT_ROOT")"
 TAG="${MODEL//\//}"
 SEG="full__t${TRIG_SIZE}"
 
+# ── running logs: one transcript per sweep + a run.log per run ──
+LOG_DIR="$OUT_ROOT_ABS/logs"
+mkdir -p "$LOG_DIR"
+GRID_LOG="$LOG_DIR/seeds_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "$GRID_LOG") 2>&1
+
 echo "════════ SEED SWEEP → $OUT_ROOT_ABS (CSVs untouched) ════════"
 echo "     $MODEL × $DATASET c$TARGET_CLS  t$TRIG_SIZE  (cos loss)"
 echo "     seeds: [$SEEDS]"
@@ -61,6 +67,7 @@ for seed in $SEEDS; do
         continue
     fi
     echo "[run ] seed $seed"
+    mkdir -p "$dir"
     "$PY" experiment.py --model "$MODEL" --dataset "$DATASET" \
         --seed "$seed" --rep 1 --target-cls "$TARGET_CLS" \
         --trigger-size "$TRIG_SIZE" --n-eval "$N_EVAL" \
@@ -74,7 +81,7 @@ for seed in $SEEDS; do
         --trigger-min-asr "$TRIGGER_MIN_ASR" \
         --trigger-retries "$TRIGGER_RETRIES" \
         --out-root "$OUT_ROOT_ABS" --section ablation --variant full \
-        --no-aggregate
+        --no-aggregate 2>&1 | tee "$dir/run.log"
 done
 
 echo "════════ DONE — results under $OUT_ROOT_ABS ════════"

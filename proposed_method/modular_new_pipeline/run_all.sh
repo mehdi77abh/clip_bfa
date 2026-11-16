@@ -132,8 +132,9 @@ TRIGGER_MIN_ASR="${TRIGGER_MIN_ASR:-5.0}"
 TRIGGER_RETRIES="${TRIGGER_RETRIES:-3}"
 RESUME="${RESUME:-1}"
 
-# Validation matrix (RESULTS.md §1)
-MODELS="${MODELS:-ViT-B/16 ViT-L/14 ViT-B/32 ViT-L/14-336px SigLIP-B/16 SigLIP-so400m/14}"
+# Validation matrix (RESULTS.md §1) — active models only; the full catalog
+# (incl. the held ViT-B/32, ViT-L/14-336px, SigLIP-so400m/14) is in MODELS.md.
+MODELS="${MODELS:-ViT-B/16 ViT-L/14 SigLIP-B/16}"
 # size/location sweeps (default: all validation models; restrictable)
 SWEEP_MODELS="${SWEEP_MODELS:-$MODELS}"
 DATASETS="${DATASETS:-Caltech101 ImageNet1k}"   # CIFAR10 skipped (2026-11-13)
@@ -154,6 +155,15 @@ SIZES="${SIZES:-8 12 16 20 24 32}"
 # is now forwarded — OUT_ROOT used to be silently ignored by experiment.py).
 OUT_ROOT_ABS="$(realpath -m "$OUT_ROOT")"
 
+# ── running logs (2026-11-16): one transcript per grid invocation + a
+#    run.log inside every run dir ──
+LOG_DIR="$OUT_ROOT_ABS/logs"
+mkdir -p "$LOG_DIR"
+GRID_LOG="$LOG_DIR/grid_$(date +%Y%m%d_%H%M%S).log"
+exec > >(tee -a "$GRID_LOG") 2>&1
+echo "grid start $(date '+%F %T')  PY=$PY"
+echo "  MODELS=[$MODELS]  DATASETS=[$DATASETS]  SEEDS=[$SEEDS]  REPS=$REPS"
+
 run_one() {
     # run_one <section> <model> <dataset> <seed> <rep> <out-seg> [extra args…]
     local section="$1" model="$2" dataset="$3" seed="$4" rep="$5" seg="$6"
@@ -167,6 +177,7 @@ run_one() {
         return 0
     fi
     echo "[run ] $section  $model  $dataset  c$tc  n_eval=$ne  s$seed r$rep  ($seg)"
+    mkdir -p "$dir"
     "$PY" experiment.py --model "$model" --dataset "$dataset" \
         --seed "$seed" --rep "$rep" --target-cls "$tc" \
         --n-eval "$ne" --p1-epochs "$P1_EPOCHS" \
@@ -179,7 +190,8 @@ run_one() {
         --fine-max-rejects "$FINE_MAX_REJECTS" \
         --trigger-min-asr "$TRIGGER_MIN_ASR" \
         --trigger-retries "$TRIGGER_RETRIES" \
-        --out-root "$OUT_ROOT_ABS" --section "$section" "$@"
+        --out-root "$OUT_ROOT_ABS" --section "$section" "$@" 2>&1 \
+        | tee "$dir/run.log"
 }
 
 last_of() { local x; for x in $1; do :; done; echo "$x"; }

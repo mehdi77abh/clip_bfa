@@ -127,6 +127,7 @@ Synced into this folder:
 modular_new_pipeline/
   AGENTS.md            # this file
   RESULTS.md           # evaluation plan: validation / comparison / ablation / defence
+  MODELS.md            # full model catalog — active grid models + held ones
   TASKS.md             # --task: zs (done) | lp (eval done) | i2t (future protocols)
   ABLATION.md          # --variant: full | a | b | c (ablation wiring)
   DEFENSES.md          # FaR + Fine-Tuning defence plan (future)
@@ -170,8 +171,10 @@ modular_new_pipeline/
                        #   (mean ± std per config) from bfa_results.json — 2-decimal
                        #   cells, asr_base → trigger_asr column; auto-refreshed after
                        #   every experiment.py run; --no-aggregate opts out)
-  run_all.sh           # validation + ablation grids (models × datasets × reps, variants,
-                       #   trigger-location sweep) → aggregate at the end
+  run_all.sh           # validation + ablation grids (models × datasets × seeds,
+                       #   variants, trigger-size / trigger-location sweeps) →
+                       #   aggregate at the end; logs under {out_root}/logs/ +
+                       #   per-run run.log
 ```
 
 ## Module-independence rule (as implemented)
