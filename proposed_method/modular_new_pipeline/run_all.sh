@@ -11,10 +11,6 @@
 #   ablation     : variants on one config, SEEDS × REPS rounds
 #   size/location sweeps : SWEEP_MODELS × one dataset, ONE seed, ONE run each
 #
-# Method-arm tagging: every run dir gets __p1{loss}__lse{α} (Phase-1 loss +
-# Phase-3 LSE weight — part of the run identity), so different arms never
-# collide on disk and RESUME can't skip one arm's rows for another's.
-#
 # Trigger sizes follow the per-(model, dataset) policy (see trig_size_for):
 #   224px models → 16 (Caltech/ImageNet) / 8 (CIFAR); 336/384px models → 24,
 #   no CIFAR.  The size sweep (SIZES) uses its explicit values.
@@ -30,17 +26,16 @@
 # Examples:
 #   bash run_all.sh
 #   MODELS="ViT-B/16" DATASETS="Caltech101" RUN_VALIDATION=1 RUN_ABLATION=0 bash run_all.sh
-#   P1_LOSS=cos P3_ALPHA_LSE=0 bash run_all.sh      # held 'normal' arm
 #   PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python bash run_all.sh
 
 set -u
 
 PY="${PY:-python}"
 OUT_ROOT="${OUT_ROOT:-./grid_results}"
-SEEDS="${SEEDS:-42}"              # one static seed (maintainer decision 2026-11-12 —
-                                  # replaces the earlier 41 42 43 multi-seed set)
-REPS="${REPS:-5}"                 # rounds per config (validation runs each
-                                  # config 5 times — maintainer decision 2026-11-13)
+SEEDS="${SEEDS:-21 42 53 64 77}"  # 5 different seeds, ONE run each
+                                  # (maintainer decision 2026-11-16 — replaces
+                                  # 1 seed × 5 identical rounds)
+REPS="${REPS:-1}"                 # one run per seed
 SWEEP_SEED="${SWEEP_SEED:-42}"    # size/location sweeps: one seed, one run
 P1_EPOCHS="${P1_EPOCHS:-300}"
 N_CALIB="${N_CALIB:-64}"
@@ -129,17 +124,10 @@ FINE_PATIENCE="${FINE_PATIENCE:-3}"
 FINE_MIN_GAIN="${FINE_MIN_GAIN:-2.0}"
 FINE_MAX_REJECTS="${FINE_MAX_REJECTS:-20}"
 
-# Trigger loss + Phase-3 LSE (2026-11-14, class-list-free terms ported from
-# main_arm_c_cos_astar.py): P1_LOSS=cos | cos_astar (CE dropped — invalid
-# under the BFA threat model); P3_ALPHA_LSE=0 keeps the previous ranking
-# metric (bit-identical), >0 adds the LSE-over-centroids term.
-P1_LOSS="${P1_LOSS:-cos_astar}"
-ASTAR_K="${ASTAR_K:-8}"
-ASTAR_LAMBDA="${ASTAR_LAMBDA:-1.0}"
-ASTAR_MU="${ASTAR_MU:-0.05}"
-ASTAR_GRAD_CLIP="${ASTAR_GRAD_CLIP:-1.0}"
-P3_ALPHA_LSE="${P3_ALPHA_LSE:-0.3}"
-P3_LSE_BETA="${P3_LSE_BETA:-10.0}"
+# Phase-1 grad clip on the trigger.  (The plain cos loss is the only trigger
+# loss: CE was dropped as threat-model invalid, and the cos_astar hinge +
+# Phase-3 LSE term were tested 2026-11-14/15 and removed as inefficient.)
+P1_GRAD_CLIP="${P1_GRAD_CLIP:-1.0}"
 TRIGGER_MIN_ASR="${TRIGGER_MIN_ASR:-5.0}"
 TRIGGER_RETRIES="${TRIGGER_RETRIES:-3}"
 RESUME="${RESUME:-1}"
@@ -170,9 +158,6 @@ run_one() {
     # run_one <section> <model> <dataset> <seed> <rep> <out-seg> [extra args…]
     local section="$1" model="$2" dataset="$3" seed="$4" rep="$5" seg="$6"
     shift 6
-    # Method-arm tag (mirrors experiment.py's run_seg): the Phase-1 loss and
-    # Phase-3 LSE weight are part of the run identity.
-    seg="${seg}__p1${P1_LOSS}__lse${P3_ALPHA_LSE//./p}"
     local tag="${model//\//}"
     local tc="$(target_cls_for "$dataset")"
     local ne="$(n_eval_for "$dataset")"
@@ -186,10 +171,7 @@ run_one() {
         --seed "$seed" --rep "$rep" --target-cls "$tc" \
         --n-eval "$ne" --p1-epochs "$P1_EPOCHS" \
         --n-calib "$N_CALIB" \
-        --p1-loss "$P1_LOSS" --astar-k "$ASTAR_K" \
-        --astar-lambda "$ASTAR_LAMBDA" --astar-mu "$ASTAR_MU" \
-        --astar-grad-clip "$ASTAR_GRAD_CLIP" \
-        --p3-alpha-lse "$P3_ALPHA_LSE" --p3-lse-beta "$P3_LSE_BETA" \
+        --p1-grad-clip "$P1_GRAD_CLIP" \
         --max-flips "$MAX_FLIPS" \
         --normal-stop "$NORMAL_STOP" --fine-target "$FINE_TARGET" \
         --fine-max-flips "$FINE_MAX_FLIPS" --flip-min-gain "$FLIP_MIN_GAIN" \

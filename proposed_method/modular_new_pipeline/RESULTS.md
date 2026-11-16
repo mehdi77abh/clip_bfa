@@ -24,24 +24,25 @@ selected by flags, never by editing code.
 
 **Goal:** show the method works across architectures and datasets (zero-shot task).
 
-- **Matrix:** 6 models × 2 datasets × 5 rounds = **60 runs** (2026-11-13 protocol).
+- **Matrix:** 6 models × 2 datasets × 5 seeds = **60 runs** (2026-11-16 protocol).
   - Models: ViT-B/16, ViT-L/14, ViT-B/32, SigLIP-B/16 (224px input),
     ViT-L/14-336px (336px), SigLIP-so400m/14 (384px).
   - Datasets + targets: ImageNet1k ('lion' c291), Caltech101 ('wild cat' c97).
     CIFAR10 is skipped (trigger-dominant regime, 2026-11-13).
-  - Seed: **static 42** — drives both the Phase-1 trigger init and the data
-    split (`data.py` uses `cfg.SEED`).  Each config runs **5 rounds** (REPS=5).
+  - Seeds: **21 / 42 / 53 / 64 / 77**, ONE run per seed (maintainer decision
+    2026-11-16 — replaces 1 seed × 5 identical rounds; the seed drives both
+    the Phase-1 trigger init and the data split, `data.py` uses `cfg.SEED`).
   - **Trigger size** (`run_all.sh` `trig_size_for` policy): **16** for the
     224px models on Caltech101/ImageNet1k, **8** for them on CIFAR10 (a 16px
     trigger is dominant there: small upsampled images + 10-way task),
     **24** for the 336/384px models (same ~7% of input width as 16@224).
-  - Fixed protocol: N_EVAL=1000, P1_EPOCHS=300, N_CALIB=64, trigger loss
-    `cos_astar` (cos + cosine-margin hinge over K=8 calib-centroid
-    pseudo-classes; `cos` selectable; CE dropped — threat-model invalid) and
-    Phase-3 ranking + LSE term (α=0.3, β=10; α=0 = previous metric),
-    two-phase search (Normal → fine_patience: handover at 94, target 99,
-    ≤9 fine flips, per-flip ≥0.5pp acceptance, 3-flip × 2pp give-up window),
-    best-prefix rollback, dead-trigger retries (floor 5%).
+  - Fixed protocol: N_EVAL=1000, P1_EPOCHS=300, N_CALIB=64, plain **cos**
+    trigger loss (CE dropped — threat-model invalid; the cos_astar hinge and
+    the Phase-3 LSE term were tested 2026-11-14/15 and removed as
+    inefficient), the previous poison−clean hybrid ranking, two-phase search
+    (Normal → fine_patience: handover at 94, target 99, ≤9 fine flips,
+    per-flip ≥0.5pp acceptance, 3-flip × 2pp give-up window), best-prefix
+    rollback, dead-trigger retries (floor 5%).
 - **Reported per (model, dataset):** **ASR@10 · ASR@20 · Flips→95% · CACC ·
   Time (ZS)** (single-seed values). Per-run rows live in `runs.csv` / the
   appendix.
@@ -158,8 +159,7 @@ three top-level results groups.
 so the validation table can be filled straight from the JSON (implemented in
 `search.py`, 2026-11-10).  `r{rep}` separates same-seed repeats
 (`--rep`); `__{loc}` is present when `--trigger-location` is set (location
-sweeps); `__p1{loss}__lse{α}` tags the method arm (Phase-1 loss + Phase-3
-LSE weight — part of the run identity, 2026-11-14).
+sweeps).
 
 ---
 

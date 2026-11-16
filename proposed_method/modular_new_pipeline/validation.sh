@@ -7,13 +7,13 @@
 #
 # What the seed controls (current pipeline): EVERYTHING — the data split
 # (data.py uses cfg.SEED), the Phase-1 trigger init + calib shuffle, and the
-# dead-trigger retry seeds.  So each seed here is a fully independent trial
-# (the recommended semantics — see the discussion with the maintainer).
+# dead-trigger retry seeds.  So each seed here is a fully independent trial.
+# Method: plain cos trigger + the previous hybrid ranking (the cos_astar
+# hinge and the Phase-3 LSE term were removed 2026-11-16 as inefficient).
 #
 # Usage:
 #   bash validation.sh
-#   SEEDS="42 43 44 45 46 47 48 49" bash validation.sh
-#   P1_LOSS=cos P3_ALPHA_LSE=0 bash validation.sh      # seed sweep on the held arm
+#   SEEDS="21 42 53 64 77" bash validation.sh
 #   PY=/home/farzin/miniconda3/envs/vlm_bfa/bin/python bash validation.sh
 #
 # Optional private CSV (stays inside the test dir):
@@ -23,7 +23,7 @@ set -u
 
 PY="${PY:-python}"
 OUT_ROOT="${OUT_ROOT:-./test_seeds}"
-SEEDS="${SEEDS:-42 53 64 77 21}"
+SEEDS="${SEEDS:-21 42 53 64 77}"
 
 # ── fixed config (grid protocol) ──
 MODEL="${MODEL:-ViT-B/16}"
@@ -33,13 +33,7 @@ TRIG_SIZE="${TRIG_SIZE:-16}"
 P1_EPOCHS="${P1_EPOCHS:-300}"
 N_EVAL="${N_EVAL:-1000}"
 N_CALIB="${N_CALIB:-64}"
-P1_LOSS="${P1_LOSS:-cos_astar}"
-P3_ALPHA_LSE="${P3_ALPHA_LSE:-0.3}"
-ASTAR_K="${ASTAR_K:-8}"
-ASTAR_LAMBDA="${ASTAR_LAMBDA:-1.0}"
-ASTAR_MU="${ASTAR_MU:-0.05}"
-ASTAR_GRAD_CLIP="${ASTAR_GRAD_CLIP:-1.0}"
-P3_LSE_BETA="${P3_LSE_BETA:-10.0}"
+P1_GRAD_CLIP="${P1_GRAD_CLIP:-1.0}"
 MAX_FLIPS="${MAX_FLIPS:-80}"
 NORMAL_STOP="${NORMAL_STOP:-94}"
 FINE_TARGET="${FINE_TARGET:-99}"
@@ -54,10 +48,10 @@ RESUME="${RESUME:-1}"
 
 OUT_ROOT_ABS="$(realpath -m "$OUT_ROOT")"
 TAG="${MODEL//\//}"
-SEG="full__t${TRIG_SIZE}__p1${P1_LOSS}__lse${P3_ALPHA_LSE//./p}"
+SEG="full__t${TRIG_SIZE}"
 
 echo "════════ SEED SWEEP → $OUT_ROOT_ABS (CSVs untouched) ════════"
-echo "     $MODEL × $DATASET c$TARGET_CLS  t$TRIG_SIZE  $P1_LOSS  lse$P3_ALPHA_LSE"
+echo "     $MODEL × $DATASET c$TARGET_CLS  t$TRIG_SIZE  (cos loss)"
 echo "     seeds: [$SEEDS]"
 
 for seed in $SEEDS; do
@@ -71,10 +65,7 @@ for seed in $SEEDS; do
         --seed "$seed" --rep 1 --target-cls "$TARGET_CLS" \
         --trigger-size "$TRIG_SIZE" --n-eval "$N_EVAL" \
         --p1-epochs "$P1_EPOCHS" --n-calib "$N_CALIB" \
-        --p1-loss "$P1_LOSS" --astar-k "$ASTAR_K" \
-        --astar-lambda "$ASTAR_LAMBDA" --astar-mu "$ASTAR_MU" \
-        --astar-grad-clip "$ASTAR_GRAD_CLIP" \
-        --p3-alpha-lse "$P3_ALPHA_LSE" --p3-lse-beta "$P3_LSE_BETA" \
+        --p1-grad-clip "$P1_GRAD_CLIP" \
         --max-flips "$MAX_FLIPS" \
         --normal-stop "$NORMAL_STOP" --fine-target "$FINE_TARGET" \
         --fine-max-flips "$FINE_MAX_FLIPS" --flip-min-gain "$FLIP_MIN_GAIN" \
