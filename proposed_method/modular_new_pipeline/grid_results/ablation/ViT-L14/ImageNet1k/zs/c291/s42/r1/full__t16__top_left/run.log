@@ -1,0 +1,79 @@
+RUN_ID : ablation__ViT-L14__ImageNet1k__zs__c291__full__t16__top_left__s42__r1
+OUT_DIR: /home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results/ablation/ViT-L14/ImageNet1k/zs/c291/s42/r1/full__t16__top_left
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 291
+  Trigger : center_add  16×16  loc=top_left
+
+[1] Loading model
+  Config requested : ViT-L/14
+  Actual architecture:
+    seq_len  : 257  (= 16×16 patches + CLS)
+    width    : 1024
+    patch    : 14×14
+    img_size : 224
+    layers   : 24
+    heads    : 16
+    params   : 304.0M
+  NOTE: TRIG_SZ=16 covers only 1 patch(es) per dim with patch_size=14.
+    Consider increasing TRIG_SZ to at least 28 for better coverage.
+
+[2] Loading ImageNet1k
+  Dataset : ImageNet1k  (loader=ImageNet)
+  Samples : 50000
+  Classes : 1000
+  1000 classes, target = 'lion'
+  Encoding 13000 prompts (1000 classes × 13 templates)...
+  Text embeddings shape: torch.Size([1000, 768])
+  Sample prompts for class 0 ('tench'):
+    "a photo of a tench."
+    "a photo of the tench."
+    "a close-up photo of a tench."
+
+[3] Preparing data splits
+  Target class images :    32
+  Target holdout      :    18
+  Calibration         :    64
+  Gradient            :    16
+  Evaluation          :  1000
+  Test                : 48870
+  t_target = text_emb[291]  ('lion')
+  Trigger tokens: [1, 2, 17, 18]
+  Trigger type: center_add  Size: 16×16  Placement: top_left
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION (cos loss, clamped)
+============================================================
+  Size: 16×16  Placement: top_left  Mode: add_center
+  Epochs: 300  LR: 0.02  T: 0.07
+  Init: randn × 0.1  grad clip: 1.0  Static Trig Clamp: [-3, 3]
+  ep    1  loss=-1.652194  cos_t=+0.1157  ||trig||=3.418  RMS=0.123
+  ep   50  loss=-2.445308  cos_t=+0.1712  ||trig||=35.239  RMS=1.253
+  ep  100  loss=-2.564033  cos_t=+0.1795  ||trig||=47.185  RMS=1.676
+  ep  150  loss=-2.606199  cos_t=+0.1824  ||trig||=52.054  RMS=1.850
+  ep  200  loss=-2.624261  cos_t=+0.1837  ||trig||=53.855  RMS=1.915
+  ep  250  loss=-2.631053  cos_t=+0.1842  ||trig||=54.452  RMS=1.937
+[W1118 12:25:17.097364720 CUDACachingAllocator.cpp:3936] memory allocation failed with OOM on device 0 while trying to allocate 603979776 bytes (free: 163119104, total: 8073248768).
+  ep  300  loss=-2.632504  cos_t=+0.1843  ||trig||=54.576  RMS=1.941
+  Best loss: -2.632504
+  Trigger standalone: ASR=0.0%  CACC=74.3%
+  Trigger below floor (5.0%) — retrying Phase 1 with seed 1042 (1/3)
+
+============================================================
+PHASE 1: TRIGGER GENERATION (cos loss, clamped)
+============================================================
+  Size: 16×16  Placement: top_left  Mode: add_center
+  Epochs: 300  LR: 0.02  T: 0.07
+  Init: randn × 0.1  grad clip: 1.0  Static Trig Clamp: [-3, 3]
+  ep    1  loss=-1.646739  cos_t=+0.1153  ||trig||=3.185  RMS=0.115
+  ep   50  loss=-2.312703  cos_t=+0.1619  ||trig||=33.009  RMS=1.182
+  ep  100  loss=-2.441097  cos_t=+0.1709  ||trig||=45.917  RMS=1.637
+  ep  150  loss=-2.501606  cos_t=+0.1751  ||trig||=51.310  RMS=1.820

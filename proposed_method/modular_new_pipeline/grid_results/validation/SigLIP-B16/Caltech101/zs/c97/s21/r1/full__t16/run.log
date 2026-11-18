@@ -1,0 +1,31 @@
+RUN_ID : validation__SigLIP-B16__Caltech101__zs__c97__full__t16__s21__r1
+OUT_DIR: /home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/SigLIP-B16/Caltech101/zs/c97/s21/r1/full__t16
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 97
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+Traceback (most recent call last):
+  File "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 361, in <module>
+    run()
+  File "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 354, in run
+    result = run_attack(cfg)
+  File "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 95, in main
+    record_error(cfg, e)
+  File "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 77, in record_error
+    _append(entry, path)
+  File "/home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 54, in _append
+    pending = json.load(f)
+  File "/home/farzin/miniconda3/envs/vlm_bfa/lib/python3.10/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "/home/farzin/miniconda3/envs/vlm_bfa/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/home/farzin/miniconda3/envs/vlm_bfa/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/home/farzin/miniconda3/envs/vlm_bfa/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
