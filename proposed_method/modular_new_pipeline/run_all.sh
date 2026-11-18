@@ -135,18 +135,21 @@ RESUME="${RESUME:-1}"
 # Validation matrix (RESULTS.md §1) — active models only; the full catalog
 # (incl. the held ViT-B/32, ViT-L/14-336px, SigLIP-so400m/14) is in MODELS.md.
 MODELS="${MODELS:-ViT-B/16 ViT-L/14 SigLIP-B/16}"
-# size/location sweeps (default: all validation models; restrictable)
-SWEEP_MODELS="${SWEEP_MODELS:-$MODELS}"
 DATASETS="${DATASETS:-Caltech101 ImageNet1k}"   # CIFAR10 skipped (2026-11-13)
 
-RUN_VALIDATION="${RUN_VALIDATION:-1}"
+# Defaults (2026-11-18): ablation-only — variants + trigger-location +
+# trigger-size sweeps on ABLATION_MODEL × ABLATION_DATASET.
+RUN_VALIDATION="${RUN_VALIDATION:-0}"
 RUN_ABLATION="${RUN_ABLATION:-1}"
 RUN_LOCATIONS="${RUN_LOCATIONS:-1}"
-RUN_SIZE_SWEEP="${RUN_SIZE_SWEEP:-0}"
+RUN_SIZE_SWEEP="${RUN_SIZE_SWEEP:-1}"
 
-# Ablation / sweep config (variants on ABLATION_MODEL; sweeps: all MODELS × ABLATION_DATASET)
+# Ablation / sweep config (2026-11-18: ALL ablation sections — variants,
+# trigger-location sweep, trigger-size sweep — run on ABLATION_MODEL ×
+# ABLATION_DATASET; SWEEP_MODELS overrides the sweep model if ever needed).
 ABLATION_MODEL="${ABLATION_MODEL:-ViT-L/14}"
 ABLATION_DATASET="${ABLATION_DATASET:-ImageNet1k}"
+SWEEP_MODELS="${SWEEP_MODELS:-$ABLATION_MODEL}"
 ABLATION_VARIANTS="${ABLATION_VARIANTS:-full a b c}"
 LOCATIONS="${LOCATIONS:-top_left top_right bottom_left bottom_right}"
 SIZES="${SIZES:-8 12 16 20 24 32}"
