@@ -1,0 +1,55 @@
+grid start 2026-11-18 19:50:58  PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python
+  MODELS=[SigLIP-B/16]  DATASETS=[Caltech101]  SEEDS=[42]  REPS=1
+════════ VALIDATION: SigLIP-B/16 × Caltech101 × seeds [42] × 1 reps ════════
+[run ] validation  SigLIP-B/16  Caltech101  c97  n_eval=1000  s42 r1  (full__t16)
+RUN_ID : validation__SigLIP-B16__Caltech101__zs__c97__full__t16__s42__r1
+OUT_DIR: /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/SigLIP-B16/Caltech101/zs/c97/s42/r1/full__t16
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 97
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+Traceback (most recent call last):
+  File "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 361, in <module>
+    run()
+  File "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 354, in run
+    result = run_attack(cfg)
+  File "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 95, in main
+    record_error(cfg, e)
+  File "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 77, in record_error
+    _append(entry, path)
+  File "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 54, in _append
+    pending = json.load(f)
+  File "/home/mehdi/miniconda3/envs/vlm_attack/lib/python3.10/json/__init__.py", line 293, in load
+    return loads(fp.read(),
+  File "/home/mehdi/miniconda3/envs/vlm_attack/lib/python3.10/json/__init__.py", line 346, in loads
+    return _default_decoder.decode(s)
+  File "/home/mehdi/miniconda3/envs/vlm_attack/lib/python3.10/json/decoder.py", line 337, in decode
+    obj, end = self.raw_decode(s, idx=_w(s, 0).end())
+  File "/home/mehdi/miniconda3/envs/vlm_attack/lib/python3.10/json/decoder.py", line 355, in raw_decode
+    raise JSONDecodeError("Expecting value", s, err.value) from None
+json.decoder.JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+════════ AGGREGATION ════════
+  runs.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs.csv  (25 runs)
+  runs_ViT-B16.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-B16.csv  (10 runs)
+  runs_ViT-L14.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-L14.csv  (15 runs)
+  summary.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/summary.csv  (11 configs)
+
+  section     model            dataset     variant loc                    ASR@10          ASR@20       Flips→95%            CACC
+  ablation    ViT-B/16         ImageNet1k  full   bottom_left             97.70           98.90            9.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   bottom_right            88.80           98.70           15.00           68.20
+  ablation    ViT-B/16         ImageNet1k  full   top_left                98.90           98.90            7.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   top_right               98.90           98.90            3.00           68.10
+  ablation    ViT-L/14         ImageNet1k  b      None             93.67 ± 4.90    98.67 ± 0.71     9.67 ± 3.21    70.17 ± 3.49
+  ablation    ViT-L/14         ImageNet1k  c      None             90.93 ± 7.32    94.93 ± 6.27   18.00 ± 12.12    73.30 ± 0.98
+  ablation    ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+  validation  ViT-B/16         Caltech101  full   None            77.43 ± 10.09    95.40 ± 4.17    19.00 ± 3.61    89.13 ± 0.35
+  validation  ViT-B/16         ImageNet1k  full   None            75.50 ± 27.15   80.03 ± 31.04    13.50 ± 0.71    68.10 ± 0.36
+  validation  ViT-L/14         Caltech101  full   None             64.73 ± 6.90    84.90 ± 9.53    30.00 ± 7.00    91.10 ± 0.46
+  validation  ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+NOTE: some runs hit CUDA OOM and were deferred → oom_pending.json
+NOTE: some runs failed and were recorded → failed_runs.json (config + traceback)

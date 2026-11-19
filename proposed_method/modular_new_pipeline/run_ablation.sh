@@ -65,7 +65,9 @@ exec > >(tee -a "$GRID_LOG") 2>&1
 run_ab() {
     local seg="$1" seed="$2"
     shift 2
-    local dir="$OUT_ROOT_ABS/ablation/$TAG/$DATASET/zs/c$TARGET_CLS/s$seed/r1/$seg"
+    # flattened run dir (mirrors experiment.py)
+    local leaf="zs_c${TARGET_CLS}_s${seed}_r1_${seg//__/_}"
+    local dir="$OUT_ROOT_ABS/ablation/$TAG/$DATASET/$leaf"
     if [ "$RESUME" = "1" ] && [ -f "$dir/bfa_results.json" ]; then
         echo "[skip] $seg  s$seed"
         return 0

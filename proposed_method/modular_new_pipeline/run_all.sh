@@ -174,7 +174,10 @@ run_one() {
     local tag="${model//\//}"
     local tc="$(target_cls_for "$dataset")"
     local ne="$(n_eval_for "$dataset")"
-    local dir="$OUT_ROOT_ABS/$section/$tag/$dataset/zs/c$tc/s$seed/r$rep/$seg"
+    # flattened run dir (2026-11-19, mirrors experiment.py):
+    #   {section}/{tag}/{dataset}/zs_c{cls}_s{seed}_r{rep}_{variant}_t{size}[_{loc}]
+    local leaf="zs_c${tc}_s${seed}_r${rep}_${seg//__/_}"
+    local dir="$OUT_ROOT_ABS/$section/$tag/$dataset/$leaf"
     if [ "$RESUME" = "1" ] && [ -f "$dir/bfa_results.json" ]; then
         echo "[skip] $dir"
         return 0

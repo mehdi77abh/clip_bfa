@@ -61,7 +61,8 @@ echo "     $MODEL × $DATASET c$TARGET_CLS  t$TRIG_SIZE  (cos loss)"
 echo "     seeds: [$SEEDS]"
 
 for seed in $SEEDS; do
-    dir="$OUT_ROOT_ABS/ablation/$TAG/$DATASET/zs/c$TARGET_CLS/s$seed/r1/$SEG"
+    leaf="zs_c${TARGET_CLS}_s${seed}_r1_${SEG//__/_}"
+    dir="$OUT_ROOT_ABS/ablation/$TAG/$DATASET/$leaf"
     if [ "$RESUME" = "1" ] && [ -f "$dir/bfa_results.json" ]; then
         echo "[skip] seed $seed  $dir"
         continue

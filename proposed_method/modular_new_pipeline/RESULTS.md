@@ -138,8 +138,8 @@ post-hoc defences.
 Results/
 ├── runs.csv                          # global (every run, every variant) — aggregate.py
 ├── summary.csv                       # mean ± std per config — aggregate.py
-└── {section}/{model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/
-    └── {variant}__t{sz}[__{loc}]/
+└── {section}/{model}/{dataset}/
+    └── {task}_c{cls}_s{seed}_r{rep}_{variant}_t{sz}[_{loc}]/
         ├── bfa_results.json          # full record: flip_log, checkpoints,
         │                                 #   metrics (ASR@10/@20, Flips→95%),
         │                                 #   layer_R, selected components, timings

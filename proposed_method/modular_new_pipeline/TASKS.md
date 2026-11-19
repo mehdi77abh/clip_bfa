@@ -3,7 +3,8 @@
 Selected with `--task {zs,lp,i2t}`.  The task is part of every output path:
 
 ```
-{out_root}/{model}/{dataset}/{task}/c{target_cls}/s{seed}/{variant}__t{trigger_size}/
+{out_root}/{section}/{model}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{sz}[_{loc}]/
+  (flattened 2026-11-19 — was {task}/c{cls}/s{seed}/r{rep}/{variant}__t{sz})
 ```
 
 Only **zs** is implemented today; **lp** and **i2t** are future work and

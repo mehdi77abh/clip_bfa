@@ -28,7 +28,7 @@ gradient fallback.
 - Step 2b (task/ablation): `--task {zs,lp,i2t}` (zs + **lp evaluation implemented**;
   i2t raises `NotImplementedError` — protocols in TASKS.md) and
   `--variant {full,d,a,b,c,clip_flip}` wired to the ablation behaviours (ABLATION.md).
-  Output layout: `{out_root}/{section}/{model}/{dataset}/{task}/c{cls}/s{seed}/r{rep}/{variant}__t{sz}[__{loc}]`
+  Output layout (flattened 2026-11-19): `{out_root}/{section}/{model}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{sz}[_{loc}]`
   with `--section {validation,baselines,ablation}` as the top-level results group.
 - **Adapter layer (2026-11-10):** `adapters.py` (`ModelAdapter` ABC + `OpenAICLIPAdapter` +
   `SigLIPAdapter` + `get_adapter`/`load_model` factories) — every architecture access goes
@@ -105,7 +105,7 @@ Synced into this folder:
 - **`main.py`** = `main(cfg)` → `AttackPipeline(cfg).run()` + the OOM try/catch (below).
 - One invocation = one run.  Multi-run grids are **shell scripts** looping over
   `python experiment.py --model … --dataset … --seed …` — no Python grid loop by design.
-- Run dirs: `{out_root}/{model_tag}/{dataset}/{task}/c{target_cls}/s{seed}/{variant}__t{trigger_size}`
+- Run dirs (flattened 2026-11-19): `{out_root}/{section}/{model_tag}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{sz}[_{loc}]`
   (`model_tag`: `ViT-B/16` → `ViT-B16`). `bfa_results.json`'s `config` key captures the
   full cfg.
 - `splits.n_trigger` sets `N_TARGET_IMAGES` and the `N_CALIB` fallback (32).

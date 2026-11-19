@@ -314,18 +314,20 @@ def build_config(args):
     cfg.REP = int(args.rep)
     cfg.SECTION = args.section
     cfg.SAVE_ATTACKED_MODEL = bool(args.save_attacked_model)
-    run_seg = f"{variant}__t{args.trigger_size}"
+    run_seg = f"{variant}_t{args.trigger_size}"
     if cfg.TRIGGER_LOCATION:
-        run_seg += f"__{cfg.TRIGGER_LOCATION}"
+        run_seg += f"_{cfg.TRIGGER_LOCATION}"
     cfg.RUN_ID = f"{cfg.SECTION}__{tag}__{dataset}__{args.task}__" \
                  f"c{args.target_cls}__{run_seg}__s{seed}__r{cfg.REP}"
     cfg.OUT_ROOT = out_root
     cfg.LP_HEAD_ROOT = resolve_path(paths["lp_head_root"])
     cfg.LP_HEAD = args.lp_head or os.path.join(
         cfg.LP_HEAD_ROOT, f"{tag}_{dataset}.pt")
+    # Run dir (2026-11-19, flattened):
+    #   {out_root}/{section}/{model}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{size}[_{loc}]
+    run_leaf = f"{args.task}_c{args.target_cls}_s{seed}_r{cfg.REP}_{run_seg}"
     cfg.OUT_DIR = args.out_dir or os.path.join(
-        out_root, cfg.SECTION, tag, dataset, args.task, f"c{args.target_cls}",
-        f"s{seed}", f"r{cfg.REP}", run_seg)
+        out_root, cfg.SECTION, tag, dataset, run_leaf)
 
     return cfg
 
