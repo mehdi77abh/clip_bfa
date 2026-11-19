@@ -1,0 +1,7 @@
+grid start 2026-11-18 12:45:46  PY=python
+  MODELS=[ViT-B/16 ViT-L/14 SigLIP-B/16]  DATASETS=[Caltech101 ImageNet1k]  SEEDS=[21 42 53 64 77]  REPS=1
+════════ ABLATION VARIANTS: full a b c (t16, seeds [21 42 53 64 77] × 1 reps) ════════
+[skip] /home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results/ablation/ViT-L14/ImageNet1k/zs/c291/s21/r1/full__t16
+[skip] /home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results/ablation/ViT-L14/ImageNet1k/zs/c291/s42/r1/full__t16
+[skip] /home/farzin/lab/projects/mehdi/clip_bfa/proposed_method/modular_new_pipeline/grid_results/ablation/ViT-L14/ImageNet1k/zs/c291/s53/r1/full__t16
+[run ] ablation  ViT-L/14  ImageNet1k  c291  n_eval=1000  s64 r1  (full__t16)

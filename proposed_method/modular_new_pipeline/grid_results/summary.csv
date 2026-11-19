@@ -5,7 +5,16 @@ ablation,ViT-B/16,ImageNet1k,zs,291,full,cos,0.0,16,top_left,1,fine_stalled,41.8
 ablation,ViT-B/16,ImageNet1k,zs,291,full,cos,0.0,16,top_right,1,fine_stalled,67.10,98.90,98.90,3.00,5.00,0.00,98.90,68.10,98.90,68.10,808.76
 ablation,ViT-L/14,ImageNet1k,zs,291,b,cos,0.0,16,None,3,asr_target/fine_stalled,40.77 ± 4.19,93.67 ± 4.90,98.67 ± 0.71,9.67 ± 3.21,12.00 ± 3.00,0.00 ± 0.00,98.67 ± 0.71,70.17 ± 3.49,98.67 ± 0.71,73.47 ± 1.44,2706.34 ± 1457.31
 ablation,ViT-L/14,ImageNet1k,zs,291,c,cos,0.0,16,None,3,asr_target/fine_stalled,40.77 ± 4.19,90.93 ± 7.32,94.93 ± 6.27,18.00 ± 12.12,20.67 ± 13.20,0.00 ± 0.00,98.70 ± 0.44,73.30 ± 0.98,98.70 ± 0.44,73.47 ± 1.44,3568.19 ± 678.55
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,12,None,1,fine_stalled,28.70,87.10,97.20,20.00,22.00,0.00,98.50,73.90,98.50,74.30,4097.67
 ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,16,None,3,asr_target,40.77 ± 4.19,93.23 ± 5.85,98.90 ± 0.36,12.67 ± 5.13,15.67 ± 5.51,0.00 ± 0.00,99.10 ± 0.10,73.17 ± 1.18,99.10 ± 0.10,73.47 ± 1.44,1850.32 ± 510.67
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,16,bottom_left,1,fine_stalled,5.60,67.80,96.90,19.00,21.00,0.00,97.60,73.60,97.60,74.30,3901.43
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,16,bottom_right,1,fine_stalled,18.90,83.20,97.70,16.00,18.00,0.00,97.70,74.10,97.70,74.30,3711.50
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,16,top_left,1,asr_target,0.00,1.00,27.30,47.00,50.00,0.00,99.00,73.90,99.00,74.30,5054.42
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,16,top_right,1,fine_stalled,0.00,3.90,75.10,28.00,31.00,0.00,98.80,74.20,98.80,74.30,5096.91
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,20,None,1,fine_stalled,64.70,92.40,98.50,17.00,19.00,0.00,98.50,74.20,98.50,74.30,3820.68
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,24,None,1,fine_stalled,69.60,98.30,98.30,8.00,10.00,0.00,98.30,74.00,98.30,74.30,2611.84
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,32,None,1,fine_stalled,79.50,98.40,98.40,6.00,9.00,0.00,98.40,73.90,98.40,74.30,3706.99
+ablation,ViT-L/14,ImageNet1k,zs,291,full,cos,0.0,8,None,1,fine_stalled,0.00,2.40,49.80,37.00,38.00,0.00,96.90,73.70,96.90,74.30,5504.17
 validation,ViT-B/16,Caltech101,zs,97,full,cos,0.0,16,None,3,fine_patience/fine_stalled,39.40 ± 2.07,77.43 ± 10.09,95.40 ± 4.17,19.00 ± 3.61,21.33 ± 4.51,0.00 ± 0.00,97.73 ± 0.55,89.13 ± 0.35,97.73 ± 0.55,89.53 ± 0.40,791.08 ± 135.30
 validation,ViT-B/16,ImageNet1k,zs,291,full,cos,0.0,16,None,3,fine_stalled/plateau,31.43 ± 1.70,75.50 ± 27.15,80.03 ± 31.04,13.50 ± 0.71,12.00 ± 6.08,0.00 ± 0.00,80.03 ± 31.04,68.10 ± 0.36,80.03 ± 31.04,67.93 ± 0.15,634.89 ± 397.61
 validation,ViT-L/14,Caltech101,zs,97,full,cos,0.0,16,None,3,fine_stalled,21.97 ± 4.67,64.73 ± 6.90,84.90 ± 9.53,30.00 ± 7.00,32.00 ± 7.55,0.00 ± 0.00,97.23 ± 0.95,91.10 ± 0.46,97.23 ± 0.95,91.07 ± 0.35,5727.81 ± 804.14

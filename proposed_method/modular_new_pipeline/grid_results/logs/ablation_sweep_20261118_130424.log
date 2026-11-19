@@ -1,0 +1,1 @@
+usage: bash run_ablation.sh {sweeps|a|all}
