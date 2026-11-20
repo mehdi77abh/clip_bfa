@@ -274,7 +274,7 @@ class AttackPipeline:
             lp_result = self.evaluator.lp_evaluate(
                 model, test_loader, dev, cfg.LP_HEAD,
                 trigger=trigger, target_cls=cfg.TARGET_CLS, ap=ap,
-                mini_bs=cfg.MINI_BS)
+                class_names=classes, mini_bs=cfg.MINI_BS)
             print(f"  LP-CACC={lp_result['lp_cacc']:.2f}%  "
                   f"LP-ASR={lp_result['lp_asr']:.2f}%")
 

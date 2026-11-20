@@ -29,7 +29,8 @@ ID_COLS = ["section", "model", "dataset", "task", "target_cls", "seed", "rep",
            "trigger_size", "trigger_location"]
 METRIC_COLS = ["trigger_asr", "asr_at_10", "asr_at_20", "flips_to_95",
                "flips_total", "flips_rolled_back", "asr_final", "cacc_final",
-               "asr_best", "cacc_base", "search_time_sec"]
+               "asr_best", "cacc_base", "search_time_sec",
+               "lp_cacc", "lp_asr", "lp_clean_as_target"]
 GROUP_COLS = ["section", "model", "dataset", "task", "target_cls",
               "variant", "p1_loss", "p3_alpha_lse",
               "trigger_size", "trigger_location"]
@@ -51,6 +52,7 @@ def collect(out_root):
             continue
         cfg = rec.get("config", {})
         m = rec.get("metrics", {})
+        lp = rec.get("linear_probe") or {}
         # Metric reconciliation: Flips→95% is definitionally 0 when the trigger
         # base ASR is already ≥95% (older runs recorded the first accepted flip).
         f95 = m.get("flips_to_95")
@@ -83,6 +85,9 @@ def collect(out_root):
             cacc_base=m.get("cacc_base"),
             stop_reason=m.get("stop_reason"),
             search_time_sec=rec.get("search_time_sec"),
+            lp_cacc=lp.get("lp_cacc"),
+            lp_asr=lp.get("lp_asr"),
+            lp_clean_as_target=lp.get("lp_clean_as_target"),
             out_dir=dirpath))
     return rows
 

@@ -60,6 +60,44 @@
         "n_eval":     200
       }
     },
+    "DTD": {
+      "loader":         "ImageFolder",
+      "root":           "../data/dtd/images",
+      "n_classes":      47,
+      "img_size":       224,
+      "class_text_dir": "class_texts/dtd",
+      "splits": {
+        "n_trigger":  32,
+        "n_gradient": 16,
+        "n_eval":     200
+      }
+    },
+    "Flowers102": {
+      "loader":         "Flowers102",
+      "root":           "../data/",
+      "split":          "test",
+      "n_classes":      102,
+      "img_size":       224,
+      "class_text_dir": "class_texts/flowers102",
+      "splits": {
+        "n_trigger":  32,
+        "n_gradient": 16,
+        "n_eval":     200
+      }
+    },
+    "Food101": {
+      "loader":         "Food101",
+      "root":           "../data/",
+      "split":          "test",
+      "n_classes":      101,
+      "img_size":       224,
+      "class_text_dir": "class_texts/food101",
+      "splits": {
+        "n_trigger":  32,
+        "n_gradient": 16,
+        "n_eval":     200
+      }
+    },
     "ImageNet1k": {
       "loader":         "ImageNet",
       "root":           "../data/imagenet",

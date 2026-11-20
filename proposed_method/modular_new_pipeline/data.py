@@ -147,6 +147,21 @@ class DataModule:
             names = [_first_name(c) for c in
                      self._names(ds, fallback_n=entry.get("n_classes", 1000))]
 
+        elif loader == "Food101":
+            # meta/{split}.json drives class_to_idx = sorted(class names);
+            # split "test" = the manually reviewed 250/class clean set (the
+            # official train split is uncleaned by design).
+            ds = datasets.Food101(root=root, split=entry.get("split", "test"),
+                                  download=cfg.DOWNLOAD, transform=tf)
+            names = [n.replace("_", " ") for n in ds.classes]
+
+        elif loader == "Flowers102":
+            # torchvision labels are already 0-based (source does `labels - 1`);
+            # the dataset ships no class names — class_text_dir is required.
+            ds = datasets.Flowers102(root=root, split=entry.get("split", "test"),
+                                     download=cfg.DOWNLOAD, transform=tf)
+            names = self._names(ds, fallback_n=entry.get("n_classes", 102))
+
         elif loader == "ImageFolder":
             ds = datasets.ImageFolder(root=root, transform=tf)
             names = [n.replace("_", " ").lower() for n in ds.classes]

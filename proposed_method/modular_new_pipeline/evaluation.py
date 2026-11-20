@@ -98,7 +98,8 @@ class Evaluator:
     # ════════════════════════════════════════════════════════════════
     @torch.no_grad()
     def lp_evaluate(self, model, loader, device, lp_head_path,
-                    trigger=None, target_cls=None, ap=None, mini_bs=None):
+                    trigger=None, target_cls=None, ap=None, mini_bs=None,
+                    class_names=None):
         """Evaluate the saved linear-probe head on this model's features.
 
         loader        : DataLoader yielding (images, labels) — used for BOTH
@@ -109,6 +110,11 @@ class Evaluator:
                         every attack method (fair comparison, RESULTS.md §2).
         ap            : ApplyParams for the triggered pass (required with
                         ``trigger``).
+        class_names   : the run dataset's prompt class names — when the
+                        checkpoint meta carries its own class_names the two
+                        label spaces are checked for an exact match (a probe
+                        trained for another dataset would silently produce
+                        nonsense).
 
         Returns dict: lp_cacc (clean accuracy, %), lp_asr (fraction of
         triggered features classified as ``target_cls``, %), n, plus
@@ -132,6 +138,25 @@ class Evaluator:
         bias = head.get("bias")
         bias = bias.to(device).float() if bias is not None else None
         probe_meta = head.get("meta", {})
+
+        # ── label-space sanity: the head must fit this run's dataset ──
+        n_probe = int(weight.shape[0])
+        head_names = probe_meta.get("class_names")
+        if class_names is not None and head_names is not None \
+                and list(head_names) != list(class_names):
+            bad = next((i for i, (a, b) in
+                        enumerate(zip(head_names, class_names)) if a != b),
+                       min(len(head_names), len(class_names)))
+            raise ValueError(
+                f"Linear-probe head {lp_head_path} was trained on a different "
+                f"label space than this run's dataset: first mismatch at index "
+                f"{bad} (head {head_names[bad] if bad < len(head_names) else '<end>'!r} "
+                f"vs dataset {class_names[bad] if bad < len(class_names) else '<end>'!r}; "
+                f"{len(head_names)} vs {len(class_names)} classes).")
+        if target_cls is not None and not 0 <= target_cls < n_probe:
+            raise ValueError(
+                f"target_cls={target_cls} out of range for the probe head "
+                f"({n_probe} classes): {lp_head_path}")
 
         def classify(imgs):
             feats = F.normalize(

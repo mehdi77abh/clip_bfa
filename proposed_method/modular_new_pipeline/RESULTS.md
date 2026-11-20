@@ -71,7 +71,8 @@ in the **Linear-Probe (LP) task**.
     score `R_l`, no hybrid weighting (≈ `HybridRanker` with `R_l = 1`).
 - **LP protocol (fair comparison):**
   1. `linear_probe.py` trains the LP layer **once per (model, dataset)** on
-     clean features and saves it (`lp_probes/{model}_{dataset}.pt`).
+     clean features and saves it (`lp_heads/{model}_{dataset}.pt`, registry
+     `paths.lp_head_root`).
   2. Every method (ours, Flip-S, TrojViT, both internal baselines) is
      evaluated with **that same probe** — LP-CACC on clean features, LP-ASR on
      triggered features.
@@ -147,8 +148,8 @@ Results/
         ├── original_weights.pt
         └── model_state_attacked.pt       # --save-attacked-model (for defence /
                                           #   VLM-transfer evaluation)
-lp_probes/
-└── {model}_{dataset}.pt              # (new) trained linear-probe layers
+lp_heads/
+└── {model}_{dataset}.pt              # trained linear-probe layers (registry paths.lp_head_root)
 ```
 
 `{section}` is `validation` | `baselines` | `ablation` (`--section`) — the
@@ -197,7 +198,12 @@ sweeps).
    fine_stalled | plateau | no_candidates | max_flips; `metrics["flips_fine"]`
    counts kept fine-phase flips.  Recorded in `bfa_results.json["metrics"]`.
 3. **`linear_probe.py` (new, standalone):** DONE — trains + saves the head;
-   evaluation via `Evaluator.lp_evaluate` + `--task lp` (TASKS.md §2).
+   evaluation via `Evaluator.lp_evaluate` + `--task lp` (TASKS.md §2);
+   **end-to-end driver `run_lp.sh` (2026-11-20)** — probe (50 000 ImageNet
+   train images, 50/class) → one `--task lp` attack → aggregate (LP columns
+   `lp_cacc`/`lp_asr`/`lp_clean_as_target` in `runs.csv`/`summary.csv`).
+   Guards: `build_config` fails fast on a missing head; `lp_evaluate` checks
+   the head's label space against the run dataset.
 4. **Baseline rankers:** PENDING — a baseline mode (ours | random |
    simple_grad) — alternative `rank()` implementations behind the injected
    `ranker` interface (e.g. `baselines.py`: `RandomRanker`,

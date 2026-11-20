@@ -7,8 +7,8 @@ Selected with `--task {zs,lp,i2t}`.  The task is part of every output path:
   (flattened 2026-11-19 — was {task}/c{cls}/s{seed}/r{rep}/{variant}__t{sz})
 ```
 
-Only **zs** is implemented today; **lp** and **i2t** are future work and
-`--task lp|i2t` currently raises `NotImplementedError` (see each section for
+Only **zs** and **lp** are implemented today; **i2t** is future work and
+`--task i2t` currently raises `NotImplementedError` (see its section for
 exactly what needs to be built).  Metrics definitions live in RESULTS.md §0.
 
 ---
@@ -56,6 +56,21 @@ method, so the comparison is fair.
    `--lp-head` overrides the default `{lp_head_root}/{model_tag}_{dataset}.pt`).
 3. All methods (ours, Flip-S, TrojViT, random/simple-gradient baselines)
    are scored with the **same saved head**.
+
+**One-command driver (2026-11-20): `run_lp.sh`** — probe training → one
+attack run with `--task lp` (the saved head is attached to the attacked
+encoder's features after Phase 4) → `aggregate.py` (LP columns `lp_cacc` /
+`lp_asr` / `lp_clean_as_target` in `runs.csv`/`summary.csv`).  Defaults:
+ViT-L/14 × ImageNet1k, `ImageNet1kTrain` 50/class = **50 000** probe-train
+images, seed 42, target 'lion' (c291), trigger 16, `--section baselines`;
+every knob is an env override (see the header).  Prerequisite: ImageNet-1k
+prepared once via `python ../../data/prepare_imagenet.py`.  `RESUME=1`
+(default) skips the probe when the checkpoint exists and the attack when
+`bfa_results.json` exists.
+
+Guards: `experiment.build_config` fails fast when the probe head is missing
+(before any GPU work), and `Evaluator.lp_evaluate` rejects a head whose
+`meta.class_names` label space does not match the run dataset.
 
 ## 3. `i2t` — image-to-text retrieval — **FUTURE**
 

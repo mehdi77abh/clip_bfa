@@ -1,0 +1,49 @@
+{
+  "mode": "start-only",
+  "dest": "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/data_test",
+  "argv": [
+    "download_datasets.py",
+    "--dest",
+    "../data_test",
+    "--start-only"
+  ],
+  "time": "2026-11-19 19:46:24",
+  "probes": [
+    {
+      "file": "caltech-101.zip",
+      "url": "https://data.caltech.edu/api/records/mzrjq-6wc02/files/caltech-101.zip/content",
+      "magic_expected": "PK",
+      "ok": true,
+      "http_status": 200,
+      "content_length": "137414764",
+      "content_type": "application/octet-stream",
+      "bytes_read": 1048576,
+      "magic_found": "PK\u0003\u0004",
+      "magic_ok": true
+    },
+    {
+      "file": "imagenet/wnids.txt",
+      "url": "https://raw.githubusercontent.com/tensorflow/models/master/research/slim/datasets/imagenet_lsvrc_2015_synsets.txt",
+      "ok": true,
+      "lines": 1000
+    },
+    {
+      "file": "imagenet/val shard list",
+      "url": "https://huggingface.co/api/datasets/benjamin-paine/imagenet-1k",
+      "ok": true,
+      "shards": 14
+    },
+    {
+      "file": "validation-00000-of-00014.parquet",
+      "url": "https://huggingface.co/datasets/benjamin-paine/imagenet-1k/resolve/main/data/validation-00000-of-00014.parquet",
+      "magic_expected": "PAR1",
+      "ok": true,
+      "http_status": 200,
+      "content_length": "470121156",
+      "content_type": "application/octet-stream",
+      "bytes_read": 1048576,
+      "magic_found": "PAR1",
+      "magic_ok": true
+    }
+  ]
+}

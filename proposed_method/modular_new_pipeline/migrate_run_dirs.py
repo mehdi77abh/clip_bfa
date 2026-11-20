@@ -49,8 +49,8 @@ def migrate(root):
     for section in ("validation", "ablation", "baselines"):
         base = os.path.join(root, section)
         if os.path.isdir(base):
-            for dirpath, dirnames, filenames in os.walk(base, topdown=False):
-                if not dirnames and not filenames and dirpath != base:
+            for dirpath, _dirnames, _filenames in os.walk(base, topdown=False):
+                if dirpath != base and not os.listdir(dirpath):
                     os.rmdir(dirpath)
     return moves
 

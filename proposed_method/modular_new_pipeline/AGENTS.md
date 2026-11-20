@@ -46,11 +46,18 @@ gradient fallback.
   `--trigger-location` (train+eval at one placement),
   `--rep` (same-seed repeats), `Evaluator.lp_evaluate` + `--task lp`, `aggregate.py`
   (`runs.csv`/`summary.csv`) and `run_all.sh` (validation + ablation grids) are in.
+- **LP task complete (2026-11-20):** `run_lp.sh` drives the whole TASKS.md §2
+  workflow — `linear_probe.py` (ImageNet1kTrain 50/class = 50 000 →
+  `lp_heads/{tag}_{dataset}.pt`) → one `--task lp` attack (head attached to
+  the attacked encoder's features) → aggregate with LP columns.  Guards:
+  `build_config` fails fast on a missing head; `lp_evaluate` checks the
+  head's `meta.class_names` label space against the run dataset.
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
   (random / simple-gradient, #4), FaR / fine-tuning defence scripts (DEFENSES.md;
   the attacked-model saving half of #6 is done via `--save-attacked-model`),
   `--task i2t` retrieval branch (TASKS.md §3). DONE so far: Phase-4 metrics
-  (#2), `linear_probe.py` + LP evaluation (#3), ablation variants (#5),
+  (#2), `linear_probe.py` + LP evaluation + `run_lp.sh` driver (#3),
+  ablation variants (#5),
   attacked-model state saving (flagged, #6a), aggregation `runs.csv`/`summary.csv` (#7).
 
 ## Reference sync log (behavioural deltas of the 2026-11-08 maintainer edit)
@@ -85,10 +92,27 @@ Synced into this folder:
   `proposed_method/` (the `../data` convention); `class_text_dir` resolves against
   `modular_new_pipeline/`. Roots must match the on-disk layout
   (`data/caltech-101/caltech-101/101_ObjectCategories`, `data/cifar10/cifar-10-batches-py`,
-  `data/imagenet/{train,val}`).
+  `data/imagenet/{train,val}`, `data/dtd/images`).  DTD (2026-11-19) uses the
+  `ImageFolder` loader on `../data/dtd/images` (47 texture classes, 120 img each)
+  with hand-maintained `class_texts/dtd/classes.txt` ("{name} texture" prompt
+  names — CLIP's DTD prompt convention).
+  **Food101 / Flowers102 (registered 2026-11-20, data NOT yet downloaded):**
+  torchvision loaders (`Food101`, `Flowers102` branches in `data.py`), root
+  `../data/` → `data/food-101/{meta,images}` and
+  `data/flowers-102/{jpg,imagelabels.mat,setid.mat}`; registry `split: "test"`
+  (Food101 test = 250/class manually reviewed; Flowers102 test = ~60/class —
+  its train/val are 10/class few-shot splits).  `class_texts/food101` follows
+  the loaders' `sorted()` class order; `class_texts/flowers102` follows the
+  official label-id order (torchvision labels are 0-based).
+  **DTD trigger size (maintainer decision 2026-11-20):** use **8**, not 16, for
+  future DTD runs — the 16px trigger saturates on textures (91% base ASR, search
+  needs only 3 flips) and hides the search behaviour.  Run with `TRIG_STD=8`
+  (or a `TRIG_DTD` case in `run_all.sh` when the DTD grid is wired) — the
+  2026-11-20 smoke run at t16 stays as-is.
 - **`class_texts/{dataset}/classes.txt`** — canonical class names (one per line,
   index-aligned with label ids, BadCLIP-DualEmbedding convention; CIFAR10/ImageNet1k
-  names are BadCLIP's lists VERBATIM for baseline-consistent evaluation).
+  names are BadCLIP's lists VERBATIM for baseline-consistent evaluation; DTD,
+  Food101, Flowers102 names are hand-maintained prompt names).
   `DataModule.load_dataset` uses them as the prompt class names and raises if the
   count mismatches the dataset. Regenerate with `python make_class_texts.py`.
 - **`config.py` is registry-only**: `load_registry()` + the `CFG` attribute bag.
@@ -135,14 +159,14 @@ modular_new_pipeline/
   config.py            # registry loader (load_registry, resolve_path) + CFG bag
   adapters.py          # ModelAdapter ABC + OpenAICLIPAdapter + SigLIPAdapter,
                        #   get_adapter / adapter_for_block / encode_image / load_model
-  class_texts/         # {caltech101,cifar10,imagenet1k}/classes.txt (canonical class names)
+  class_texts/         # {caltech101,cifar10,dtd,flowers102,food101,imagenet1k}/classes.txt
   make_class_texts.py  # regenerates class_texts/ (Caltech from disk; CIFAR10/ImageNet1k
                        #   from ../baselines/BadCLIP-DualEmbedding/data)
   experiment.py        # single-run CLI: parse_args + build_config → passes cfg to main.py
   utils.py             # set_seed, cleanup_gpu, CLIP normalisation consts
   models.py            # ModelLoader (load via adapters, detect_model_params, sanity_check)
   data.py              # DataModule: registry-driven load_dataset (Caltech101 | CIFAR10 |
-                       #   CIFAR100 | ImageFolder), splits, tensors, loaders
+                       #   CIFAR100 | ImageNet | Food101 | Flowers102 | ImageFolder), splits, tensors, loaders
   target.py            # TargetEmbedder: build_text_embeddings (adapter encode_text),
                        #   from_text, PROMPT_TEMPLATES
   trigger.py           # TriggerGenerator.generate (Phase 1: cos loss,
@@ -167,14 +191,24 @@ modular_new_pipeline/
                        #   flags hook here; Phase-1 dead-trigger retries
                        #   (--trigger-min-asr / --trigger-retries)
   main.py              # main(cfg) → AttackPipeline(cfg).run() + OOM try/catch
+  download_datasets.py # standalone Caltech-101 + ImageNet-1k downloader into
+                       #   ../data (registry layout); --start-only = download
+                       #   probe only (tested OK 2026-11-19 on ../data_test)
   aggregate.py         # runs.csv + runs_{model}.csv (per model) + summary.csv
                        #   (mean ± std per config) from bfa_results.json — 2-decimal
-                       #   cells, asr_base → trigger_asr column; auto-refreshed after
+                       #   cells, asr_base → trigger_asr column, LP columns
+                       #   (lp_cacc/lp_asr/lp_clean_as_target from
+                       #   bfa_results.json["linear_probe"]); auto-refreshed after
                        #   every experiment.py run; --no-aggregate opts out)
   run_all.sh           # validation + ablation grids (models × datasets × seeds,
                        #   variants, trigger-size / trigger-location sweeps) →
                        #   aggregate at the end; logs under {out_root}/logs/ +
                        #   per-run run.log
+  run_lp.sh            # LP task end-to-end (TASKS.md §2): linear_probe.py
+                       #   (ImageNet1kTrain 50/class = 50 000 →
+                       #   lp_heads/{tag}_{dataset}.pt) → one --task lp attack
+                       #   (shared head attached to the attacked encoder's
+                       #   features) → aggregate; RESUME=1 skips done stages
 ```
 
 ## Module-independence rule (as implemented)

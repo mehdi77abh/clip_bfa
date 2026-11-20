@@ -1,0 +1,1286 @@
+grid start 2026-11-19 23:42:00  PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python
+  MODELS=[ViT-B/16]  DATASETS=[Caltech101]  SEEDS=[21 42 53]  REPS=1
+════════ VALIDATION: ViT-B/16 × Caltech101 × seeds [21 42 53] × 1 reps ════════
+[run ] validation  ViT-B/16  Caltech101  c3  n_eval=1000  s21 r1  (full__t16)
+RUN_ID : validation__ViT-B16__Caltech101__zs__c3__full_t16__s21__r1
+OUT_DIR: /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s21_r1_full_t16
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 3
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+  Config requested : ViT-B/16
+  Actual architecture:
+    seq_len  : 197  (= 14×14 patches + CLS)
+    width    : 768
+    patch    : 16×16
+    img_size : 224
+    layers   : 12
+    heads    : 12
+    params   : 86.2M
+  NOTE: TRIG_SZ=16 covers only 1 patch(es) per dim with patch_size=16.
+    Consider increasing TRIG_SZ to at least 32 for better coverage.
+
+[2] Loading Caltech101
+  Dataset : Caltech101  (loader=Caltech101)
+  Samples : 8677
+  Classes : 101
+  101 classes, target = 'motorbike'
+  Encoding 1313 prompts (101 classes × 13 templates)...
+  Text embeddings shape: torch.Size([101, 512])
+  Sample prompts for class 0 ('human face'):
+    "a photo of a human face."
+    "a photo of the human face."
+    "a close-up photo of a human face."
+
+[3] Preparing data splits
+  Target class images :    32
+  Target holdout      :   766
+  Calibration         :    64
+  Gradient            :    16
+  Evaluation          :  1000
+  Test                :  6799
+  t_target = text_emb[3]  ('motorbike')
+  Trigger tokens: [91, 92, 105, 106]
+  Trigger type: center_add  Size: 16×16  Placement: legacy
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION (cos loss, clamped)
+============================================================
+  Size: 16×16  Placement: legacy  Mode: add_center
+  Epochs: 300  LR: 0.02  T: 0.07
+  Init: randn × 0.1  grad clip: 1.0  Static Trig Clamp: [-3, 3]
+  ep    1  loss=-2.777722  cos_t=+0.1944  ||trig||=3.744  RMS=0.135
+  ep   50  loss=-4.205174  cos_t=+0.2944  ||trig||=39.120  RMS=1.408
+  ep  100  loss=-4.347020  cos_t=+0.3043  ||trig||=50.754  RMS=1.826
+  ep  150  loss=-4.391444  cos_t=+0.3074  ||trig||=55.241  RMS=1.987
+  ep  200  loss=-4.408303  cos_t=+0.3086  ||trig||=57.385  RMS=2.064
+  ep  250  loss=-4.414285  cos_t=+0.3090  ||trig||=58.188  RMS=2.093
+  ep  300  loss=-4.415570  cos_t=+0.3091  ||trig||=58.351  RMS=2.099
+  Best loss: -4.415570
+  Trigger standalone: ASR=61.2%  CACC=88.0%
+    Saved → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s21_r1_full_t16/trigger_patch.png
+
+============================================================
+PHASE 2: LAYER-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.309091
+  Model: 12L  D=768  seq_len=197
+  Mini-batch: 4  calib n=64
+  L  0  attn_drop=+0.003192 [supp]  mlp_drop=+0.011061 [supp]
+  L  1  attn_drop=+0.015721 [supp]  mlp_drop=+0.001349 [supp]
+  L  2  attn_drop=+0.010101 [supp]  mlp_drop=+0.005369 [supp]
+  L  3  attn_drop=+0.004367 [supp]  mlp_drop=+0.003666 [supp]
+  L  4  attn_drop=-0.001342 [prot]  mlp_drop=+0.004286 [supp]
+  L  5  attn_drop=+0.006084 [supp]  mlp_drop=+0.007431 [supp]
+  L  6  attn_drop=-0.000110 [prot]  mlp_drop=+0.020910 [supp]
+  L  7  attn_drop=+0.000816 [supp]  mlp_drop=+0.020519 [supp]
+  L  8  attn_drop=-0.002421 [prot]  mlp_drop=-0.006641 [prot]
+  L  9  attn_drop=-0.001961 [prot]  mlp_drop=-0.015659 [prot]
+  L 10  attn_drop=+0.014486 [supp]  mlp_drop=-0.015922 [prot]
+  L 11  attn_drop=-0.017763 [prot]  mlp_drop=-0.002570 [prot]
+
+  Rank-normalised layer scores (attn_rank + mlp_rank on |drop|):
+    L  0  attn_rank=0.5000  mlp_rank=0.6667  score=1.1667
+    L  1  attn_rank=0.9167  mlp_rank=0.0833  score=1.0000
+    L  2  attn_rank=0.7500  mlp_rank=0.4167  score=1.1667 *
+    L  3  attn_rank=0.5833  mlp_rank=0.2500  score=0.8333
+    L  4  attn_rank=0.2500  mlp_rank=0.3333  score=0.5833
+    L  5  attn_rank=0.6667  mlp_rank=0.5833  score=1.2500 *
+    L  6  attn_rank=0.0833  mlp_rank=1.0000  score=1.0833
+    L  7  attn_rank=0.1667  mlp_rank=0.9167  score=1.0833
+    L  8  attn_rank=0.4167  mlp_rank=0.5000  score=0.9167
+    L  9  attn_rank=0.3333  mlp_rank=0.7500  score=1.0833
+    L 10  attn_rank=0.8333  mlp_rank=0.8333  score=1.6667 *
+    L 11  attn_rank=1.0000  mlp_rank=0.1667  score=1.1667 *
+  Top-4 layers: [2, 5, 10, 11]
+  Saved → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s21_r1_full_t16/layer_scores_analysis.png
+
+============================================================
+PHASE 2B: COMPONENT-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.309091
+  Top layers: [2, 5, 10, 11]  (4 layers × 12 heads + 1 MLP)
+  Quota: per-layer  TOP_K_COMPONENTS=30
+    L2 H0   drop=+0.000859 [supp]
+    L2 H1   drop=+0.000487 [supp]
+    L2 H2   drop=+0.003279 [supp]
+    L2 H3   drop=+0.000217 [supp]
+    L2 H4   drop=+0.003843 [supp]
+    L2 H5   drop=+0.001537 [supp]
+    L2 H6   drop=-0.000464 [prot]
+    L2 H7   drop=+0.007795 [supp]
+    L2 H8   drop=+0.004128 [supp]
+    L2 H9   drop=+0.001159 [supp]
+    L2 H10  drop=+0.004080 [supp]
+    L2 H11  drop=+0.000693 [supp]
+    L2 FFN   drop=+0.061816 [supp]
+    L5 H0   drop=+0.010752 [supp]
+    L5 H1   drop=+0.000202 [supp]
+    L5 H2   drop=+0.002448 [supp]
+    L5 H3   drop=+0.006350 [supp]
+    L5 H4   drop=+0.001046 [supp]
+    L5 H5   drop=+0.002164 [supp]
+    L5 H6   drop=+0.005536 [supp]
+    L5 H7   drop=+0.009423 [supp]
+    L5 H8   drop=+0.015888 [supp]
+    L5 H9   drop=+0.001110 [supp]
+    L5 H10  drop=+0.002987 [supp]
+    L5 H11  drop=+0.001985 [supp]
+    L5 FFN   drop=+0.088712 [supp]
+    L10 H0   drop=+0.002958 [supp]
+    L10 H1   drop=+0.001980 [supp]
+    L10 H2   drop=+0.001059 [supp]
+    L10 H3   drop=+0.001137 [supp]
+    L10 H4   drop=+0.001272 [supp]
+    L10 H5   drop=+0.002874 [supp]
+    L10 H6   drop=+0.000837 [supp]
+    L10 H7   drop=+0.002026 [supp]
+    L10 H8   drop=+0.001388 [supp]
+    L10 H9   drop=+0.000859 [supp]
+    L10 H10  drop=+0.002049 [supp]
+    L10 H11  drop=+0.006092 [supp]
+    L10 FFN   drop=+0.001571 [supp]
+    L11 H0   drop=-0.001800 [prot]
+    L11 H1   drop=+0.000707 [supp]
+    L11 H2   drop=+0.001401 [supp]
+    L11 H3   drop=+0.007535 [supp]
+    L11 H4   drop=+0.001385 [supp]
+    L11 H5   drop=+0.001377 [supp]
+    L11 H6   drop=-0.000604 [prot]
+    L11 H7   drop=-0.001796 [prot]
+    L11 H8   drop=-0.000141 [prot]
+    L11 H9   drop=+0.003293 [supp]
+    L11 H10  drop=-0.000732 [prot]
+    L11 H11  drop=+0.000943 [supp]
+    L11 FFN   drop=-0.040400 [prot]
+
+  Component pool : 52 (= 4 layers × (12 heads + 1 MLP))
+  Selected : 28 (24 attn, 4 ffn)
+    # 1  L2 FFN      drop=+0.061816
+    # 2  L2 H7       drop=+0.007795
+    # 3  L2 H8       drop=+0.004128
+    # 4  L2 H10      drop=+0.004080
+    # 5  L2 H4       drop=+0.003843
+    # 6  L2 H2       drop=+0.003279
+    # 7  L2 H5       drop=+0.001537
+    # 8  L5 FFN      drop=+0.088712
+    # 9  L5 H8       drop=+0.015888
+    #10  L5 H0       drop=+0.010752
+    #11  L5 H7       drop=+0.009423
+    #12  L5 H3       drop=+0.006350
+    #13  L5 H6       drop=+0.005536
+    #14  L5 H10      drop=+0.002987
+    #15  L10 H11     drop=+0.006092
+    #16  L10 H0      drop=+0.002958
+    #17  L10 H5      drop=+0.002874
+    #18  L10 H10     drop=+0.002049
+    #19  L10 H7      drop=+0.002026
+    #20  L10 H1      drop=+0.001980
+    #21  L10 FFN     drop=+0.001571
+    #22  L11 FFN     drop=-0.040400
+    #23  L11 H3      drop=+0.007535
+    #24  L11 H9      drop=+0.003293
+    #25  L11 H0      drop=-0.001800
+    #26  L11 H7      drop=-0.001796
+    #27  L11 H2      drop=+0.001401
+    #28  L11 H4      drop=+0.001385
+
+  Weight tracking: 56 tensors, 56 originals saved
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.3053
+  L_target(clean)    = -0.1901
+  Candidates: 17240 (14941 attn, 2299 ffn)
+  Top score: 0.09389179 (R=1.167, g=0.08047867)
+
+  Top-10 candidates:
+    L11 FFN fc[235,162] bit6  R=1.167  |Δw|=0.080278  score=0.09389179
+    L5 FFN proj[724,1507] bit7  R=1.250  |Δw|=0.278297  score=0.07669501
+    L11 FFN fc[235,650] bit6  R=1.167  |Δw|=0.080278  score=0.06046176
+    L10 FFN proj[724,1007] bit6  R=1.667  |Δw|=0.146407  score=0.06032282
+    L5 FFN fc[2287,4] bit7  R=1.250  |Δw|=0.212229  score=0.05646886
+    L2 FFN fc[2022,162] bit7  R=1.167  |Δw|=0.227731  score=0.05373102
+    L5 FFN fc[493,4] bit7  R=1.250  |Δw|=0.212229  score=0.04911066
+    L5 FFN proj[407,1111] bit7  R=1.250  |Δw|=0.278297  score=0.04894737
+    L11 FFN fc[235,162] bit5  R=1.167  |Δw|=0.040139  score=0.04694589
+    L5 FFN proj[407,1507] bit7  R=1.250  |Δw|=0.278297  score=0.04459637
+
+  Saved clean model state (598 MB)
+
+============================================================
+PHASE 4: GREEDY BIT-FLIP SEARCH
+============================================================
+  Baseline  ASR=61.2%  CACC=88.0%
+  Drift penalty λ=10.0  max_drift=0.02
+  drift_n=16  eval_bs=32  cands_per_round=30
+  Rd  0: L11 FFN fc[235,162] bit 6  Δcos=+0.0135  drift=0.0000  score=0.0135
+  Rd  1: L5 FFN proj[724,1437] bit 6  Δcos=+0.0059  drift=0.0000  score=0.0057
+  Rd  2: L11 FFN fc[235,42] bit 7  Δcos=+0.0035  drift=-0.0000  score=0.0035
+  Rd  3: L11 FFN fc[41,4] bit 7  Δcos=+0.0041  drift=0.0000  score=0.0040
+  Rd  4: L10 FFN proj[537,975] bit 7  Δcos=+0.0039  drift=0.0000  score=0.0039
+  Rebuilding hybrid rankings (grad n=16)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.3392
+  L_target(clean)    = -0.1895
+  Candidates: 17223 (14810 attn, 2413 ffn)
+  Top score: 0.05473123 (R=1.250, g=0.04378498)
+
+  Top-10 candidates:
+    L5 FFN fc[2287,4] bit7  R=1.250  |Δw|=0.212229  score=0.05473123
+    L10 FFN proj[724,1007] bit6  R=1.667  |Δw|=0.146407  score=0.05400264
+    L2 FFN fc[1413,162] bit7  R=1.167  |Δw|=0.227731  score=0.05069784
+    L2 FFN fc[2022,162] bit7  R=1.167  |Δw|=0.227731  score=0.05011332
+    L5 FFN fc[493,4] bit7  R=1.250  |Δw|=0.212229  score=0.04869487
+    L5 FFN fc[493,162] bit7  R=1.250  |Δw|=0.212229  score=0.04777538
+    L5 FFN fc[1933,4] bit7  R=1.250  |Δw|=0.212229  score=0.04772614
+    L5 FFN fc[1149,162] bit7  R=1.250  |Δw|=0.212229  score=0.04764094
+    L5 FFN proj[407,1111] bit7  R=1.250  |Δw|=0.278297  score=0.04584893
+    L2 FFN fc[765,162] bit7  R=1.167  |Δw|=0.227731  score=0.04470911
+  Rd  5: L10 FFN proj[724,1007] bit 6  Δcos=+0.0071  drift=0.0000  score=0.0071
+  ── fine_patience search: ASR 94.1% ≥ 94.0% — one-by-one failure-set mining toward 99.0% (max 9 flips) ──
+  Rebuilding hybrid rankings (grad n=59)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2759
+  L_target(clean)    = -0.1856
+  Candidates: 17082 (14717 attn, 2365 ffn)
+  Top score: 0.84681382 (R=1.167, g=0.72584042)
+
+  Top-10 candidates:
+    L2 FFN fc[728,162] bit7  R=1.167  |Δw|=0.227731  score=0.84681382
+    L5 FFN fc[258,4] bit7  R=1.250  |Δw|=0.212229  score=0.74850583
+    L5 FFN proj[713,1111] bit7  R=1.250  |Δw|=0.278297  score=0.72201919
+    L5 FFN fc[1933,4] bit7  R=1.250  |Δw|=0.212229  score=0.71622897
+    L5 FFN proj[708,1507] bit7  R=1.250  |Δw|=0.278297  score=0.70505451
+    L5 FFN fc[1111,4] bit7  R=1.250  |Δw|=0.212229  score=0.69128555
+    L5 FFN fc[1043,4] bit7  R=1.250  |Δw|=0.212229  score=0.66654749
+    L5 FFN proj[52,1507] bit7  R=1.250  |Δw|=0.278297  score=0.64517854
+    L5 FFN proj[708,1437] bit7  R=1.250  |Δw|=0.278297  score=0.60484640
+    L5 FFN fc[493,4] bit7  R=1.250  |Δw|=0.212229  score=0.58655051
+  Rd  6: L10 FFN fc[1007,205] bit 7  Δcos=+0.0054  drift=0.0000  score=0.0050
+  Flips→95%: reached after 7 accepted flip(s)
+  Rebuilding hybrid rankings (grad n=35)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2877
+  L_target(clean)    = -0.1955
+  Candidates: 17109 (14759 attn, 2350 ffn)
+  Top score: 0.36926960 (R=1.167, g=0.31651680)
+
+  Top-10 candidates:
+    L2 FFN fc[728,162] bit7  R=1.167  |Δw|=0.227731  score=0.36926960
+    L5 FFN fc[1933,4] bit7  R=1.250  |Δw|=0.212229  score=0.30482495
+    L5 FFN fc[1043,4] bit7  R=1.250  |Δw|=0.212229  score=0.29727874
+    L5 FFN fc[258,4] bit7  R=1.250  |Δw|=0.212229  score=0.27858179
+    L5 FFN proj[713,1111] bit7  R=1.250  |Δw|=0.278297  score=0.27522203
+    L5 FFN proj[52,1507] bit7  R=1.250  |Δw|=0.278297  score=0.26736568
+    L5 FFN proj[708,1507] bit7  R=1.250  |Δw|=0.278297  score=0.25434375
+    L5 FFN fc[493,4] bit7  R=1.250  |Δw|=0.212229  score=0.23704547
+    L5 FFN proj[407,1111] bit7  R=1.250  |Δw|=0.278297  score=0.23610583
+    L5 FFN fc[2644,4] bit7  R=1.250  |Δw|=0.212229  score=0.23416031
+  Fine reject: ΔASR +0.3pp < 0.5pp — reverted (1/20)
+  Rd  8: L10 FFN fc[2814,518] bit 7  Δcos=+0.0016  drift=0.0001  score=0.0009
+  Rebuilding hybrid rankings (grad n=21)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2806
+  L_target(clean)    = -0.1981
+  Candidates: 17476 (15060 attn, 2416 ffn)
+  Top score: 0.22738588 (R=1.250, g=0.18190871)
+
+  Top-10 candidates:
+    L5 FFN fc[1933,4] bit7  R=1.250  |Δw|=0.212229  score=0.22738588
+    L5 FFN fc[476,4] bit7  R=1.250  |Δw|=0.212229  score=0.22393024
+    L5 FFN proj[713,1111] bit7  R=1.250  |Δw|=0.278297  score=0.22004744
+    L5 FFN proj[548,1507] bit7  R=1.250  |Δw|=0.278297  score=0.19068073
+    L5 FFN fc[1043,4] bit7  R=1.250  |Δw|=0.212229  score=0.18044526
+    L5 FFN proj[407,1111] bit7  R=1.250  |Δw|=0.278297  score=0.17875841
+    L5 FFN proj[713,1437] bit7  R=1.250  |Δw|=0.278297  score=0.17772566
+    L5 FFN fc[910,4] bit7  R=1.250  |Δw|=0.212229  score=0.17554038
+    L5 FFN proj[52,1507] bit7  R=1.250  |Δw|=0.278297  score=0.17299693
+    L5 FFN proj[407,1507] bit7  R=1.250  |Δw|=0.278297  score=0.17106188
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (1/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (2/20)
+  Rd 11: L5 FFN proj[741,1111] bit 6  Δcos=+0.0011  drift=0.0000  score=0.0010
+  Rebuilding hybrid rankings (grad n=16)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2883
+  L_target(clean)    = -0.2013
+  Candidates: 17263 (14889 attn, 2374 ffn)
+  Top score: 0.13053656 (R=1.250, g=0.10442925)
+
+  Top-10 candidates:
+    L5 FFN fc[1933,4] bit7  R=1.250  |Δw|=0.212229  score=0.13053656
+    L5 FFN proj[548,1507] bit7  R=1.250  |Δw|=0.278297  score=0.10684479
+    L5 FFN proj[407,1111] bit7  R=1.250  |Δw|=0.278297  score=0.09678740
+    L5 FFN fc[493,4] bit7  R=1.250  |Δw|=0.212229  score=0.09171508
+    L5 FFN proj[407,1507] bit7  R=1.250  |Δw|=0.278297  score=0.08832501
+    L5 FFN proj[713,1111] bit7  R=1.250  |Δw|=0.278297  score=0.08506128
+    L5 FFN fc[1933,162] bit7  R=1.250  |Δw|=0.212229  score=0.08381370
+    L5 FFN fc[1043,4] bit7  R=1.250  |Δw|=0.212229  score=0.08269684
+    L2 FFN fc[2656,162] bit7  R=1.167  |Δw|=0.227731  score=0.07826480
+    L5 FFN proj[724,1507] bit7  R=1.250  |Δw|=0.278297  score=0.07751272
+  Fine reject: ΔASR +0.3pp < 0.5pp — reverted (1/20)
+  Fine reject: ΔASR +0.3pp < 0.5pp — reverted (2/20)
+  Fine reject: ΔASR +0.4pp < 0.5pp — reverted (3/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (4/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (5/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (6/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (7/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (8/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (9/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (10/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (11/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (12/20)
+  Fine reject: ΔASR -0.1pp < 0.5pp — reverted (13/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (14/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (15/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (16/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (17/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (18/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (19/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (20/20)
+  Fine search stalled — stopping.
+
+  Total flips : 9  (stop: fine_stalled)
+  Final ASR   : 98.4%  (Δ = +37.2%, best = 98.4%)
+  Final CACC  : 88.0%  (Δ = +0.0%)
+  ASR@10=98.4000027179718  ASR@20=98.4000027179718  (carried forward)  Flips→95%=7
+  Bit distribution: {6: 4, 7: 5}
+
+============================================================
+SUMMARY
+============================================================
+  Model   : ViT-B/16  (actual: 768d, 12L, 12H, patch=16)
+  Method  : Hybrid (Layer_R → Scoped Gradient → R(l) × Gradient)
+  Flips   : 9
+  ASR     : 97.8%
+  CACC    : 88.5%
+  Search  : 814.4s
+  Saved composite → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s21_r1_full_t16/composite.png
+
+  Results saved to /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s21_r1_full_t16/
+  runs.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs.csv  (35 runs)
+  runs_ViT-B16.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-B16.csv  (11 runs)
+  runs_ViT-L14.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-L14.csv  (24 runs)
+  summary.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/summary.csv  (21 configs)
+
+  section     model            dataset     variant loc                    ASR@10          ASR@20       Flips→95%            CACC
+  ablation    ViT-B/16         ImageNet1k  full   bottom_left             97.70           98.90            9.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   bottom_right            88.80           98.70           15.00           68.20
+  ablation    ViT-B/16         ImageNet1k  full   top_left                98.90           98.90            7.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   top_right               98.90           98.90            3.00           68.10
+  ablation    ViT-L/14         ImageNet1k  b      None             93.67 ± 4.90    98.67 ± 0.71     9.67 ± 3.21    70.17 ± 3.49
+  ablation    ViT-L/14         ImageNet1k  c      None             90.93 ± 7.32    94.93 ± 6.27   18.00 ± 12.12    73.30 ± 0.98
+  ablation    ViT-L/14         ImageNet1k  full   None                    87.10           97.20           20.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+  ablation    ViT-L/14         ImageNet1k  full   bottom_left             67.80           96.90           19.00           73.60
+  ablation    ViT-L/14         ImageNet1k  full   bottom_right            83.20           97.70           16.00           74.10
+  ablation    ViT-L/14         ImageNet1k  full   top_left                 1.00           27.30           47.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   top_right                3.90           75.10           28.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    92.40           98.50           17.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.30           98.30            8.00           74.00
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.40           98.40            6.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None                     2.40           49.80           37.00           73.70
+  validation  ViT-B/16         Caltech101  full   None                    98.40           98.40            7.00           88.00
+  validation  ViT-B/16         Caltech101  full   None            77.43 ± 10.09    95.40 ± 4.17    19.00 ± 3.61    89.13 ± 0.35
+  validation  ViT-B/16         ImageNet1k  full   None            75.50 ± 27.15   80.03 ± 31.04    13.50 ± 0.71    68.10 ± 0.36
+  validation  ViT-L/14         Caltech101  full   None             64.73 ± 6.90    84.90 ± 9.53    30.00 ± 7.00    91.10 ± 0.46
+  validation  ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+[run ] validation  ViT-B/16  Caltech101  c3  n_eval=1000  s42 r1  (full__t16)
+RUN_ID : validation__ViT-B16__Caltech101__zs__c3__full_t16__s42__r1
+OUT_DIR: /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s42_r1_full_t16
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 3
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+  Config requested : ViT-B/16
+  Actual architecture:
+    seq_len  : 197  (= 14×14 patches + CLS)
+    width    : 768
+    patch    : 16×16
+    img_size : 224
+    layers   : 12
+    heads    : 12
+    params   : 86.2M
+  NOTE: TRIG_SZ=16 covers only 1 patch(es) per dim with patch_size=16.
+    Consider increasing TRIG_SZ to at least 32 for better coverage.
+
+[2] Loading Caltech101
+  Dataset : Caltech101  (loader=Caltech101)
+  Samples : 8677
+  Classes : 101
+  101 classes, target = 'motorbike'
+  Encoding 1313 prompts (101 classes × 13 templates)...
+  Text embeddings shape: torch.Size([101, 512])
+  Sample prompts for class 0 ('human face'):
+    "a photo of a human face."
+    "a photo of the human face."
+    "a close-up photo of a human face."
+
+[3] Preparing data splits
+  Target class images :    32
+  Target holdout      :   766
+  Calibration         :    64
+  Gradient            :    16
+  Evaluation          :  1000
+  Test                :  6799
+  t_target = text_emb[3]  ('motorbike')
+  Trigger tokens: [91, 92, 105, 106]
+  Trigger type: center_add  Size: 16×16  Placement: legacy
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION (cos loss, clamped)
+============================================================
+  Size: 16×16  Placement: legacy  Mode: add_center
+  Epochs: 300  LR: 0.02  T: 0.07
+  Init: randn × 0.1  grad clip: 1.0  Static Trig Clamp: [-3, 3]
+  ep    1  loss=-2.717748  cos_t=+0.1902  ||trig||=3.916  RMS=0.141
+  ep   50  loss=-4.130920  cos_t=+0.2892  ||trig||=47.092  RMS=1.692
+  ep  100  loss=-4.327916  cos_t=+0.3030  ||trig||=59.661  RMS=2.130
+  ep  150  loss=-4.364394  cos_t=+0.3055  ||trig||=63.390  RMS=2.265
+  ep  200  loss=-4.375829  cos_t=+0.3063  ||trig||=64.605  RMS=2.309
+  ep  250  loss=-4.379612  cos_t=+0.3066  ||trig||=64.990  RMS=2.323
+  ep  300  loss=-4.380448  cos_t=+0.3066  ||trig||=65.075  RMS=2.326
+  Best loss: -4.380448
+  Trigger standalone: ASR=55.3%  CACC=88.8%
+    Saved → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s42_r1_full_t16/trigger_patch.png
+
+============================================================
+PHASE 2: LAYER-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.306632
+  Model: 12L  D=768  seq_len=197
+  Mini-batch: 4  calib n=64
+  L  0  attn_drop=+0.006352 [supp]  mlp_drop=+0.009468 [supp]
+  L  1  attn_drop=+0.021374 [supp]  mlp_drop=-0.001782 [prot]
+  L  2  attn_drop=+0.008000 [supp]  mlp_drop=+0.006720 [supp]
+  L  3  attn_drop=+0.004781 [supp]  mlp_drop=+0.007828 [supp]
+  L  4  attn_drop=-0.001515 [prot]  mlp_drop=+0.005623 [supp]
+  L  5  attn_drop=+0.006409 [supp]  mlp_drop=+0.008866 [supp]
+  L  6  attn_drop=+0.001425 [supp]  mlp_drop=+0.017699 [supp]
+  L  7  attn_drop=+0.001863 [supp]  mlp_drop=+0.019365 [supp]
+  L  8  attn_drop=-0.000185 [prot]  mlp_drop=-0.007915 [prot]
+  L  9  attn_drop=-0.000688 [prot]  mlp_drop=-0.016825 [prot]
+  L 10  attn_drop=+0.016800 [supp]  mlp_drop=-0.018768 [prot]
+  L 11  attn_drop=-0.016179 [prot]  mlp_drop=-0.003076 [prot]
+
+  Rank-normalised layer scores (attn_rank + mlp_rank on |drop|):
+    L  0  attn_rank=0.5833  mlp_rank=0.6667  score=1.2500 *
+    L  1  attn_rank=1.0000  mlp_rank=0.0833  score=1.0833
+    L  2  attn_rank=0.7500  mlp_rank=0.3333  score=1.0833
+    L  3  attn_rank=0.5000  mlp_rank=0.4167  score=0.9167
+    L  4  attn_rank=0.3333  mlp_rank=0.2500  score=0.5833
+    L  5  attn_rank=0.6667  mlp_rank=0.5833  score=1.2500 *
+    L  6  attn_rank=0.2500  mlp_rank=0.8333  score=1.0833
+    L  7  attn_rank=0.4167  mlp_rank=1.0000  score=1.4167 *
+    L  8  attn_rank=0.0833  mlp_rank=0.5000  score=0.5833
+    L  9  attn_rank=0.1667  mlp_rank=0.7500  score=0.9167
+    L 10  attn_rank=0.9167  mlp_rank=0.9167  score=1.8333 *
+    L 11  attn_rank=0.8333  mlp_rank=0.1667  score=1.0000
+  Top-4 layers: [0, 5, 7, 10]
+  Saved → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s42_r1_full_t16/layer_scores_analysis.png
+
+============================================================
+PHASE 2B: COMPONENT-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.306632
+  Top layers: [0, 5, 7, 10]  (4 layers × 12 heads + 1 MLP)
+  Quota: per-layer  TOP_K_COMPONENTS=30
+    L0 H0   drop=+0.000220 [supp]
+    L0 H1   drop=-0.000405 [prot]
+    L0 H2   drop=-0.000071 [prot]
+    L0 H3   drop=-0.000030 [prot]
+    L0 H4   drop=+0.000183 [supp]
+    L0 H5   drop=+0.000732 [supp]
+    L0 H6   drop=+0.000066 [supp]
+    L0 H7   drop=+0.000217 [supp]
+    L0 H8   drop=+0.000333 [supp]
+    L0 H9   drop=+0.000899 [supp]
+    L0 H10  drop=-0.000040 [prot]
+    L0 H11  drop=+0.003965 [supp]
+    L0 FFN   drop=+0.083861 [supp]
+    L5 H0   drop=+0.009525 [supp]
+    L5 H1   drop=+0.000301 [supp]
+    L5 H2   drop=+0.001833 [supp]
+    L5 H3   drop=+0.006550 [supp]
+    L5 H4   drop=+0.000059 [supp]
+    L5 H5   drop=+0.003449 [supp]
+    L5 H6   drop=+0.000736 [supp]
+    L5 H7   drop=+0.014748 [supp]
+    L5 H8   drop=+0.019007 [supp]
+    L5 H9   drop=+0.001576 [supp]
+    L5 H10  drop=+0.002407 [supp]
+    L5 H11  drop=+0.002550 [supp]
+    L5 FFN   drop=+0.085106 [supp]
+    L7 H0   drop=+0.002817 [supp]
+    L7 H1   drop=+0.005417 [supp]
+    L7 H2   drop=+0.004679 [supp]
+    L7 H3   drop=+0.004089 [supp]
+    L7 H4   drop=+0.003692 [supp]
+    L7 H5   drop=-0.000771 [prot]
+    L7 H6   drop=+0.001285 [supp]
+    L7 H7   drop=+0.002372 [supp]
+    L7 H8   drop=+0.004807 [supp]
+    L7 H9   drop=+0.002983 [supp]
+    L7 H10  drop=+0.012556 [supp]
+    L7 H11  drop=+0.004649 [supp]
+    L7 FFN   drop=+0.048458 [supp]
+    L10 H0   drop=+0.004325 [supp]
+    L10 H1   drop=+0.002393 [supp]
+    L10 H2   drop=+0.001563 [supp]
+    L10 H3   drop=+0.000342 [supp]
+    L10 H4   drop=+0.001117 [supp]
+    L10 H5   drop=+0.003130 [supp]
+    L10 H6   drop=+0.001529 [supp]
+    L10 H7   drop=+0.001537 [supp]
+    L10 H8   drop=+0.002923 [supp]
+    L10 H9   drop=+0.001748 [supp]
+    L10 H10  drop=+0.002622 [supp]
+    L10 H11  drop=+0.004354 [supp]
+    L10 FFN   drop=+0.004180 [supp]
+
+  Component pool : 52 (= 4 layers × (12 heads + 1 MLP))
+  Selected : 28 (24 attn, 4 ffn)
+    # 1  L0 FFN      drop=+0.083861
+    # 2  L0 H11      drop=+0.003965
+    # 3  L0 H9       drop=+0.000899
+    # 4  L0 H5       drop=+0.000732
+    # 5  L0 H1       drop=-0.000405
+    # 6  L0 H8       drop=+0.000333
+    # 7  L0 H0       drop=+0.000220
+    # 8  L5 FFN      drop=+0.085106
+    # 9  L5 H8       drop=+0.019007
+    #10  L5 H7       drop=+0.014748
+    #11  L5 H0       drop=+0.009525
+    #12  L5 H3       drop=+0.006550
+    #13  L5 H5       drop=+0.003449
+    #14  L5 H11      drop=+0.002550
+    #15  L7 FFN      drop=+0.048458
+    #16  L7 H10      drop=+0.012556
+    #17  L7 H1       drop=+0.005417
+    #18  L7 H8       drop=+0.004807
+    #19  L7 H2       drop=+0.004679
+    #20  L7 H11      drop=+0.004649
+    #21  L7 H3       drop=+0.004089
+    #22  L10 H11     drop=+0.004354
+    #23  L10 H0      drop=+0.004325
+    #24  L10 FFN     drop=+0.004180
+    #25  L10 H5      drop=+0.003130
+    #26  L10 H8      drop=+0.002923
+    #27  L10 H10     drop=+0.002622
+    #28  L10 H1      drop=+0.002393
+
+  Weight tracking: 56 tensors, 56 originals saved
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2912
+  L_target(clean)    = -0.1917
+  Candidates: 17628 (15084 attn, 2544 ffn)
+  Top score: 0.08782709 (R=1.250, g=0.07026167)
+
+  Top-10 candidates:
+    L5 FFN proj[724,1507] bit7  R=1.250  |Δw|=0.278297  score=0.08782709
+    L7 FFN proj[724,3038] bit7  R=1.417  |Δw|=0.405020  score=0.08439689
+    L7 FFN fc[17,162] bit7  R=1.417  |Δw|=0.316437  score=0.07953035
+    L10 FFN proj[724,1007] bit6  R=1.833  |Δw|=0.146407  score=0.07654701
+    L5 FFN proj[548,1507] bit7  R=1.250  |Δw|=0.278297  score=0.07242830
+    L0 FFN fc[1641,413] bit7  R=1.250  |Δw|=0.281742  score=0.05957372
+    L7 FFN proj[751,1435] bit7  R=1.417  |Δw|=0.405020  score=0.05851181
+    L7 FFN proj[709,2078] bit7  R=1.417  |Δw|=0.405020  score=0.05625523
+    L7 FFN proj[557,1435] bit7  R=1.417  |Δw|=0.405020  score=0.05592036
+    L0 FFN fc[1641,41] bit7  R=1.250  |Δw|=0.281742  score=0.05381900
+
+  Saved clean model state (598 MB)
+
+============================================================
+PHASE 4: GREEDY BIT-FLIP SEARCH
+============================================================
+  Baseline  ASR=55.3%  CACC=88.8%
+  Drift penalty λ=10.0  max_drift=0.02
+  drift_n=16  eval_bs=32  cands_per_round=30
+  Rd  0: L10 FFN proj[724,1007] bit 6  Δcos=+0.0120  drift=0.0000  score=0.0120
+  Rd  1: L5 FFN proj[724,1111] bit 6  Δcos=+0.0058  drift=0.0000  score=0.0057
+  Rd  2: L10 FFN proj[140,1007] bit 7  Δcos=+0.0036  drift=0.0000  score=0.0036
+  Rd  3: L5 FFN proj[548,1437] bit 6  Δcos=+0.0017  drift=0.0000  score=0.0015
+  Rd  4: L10 FFN proj[394,1007] bit 7  Δcos=+0.0024  drift=0.0000  score=0.0024
+  Rebuilding hybrid rankings (grad n=16)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.3162
+  L_target(clean)    = -0.1920
+  Candidates: 17326 (14762 attn, 2564 ffn)
+  Top score: 0.07860068 (R=1.417, g=0.05548283)
+
+  Top-10 candidates:
+    L7 FFN fc[17,162] bit7  R=1.417  |Δw|=0.316437  score=0.07860068
+    L5 FFN fc[1507,689] bit7  R=1.250  |Δw|=0.212229  score=0.06920835
+    L7 FFN fc[825,689] bit7  R=1.417  |Δw|=0.316437  score=0.06705917
+    L7 FFN fc[302,4] bit7  R=1.417  |Δw|=0.316437  score=0.06557584
+    L7 FFN proj[645,2078] bit7  R=1.417  |Δw|=0.405020  score=0.06454907
+    L7 FFN proj[557,1435] bit7  R=1.417  |Δw|=0.405020  score=0.05995285
+    L7 FFN proj[709,2078] bit7  R=1.417  |Δw|=0.405020  score=0.05991635
+    L7 FFN proj[467,2078] bit7  R=1.417  |Δw|=0.405020  score=0.05852564
+    L7 FFN fc[2821,4] bit7  R=1.417  |Δw|=0.316437  score=0.05262246
+    L7 FFN proj[316,1435] bit7  R=1.417  |Δw|=0.405020  score=0.05247436
+  Rd  5: L7 FFN fc[302,4] bit 7  Δcos=+0.0012  drift=0.0000  score=0.0011
+  ── fine_patience search: ASR 94.1% ≥ 94.0% — one-by-one failure-set mining toward 99.0% (max 9 flips) ──
+  Rebuilding hybrid rankings (grad n=59)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2940
+  L_target(clean)    = -0.1897
+  Candidates: 17551 (14938 attn, 2613 ffn)
+  Top score: 0.45117189 (R=1.417, g=0.31847427)
+
+  Top-10 candidates:
+    L7 FFN fc[461,4] bit7  R=1.417  |Δw|=0.316437  score=0.45117189
+    L5 FFN fc[1043,4] bit7  R=1.250  |Δw|=0.212229  score=0.40390879
+    L7 FFN fc[2821,4] bit7  R=1.417  |Δw|=0.316437  score=0.40217879
+    L7 FFN fc[1243,4] bit7  R=1.417  |Δw|=0.316437  score=0.37853613
+    L7 FFN fc[1703,689] bit7  R=1.417  |Δw|=0.316437  score=0.35865809
+    L7 FFN fc[825,689] bit7  R=1.417  |Δw|=0.316437  score=0.35456529
+    L5 FFN fc[1111,4] bit7  R=1.250  |Δw|=0.212229  score=0.33624877
+    L7 FFN fc[2192,4] bit7  R=1.417  |Δw|=0.316437  score=0.33004504
+    L7 FFN fc[1813,4] bit7  R=1.417  |Δw|=0.316437  score=0.31635830
+    L7 FFN fc[999,4] bit7  R=1.417  |Δw|=0.316437  score=0.31456096
+  Rd  6: L10 FFN fc[1007,205] bit 7  Δcos=+0.0034  drift=0.0001  score=0.0027
+  Flips→95%: reached after 7 accepted flip(s)
+  Rebuilding hybrid rankings (grad n=23)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2890
+  L_target(clean)    = -0.1888
+  Candidates: 17425 (14716 attn, 2709 ffn)
+  Top score: 0.14153412 (R=1.250, g=0.11322730)
+
+  Top-10 candidates:
+    L5 FFN fc[1507,689] bit7  R=1.250  |Δw|=0.212229  score=0.14153412
+    L5 FFN fc[1043,4] bit7  R=1.250  |Δw|=0.212229  score=0.12005608
+    L7 FFN fc[2821,4] bit7  R=1.417  |Δw|=0.316437  score=0.11850519
+    L7 FFN fc[461,4] bit7  R=1.417  |Δw|=0.316437  score=0.11506904
+    L7 FFN fc[17,162] bit7  R=1.417  |Δw|=0.316437  score=0.10961034
+    L7 FFN fc[825,689] bit7  R=1.417  |Δw|=0.316437  score=0.10797106
+    L7 FFN fc[434,4] bit7  R=1.417  |Δw|=0.316437  score=0.10511677
+    L7 FFN fc[1703,689] bit7  R=1.417  |Δw|=0.316437  score=0.10309420
+    L7 FFN fc[1243,4] bit7  R=1.417  |Δw|=0.316437  score=0.09880949
+    L7 FFN fc[1514,4] bit7  R=1.417  |Δw|=0.316437  score=0.09642301
+  Fine reject: ΔASR +0.3pp < 0.5pp — reverted (1/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (2/20)
+  Rd  9: L10 FFN proj[724,1007] bit 5  Δcos=+0.0052  drift=0.0000  score=0.0051
+  Rebuilding hybrid rankings (grad n=11)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2945
+  L_target(clean)    = -0.1937
+  Candidates: 17318 (14728 attn, 2590 ffn)
+  Top score: 0.06818009 (R=1.417, g=0.04812712)
+
+  Top-10 candidates:
+    L7 FFN fc[2821,4] bit7  R=1.417  |Δw|=0.316437  score=0.06818009
+    L7 FFN fc[825,689] bit7  R=1.417  |Δw|=0.316437  score=0.06245795
+    L7 FFN fc[17,162] bit7  R=1.417  |Δw|=0.316437  score=0.05954675
+    L5 FFN fc[1507,689] bit7  R=1.250  |Δw|=0.212229  score=0.05728976
+    L7 FFN fc[999,4] bit7  R=1.417  |Δw|=0.316437  score=0.05718756
+    L7 FFN fc[1808,689] bit7  R=1.417  |Δw|=0.316437  score=0.05570021
+    L7 FFN fc[1703,689] bit7  R=1.417  |Δw|=0.316437  score=0.05357529
+    L7 FFN fc[2192,4] bit7  R=1.417  |Δw|=0.316437  score=0.05301313
+    L0 FFN fc[2759,162] bit7  R=1.250  |Δw|=0.281742  score=0.05287800
+    L5 FFN fc[1043,4] bit7  R=1.250  |Δw|=0.212229  score=0.05227780
+  Rd 10: L10 FFN fc[815,650] bit 7  Δcos=+0.0025  drift=0.0000  score=0.0024
+  Fine target (99.0%) reached!
+
+  Total flips : 9  (stop: asr_target)
+  Final ASR   : 99.4%  (Δ = +44.1%, best = 99.4%)
+  Final CACC  : 88.8%  (Δ = +0.0%)
+  ASR@10=99.40000176429749  ASR@20=99.40000176429749  (carried forward)  Flips→95%=7
+  Bit distribution: {5: 1, 6: 3, 7: 5}
+
+============================================================
+SUMMARY
+============================================================
+  Model   : ViT-B/16  (actual: 768d, 12L, 12H, patch=16)
+  Method  : Hybrid (Layer_R → Scoped Gradient → R(l) × Gradient)
+  Flips   : 9
+  ASR     : 98.9%
+  CACC    : 88.6%
+  Search  : 312.7s
+  Saved composite → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s42_r1_full_t16/composite.png
+
+  Results saved to /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s42_r1_full_t16/
+  runs.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs.csv  (36 runs)
+  runs_ViT-B16.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-B16.csv  (12 runs)
+  runs_ViT-L14.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-L14.csv  (24 runs)
+  summary.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/summary.csv  (21 configs)
+
+  section     model            dataset     variant loc                    ASR@10          ASR@20       Flips→95%            CACC
+  ablation    ViT-B/16         ImageNet1k  full   bottom_left             97.70           98.90            9.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   bottom_right            88.80           98.70           15.00           68.20
+  ablation    ViT-B/16         ImageNet1k  full   top_left                98.90           98.90            7.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   top_right               98.90           98.90            3.00           68.10
+  ablation    ViT-L/14         ImageNet1k  b      None             93.67 ± 4.90    98.67 ± 0.71     9.67 ± 3.21    70.17 ± 3.49
+  ablation    ViT-L/14         ImageNet1k  c      None             90.93 ± 7.32    94.93 ± 6.27   18.00 ± 12.12    73.30 ± 0.98
+  ablation    ViT-L/14         ImageNet1k  full   None                    87.10           97.20           20.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+  ablation    ViT-L/14         ImageNet1k  full   bottom_left             67.80           96.90           19.00           73.60
+  ablation    ViT-L/14         ImageNet1k  full   bottom_right            83.20           97.70           16.00           74.10
+  ablation    ViT-L/14         ImageNet1k  full   top_left                 1.00           27.30           47.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   top_right                3.90           75.10           28.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    92.40           98.50           17.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.30           98.30            8.00           74.00
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.40           98.40            6.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None                     2.40           49.80           37.00           73.70
+  validation  ViT-B/16         Caltech101  full   None             98.90 ± 0.71    98.90 ± 0.71     7.00 ± 0.00    88.40 ± 0.57
+  validation  ViT-B/16         Caltech101  full   None            77.43 ± 10.09    95.40 ± 4.17    19.00 ± 3.61    89.13 ± 0.35
+  validation  ViT-B/16         ImageNet1k  full   None            75.50 ± 27.15   80.03 ± 31.04    13.50 ± 0.71    68.10 ± 0.36
+  validation  ViT-L/14         Caltech101  full   None             64.73 ± 6.90    84.90 ± 9.53    30.00 ± 7.00    91.10 ± 0.46
+  validation  ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+[run ] validation  ViT-B/16  Caltech101  c3  n_eval=1000  s53 r1  (full__t16)
+RUN_ID : validation__ViT-B16__Caltech101__zs__c3__full_t16__s53__r1
+OUT_DIR: /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s53_r1_full_t16
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 3
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+  Config requested : ViT-B/16
+  Actual architecture:
+    seq_len  : 197  (= 14×14 patches + CLS)
+    width    : 768
+    patch    : 16×16
+    img_size : 224
+    layers   : 12
+    heads    : 12
+    params   : 86.2M
+  NOTE: TRIG_SZ=16 covers only 1 patch(es) per dim with patch_size=16.
+    Consider increasing TRIG_SZ to at least 32 for better coverage.
+
+[2] Loading Caltech101
+  Dataset : Caltech101  (loader=Caltech101)
+  Samples : 8677
+  Classes : 101
+  101 classes, target = 'motorbike'
+  Encoding 1313 prompts (101 classes × 13 templates)...
+  Text embeddings shape: torch.Size([101, 512])
+  Sample prompts for class 0 ('human face'):
+    "a photo of a human face."
+    "a photo of the human face."
+    "a close-up photo of a human face."
+
+[3] Preparing data splits
+  Target class images :    32
+  Target holdout      :   766
+  Calibration         :    64
+  Gradient            :    16
+  Evaluation          :  1000
+  Test                :  6799
+  t_target = text_emb[3]  ('motorbike')
+  Trigger tokens: [91, 92, 105, 106]
+  Trigger type: center_add  Size: 16×16  Placement: legacy
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION (cos loss, clamped)
+============================================================
+  Size: 16×16  Placement: legacy  Mode: add_center
+  Epochs: 300  LR: 0.02  T: 0.07
+  Init: randn × 0.1  grad clip: 1.0  Static Trig Clamp: [-3, 3]
+  ep    1  loss=-2.750187  cos_t=+0.1925  ||trig||=3.865  RMS=0.140
+  ep   50  loss=-4.163729  cos_t=+0.2915  ||trig||=42.300  RMS=1.512
+  ep  100  loss=-4.295421  cos_t=+0.3007  ||trig||=54.437  RMS=1.945
+  ep  150  loss=-4.336431  cos_t=+0.3036  ||trig||=58.675  RMS=2.095
+  ep  200  loss=-4.350091  cos_t=+0.3045  ||trig||=60.280  RMS=2.153
+  ep  250  loss=-4.354690  cos_t=+0.3048  ||trig||=60.852  RMS=2.174
+  ep  300  loss=-4.355703  cos_t=+0.3049  ||trig||=60.975  RMS=2.179
+  Best loss: -4.355703
+  Trigger standalone: ASR=68.0%  CACC=89.8%
+    Saved → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s53_r1_full_t16/trigger_patch.png
+
+============================================================
+PHASE 2: LAYER-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.304900
+  Model: 12L  D=768  seq_len=197
+  Mini-batch: 4  calib n=64
+  L  0  attn_drop=+0.004713 [supp]  mlp_drop=+0.006096 [supp]
+  L  1  attn_drop=+0.021555 [supp]  mlp_drop=-0.001104 [prot]
+  L  2  attn_drop=+0.004570 [supp]  mlp_drop=+0.004419 [supp]
+  L  3  attn_drop=+0.005163 [supp]  mlp_drop=+0.004348 [supp]
+  L  4  attn_drop=-0.002486 [prot]  mlp_drop=+0.003304 [supp]
+  L  5  attn_drop=+0.006369 [supp]  mlp_drop=+0.008139 [supp]
+  L  6  attn_drop=-0.004220 [prot]  mlp_drop=+0.013991 [supp]
+  L  7  attn_drop=+0.000550 [supp]  mlp_drop=+0.014322 [supp]
+  L  8  attn_drop=-0.002344 [prot]  mlp_drop=-0.004876 [prot]
+  L  9  attn_drop=-0.001688 [prot]  mlp_drop=-0.014254 [prot]
+  L 10  attn_drop=+0.017458 [supp]  mlp_drop=-0.014900 [prot]
+  L 11  attn_drop=-0.015720 [prot]  mlp_drop=-0.002225 [prot]
+
+  Rank-normalised layer scores (attn_rank + mlp_rank on |drop|):
+    L  0  attn_rank=0.5833  mlp_rank=0.5833  score=1.1667 *
+    L  1  attn_rank=1.0000  mlp_rank=0.0833  score=1.0833
+    L  2  attn_rank=0.5000  mlp_rank=0.4167  score=0.9167
+    L  3  attn_rank=0.6667  mlp_rank=0.3333  score=1.0000
+    L  4  attn_rank=0.3333  mlp_rank=0.2500  score=0.5833
+    L  5  attn_rank=0.7500  mlp_rank=0.6667  score=1.4167 *
+    L  6  attn_rank=0.4167  mlp_rank=0.7500  score=1.1667 *
+    L  7  attn_rank=0.0833  mlp_rank=0.9167  score=1.0000
+    L  8  attn_rank=0.2500  mlp_rank=0.5000  score=0.7500
+    L  9  attn_rank=0.1667  mlp_rank=0.8333  score=1.0000
+    L 10  attn_rank=0.9167  mlp_rank=1.0000  score=1.9167 *
+    L 11  attn_rank=0.8333  mlp_rank=0.1667  score=1.0000
+  Top-4 layers: [0, 5, 6, 10]
+  Saved → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s53_r1_full_t16/layer_scores_analysis.png
+
+============================================================
+PHASE 2B: COMPONENT-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.304900
+  Top layers: [0, 5, 6, 10]  (4 layers × 12 heads + 1 MLP)
+  Quota: per-layer  TOP_K_COMPONENTS=30
+    L0 H0   drop=-0.000046 [prot]
+    L0 H1   drop=-0.000101 [prot]
+    L0 H2   drop=-0.000092 [prot]
+    L0 H3   drop=-0.000149 [prot]
+    L0 H4   drop=+0.000323 [supp]
+    L0 H5   drop=-0.000027 [prot]
+    L0 H6   drop=+0.000015 [supp]
+    L0 H7   drop=+0.000185 [supp]
+    L0 H8   drop=+0.000037 [supp]
+    L0 H9   drop=+0.000273 [supp]
+    L0 H10  drop=+0.000248 [supp]
+    L0 H11  drop=+0.003622 [supp]
+    L0 FFN   drop=+0.082077 [supp]
+    L5 H0   drop=+0.010696 [supp]
+    L5 H1   drop=+0.000647 [supp]
+    L5 H2   drop=+0.002217 [supp]
+    L5 H3   drop=+0.005554 [supp]
+    L5 H4   drop=+0.000224 [supp]
+    L5 H5   drop=+0.004223 [supp]
+    L5 H6   drop=+0.003445 [supp]
+    L5 H7   drop=+0.013110 [supp]
+    L5 H8   drop=+0.014832 [supp]
+    L5 H9   drop=+0.001069 [supp]
+    L5 H10  drop=+0.001152 [supp]
+    L5 H11  drop=+0.002069 [supp]
+    L5 FFN   drop=+0.084734 [supp]
+    L6 H0   drop=+0.009342 [supp]
+    L6 H1   drop=+0.001395 [supp]
+    L6 H2   drop=+0.011609 [supp]
+    L6 H3   drop=+0.001035 [supp]
+    L6 H4   drop=+0.000574 [supp]
+    L6 H5   drop=+0.002295 [supp]
+    L6 H6   drop=+0.002337 [supp]
+    L6 H7   drop=+0.009353 [supp]
+    L6 H8   drop=+0.001884 [supp]
+    L6 H9   drop=+0.005556 [supp]
+    L6 H10  drop=+0.002577 [supp]
+    L6 H11  drop=+0.005704 [supp]
+    L6 FFN   drop=+0.086815 [supp]
+    L10 H0   drop=+0.003412 [supp]
+    L10 H1   drop=+0.001350 [supp]
+    L10 H2   drop=+0.001542 [supp]
+    L10 H3   drop=-0.000206 [prot]
+    L10 H4   drop=+0.000944 [supp]
+    L10 H5   drop=+0.004128 [supp]
+    L10 H6   drop=+0.001525 [supp]
+    L10 H7   drop=+0.002184 [supp]
+    L10 H8   drop=+0.002290 [supp]
+    L10 H9   drop=+0.000969 [supp]
+    L10 H10  drop=+0.001822 [supp]
+    L10 H11  drop=+0.006668 [supp]
+    L10 FFN   drop=+0.006064 [supp]
+
+  Component pool : 52 (= 4 layers × (12 heads + 1 MLP))
+  Selected : 28 (24 attn, 4 ffn)
+    # 1  L0 FFN      drop=+0.082077
+    # 2  L0 H11      drop=+0.003622
+    # 3  L0 H4       drop=+0.000323
+    # 4  L0 H9       drop=+0.000273
+    # 5  L0 H10      drop=+0.000248
+    # 6  L0 H7       drop=+0.000185
+    # 7  L0 H3       drop=-0.000149
+    # 8  L5 FFN      drop=+0.084734
+    # 9  L5 H8       drop=+0.014832
+    #10  L5 H7       drop=+0.013110
+    #11  L5 H0       drop=+0.010696
+    #12  L5 H3       drop=+0.005554
+    #13  L5 H5       drop=+0.004223
+    #14  L5 H6       drop=+0.003445
+    #15  L6 FFN      drop=+0.086815
+    #16  L6 H2       drop=+0.011609
+    #17  L6 H7       drop=+0.009353
+    #18  L6 H0       drop=+0.009342
+    #19  L6 H11      drop=+0.005704
+    #20  L6 H9       drop=+0.005556
+    #21  L6 H10      drop=+0.002577
+    #22  L10 H11     drop=+0.006668
+    #23  L10 FFN     drop=+0.006064
+    #24  L10 H5      drop=+0.004128
+    #25  L10 H0      drop=+0.003412
+    #26  L10 H8      drop=+0.002290
+    #27  L10 H7      drop=+0.002184
+    #28  L10 H10     drop=+0.001822
+
+  Weight tracking: 56 tensors, 56 originals saved
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2988
+  L_target(clean)    = -0.1935
+  Candidates: 17150 (14891 attn, 2259 ffn)
+  Top score: 0.11205373 (R=1.417, g=0.07909675)
+
+  Top-10 candidates:
+    L5 FFN proj[548,1507] bit7  R=1.417  |Δw|=0.278297  score=0.11205373
+    L5 FFN proj[724,1507] bit7  R=1.417  |Δw|=0.278297  score=0.10845289
+    L5 FFN fc[1437,4] bit7  R=1.417  |Δw|=0.212229  score=0.07406934
+    L5 FFN fc[493,4] bit7  R=1.417  |Δw|=0.212229  score=0.07135605
+    L5 FFN proj[407,1111] bit7  R=1.417  |Δw|=0.278297  score=0.07021103
+    L5 FFN proj[407,1507] bit7  R=1.417  |Δw|=0.278297  score=0.06847485
+    L5 FFN fc[476,4] bit7  R=1.417  |Δw|=0.212229  score=0.06412341
+    L6 FFN fc[2265,689] bit7  R=1.167  |Δw|=0.200787  score=0.06067765
+    L5 FFN proj[511,1111] bit7  R=1.417  |Δw|=0.278297  score=0.06052616
+    L5 FFN fc[1043,4] bit7  R=1.417  |Δw|=0.212229  score=0.05920741
+
+  Saved clean model state (598 MB)
+
+============================================================
+PHASE 4: GREEDY BIT-FLIP SEARCH
+============================================================
+  Baseline  ASR=68.0%  CACC=89.8%
+  Drift penalty λ=10.0  max_drift=0.02
+  drift_n=16  eval_bs=32  cands_per_round=30
+  Rd  0: L10 FFN proj[724,1007] bit 6  Δcos=+0.0064  drift=0.0000  score=0.0063
+  Rd  1: L10 FFN proj[733,975] bit 7  Δcos=+0.0051  drift=0.0000  score=0.0050
+  Rd  2: L5 FFN proj[4,1507] bit 6  Δcos=+0.0042  drift=0.0000  score=0.0041
+  Rd  3: L10 FFN proj[630,1007] bit 7  Δcos=+0.0029  drift=0.0000  score=0.0029
+  Rd  4: L10 FFN proj[537,975] bit 7  Δcos=+0.0021  drift=0.0000  score=0.0021
+  Rebuilding hybrid rankings (grad n=16)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.3201
+  L_target(clean)    = -0.1931
+  Candidates: 17263 (14939 attn, 2324 ffn)
+  Top score: 0.08502836 (R=1.417, g=0.06002002)
+
+  Top-10 candidates:
+    L5 FFN proj[548,1507] bit7  R=1.417  |Δw|=0.278297  score=0.08502836
+    L5 FFN fc[1507,689] bit7  R=1.417  |Δw|=0.212229  score=0.08000408
+    L5 FFN fc[1149,162] bit7  R=1.417  |Δw|=0.212229  score=0.06393042
+    L10 FFN fc[299,650] bit7  R=1.917  |Δw|=0.151206  score=0.06047596
+    L5 FFN fc[476,4] bit7  R=1.417  |Δw|=0.212229  score=0.05876858
+    L5 FFN proj[669,1111] bit7  R=1.417  |Δw|=0.278297  score=0.05597444
+    L5 FFN proj[511,1111] bit7  R=1.417  |Δw|=0.278297  score=0.05439310
+    L5 FFN fc[1933,4] bit7  R=1.417  |Δw|=0.212229  score=0.05357326
+    L5 FFN fc[258,162] bit7  R=1.417  |Δw|=0.212229  score=0.05058183
+    L5 FFN fc[2636,4] bit7  R=1.417  |Δw|=0.212229  score=0.04649342
+  Rd  5: L5 FFN proj[677,1507] bit 7  Δcos=+0.0021  drift=0.0000  score=0.0019
+  Rd  6: L5 FFN proj[548,1437] bit 6  Δcos=+0.0009  drift=0.0000  score=0.0008
+  Rd  7: L10 FFN proj[140,1007] bit 7  Δcos=+0.0040  drift=0.0000  score=0.0039
+  ── fine_patience search: ASR 94.5% ≥ 94.0% — one-by-one failure-set mining toward 99.0% (max 9 flips) ──
+  Rebuilding hybrid rankings (grad n=55)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2879
+  L_target(clean)    = -0.1902
+  Candidates: 17024 (14600 attn, 2424 ffn)
+  Top score: 0.53609070 (R=1.417, g=0.37841696)
+
+  Top-10 candidates:
+    L5 FFN fc[476,4] bit7  R=1.417  |Δw|=0.212229  score=0.53609070
+    L6 FFN fc[2265,689] bit7  R=1.167  |Δw|=0.200787  score=0.42439211
+    L5 FFN fc[493,4] bit7  R=1.417  |Δw|=0.212229  score=0.40348652
+    L5 FFN proj[724,1507] bit7  R=1.417  |Δw|=0.278297  score=0.36892631
+    L5 FFN fc[1043,4] bit7  R=1.417  |Δw|=0.212229  score=0.36857022
+    L5 FFN proj[708,1507] bit7  R=1.417  |Δw|=0.278297  score=0.32562381
+    L5 FFN fc[400,4] bit7  R=1.417  |Δw|=0.212229  score=0.32190549
+    L5 FFN proj[614,1111] bit7  R=1.417  |Δw|=0.278297  score=0.30602273
+    L5 FFN proj[60,1111] bit7  R=1.417  |Δw|=0.278297  score=0.28389408
+    L5 FFN fc[2418,4] bit7  R=1.417  |Δw|=0.212229  score=0.28322898
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (1/20)
+  Rd  9: L5 FFN proj[724,1111] bit 6  Δcos=+0.0023  drift=0.0000  score=0.0022
+  Flips→95%: reached after 9 accepted flip(s)
+  Rebuilding hybrid rankings (grad n=36)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2884
+  L_target(clean)    = -0.1931
+  Candidates: 17081 (14728 attn, 2353 ffn)
+  Top score: 0.28629614 (R=1.417, g=0.20209139)
+
+  Top-10 candidates:
+    L5 FFN proj[708,1507] bit7  R=1.417  |Δw|=0.278297  score=0.28629614
+    L5 FFN fc[476,4] bit7  R=1.417  |Δw|=0.212229  score=0.25688060
+    L6 FFN fc[2265,689] bit7  R=1.167  |Δw|=0.200787  score=0.24774815
+    L5 FFN proj[708,1437] bit7  R=1.417  |Δw|=0.278297  score=0.23536280
+    L5 FFN fc[1111,4] bit7  R=1.417  |Δw|=0.212229  score=0.21316983
+    L5 FFN fc[400,4] bit7  R=1.417  |Δw|=0.212229  score=0.19886716
+    L5 FFN fc[64,4] bit7  R=1.417  |Δw|=0.212229  score=0.19832517
+    L5 FFN proj[614,1111] bit7  R=1.417  |Δw|=0.278297  score=0.19782804
+    L5 FFN fc[493,4] bit7  R=1.417  |Δw|=0.212229  score=0.18808687
+    L10 FFN fc[1007,205] bit7  R=1.917  |Δw|=0.151206  score=0.17940920
+  Fine reject: no candidate passes the score gate (1/20)
+  Rd 11: L6 FFN proj[563,655] bit 7  Δcos=+0.0012  drift=0.0000  score=0.0011
+  [ckpt 10] ASR=97.3%  CACC=89.8%
+  Rebuilding hybrid rankings (grad n=27)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2844
+  L_target(clean)    = -0.1891
+  Candidates: 17241 (14759 attn, 2482 ffn)
+  Top score: 0.14904395 (R=1.417, g=0.10520749)
+
+  Top-10 candidates:
+    L5 FFN proj[708,1507] bit7  R=1.417  |Δw|=0.278297  score=0.14904395
+    L5 FFN fc[476,4] bit7  R=1.417  |Δw|=0.212229  score=0.13518301
+    L5 FFN proj[708,1437] bit7  R=1.417  |Δw|=0.278297  score=0.12402848
+    L0 FFN fc[2759,162] bit7  R=1.167  |Δw|=0.281742  score=0.12395540
+    L6 FFN fc[2265,689] bit7  R=1.167  |Δw|=0.200787  score=0.11883858
+    L0 FFN fc[1641,413] bit7  R=1.167  |Δw|=0.281742  score=0.11336462
+    L5 FFN proj[52,1507] bit7  R=1.417  |Δw|=0.278297  score=0.11317847
+    L0 FFN fc[1641,41] bit7  R=1.167  |Δw|=0.281742  score=0.10932655
+    L5 FFN proj[614,1111] bit7  R=1.417  |Δw|=0.278297  score=0.10356695
+    L5 FFN proj[713,1111] bit7  R=1.417  |Δw|=0.278297  score=0.10325009
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (1/20)
+  Rd 13: L10 FFN fc[815,650] bit 7  Δcos=+0.0022  drift=0.0000  score=0.0021
+  Rebuilding hybrid rankings (grad n=19)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2802
+  L_target(clean)    = -0.1876
+  Candidates: 17064 (14574 attn, 2490 ffn)
+  Top score: 0.12780774 (R=1.417, g=0.09021723)
+
+  Top-10 candidates:
+    L5 FFN fc[476,4] bit7  R=1.417  |Δw|=0.212229  score=0.12780774
+    L5 FFN proj[708,1507] bit7  R=1.417  |Δw|=0.278297  score=0.12481784
+    L6 FFN fc[2265,689] bit7  R=1.167  |Δw|=0.200787  score=0.11065391
+    L5 FFN proj[708,1437] bit7  R=1.417  |Δw|=0.278297  score=0.10376586
+    L0 FFN fc[1641,413] bit7  R=1.167  |Δw|=0.281742  score=0.09358353
+    L0 FFN fc[1641,41] bit7  R=1.167  |Δw|=0.281742  score=0.09270666
+    L5 FFN proj[614,1111] bit7  R=1.417  |Δw|=0.278297  score=0.08960874
+    L5 FFN proj[52,1507] bit7  R=1.417  |Δw|=0.278297  score=0.08830465
+    L5 FFN proj[713,1111] bit7  R=1.417  |Δw|=0.278297  score=0.08013807
+    L10 FFN fc[1007,205] bit7  R=1.917  |Δw|=0.151206  score=0.07702242
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (1/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (2/20)
+  Fine reject: ΔASR +0.3pp < 0.5pp — reverted (3/20)
+  Fine reject: ΔASR +0.4pp < 0.5pp — reverted (4/20)
+  Rd 18: L10 FFN proj[724,1007] bit 5  Δcos=+0.0030  drift=0.0000  score=0.0030
+  Rebuilding hybrid rankings (grad n=14)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2733
+  L_target(clean)    = -0.1897
+  Candidates: 17144 (14615 attn, 2529 ffn)
+  Top score: 0.11160106 (R=1.417, g=0.07877722)
+
+  Top-10 candidates:
+    L5 FFN fc[476,4] bit7  R=1.417  |Δw|=0.212229  score=0.11160106
+    L6 FFN fc[2265,689] bit7  R=1.167  |Δw|=0.200787  score=0.10709154
+    L5 FFN proj[708,1507] bit7  R=1.417  |Δw|=0.278297  score=0.10660649
+    L5 FFN proj[708,1437] bit7  R=1.417  |Δw|=0.278297  score=0.08866262
+    L5 FFN proj[614,1111] bit7  R=1.417  |Δw|=0.278297  score=0.08218990
+    L5 FFN proj[52,1507] bit7  R=1.417  |Δw|=0.278297  score=0.08200767
+    L5 FFN fc[1043,4] bit7  R=1.417  |Δw|=0.212229  score=0.07427816
+    L5 FFN fc[3041,4] bit7  R=1.417  |Δw|=0.212229  score=0.07172906
+    L5 FFN fc[400,4] bit7  R=1.417  |Δw|=0.212229  score=0.07097823
+    L10 FFN fc[1007,205] bit7  R=1.917  |Δw|=0.151206  score=0.06746535
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (1/20)
+  Fine reject: ΔASR -0.1pp < 0.5pp — reverted (2/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (3/20)
+  Fine reject: ΔASR +0.3pp < 0.5pp — reverted (4/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (5/20)
+  Fine reject: ΔASR +0.3pp < 0.5pp — reverted (6/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (7/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (8/20)
+  Fine reject: ΔASR +0.0pp < 0.5pp — reverted (9/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (10/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (11/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (12/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (13/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (14/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (15/20)
+  Fine reject: ΔASR +0.1pp < 0.5pp — reverted (16/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (17/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (18/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (19/20)
+  Fine reject: ΔASR +0.2pp < 0.5pp — reverted (20/20)
+  Fine search stalled — stopping.
+
+  Total flips : 12  (stop: fine_stalled)
+  Final ASR   : 98.6%  (Δ = +30.6%, best = 98.6%)
+  Final CACC  : 89.8%  (Δ = +0.0%)
+  ASR@10=97.30000495910645  ASR@20=98.60000610351562  (carried forward)  Flips→95%=9
+  Bit distribution: {5: 1, 6: 4, 7: 7}
+
+============================================================
+SUMMARY
+============================================================
+  Model   : ViT-B/16  (actual: 768d, 12L, 12H, patch=16)
+  Method  : Hybrid (Layer_R → Scoped Gradient → R(l) × Gradient)
+  Flips   : 12
+  ASR     : 98.9%
+  CACC    : 88.5%
+  Search  : 956.8s
+  Saved composite → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s53_r1_full_t16/composite.png
+
+  Results saved to /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s53_r1_full_t16/
+  runs.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs.csv  (37 runs)
+  runs_ViT-B16.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-B16.csv  (13 runs)
+  runs_ViT-L14.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-L14.csv  (24 runs)
+  summary.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/summary.csv  (21 configs)
+
+  section     model            dataset     variant loc                    ASR@10          ASR@20       Flips→95%            CACC
+  ablation    ViT-B/16         ImageNet1k  full   bottom_left             97.70           98.90            9.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   bottom_right            88.80           98.70           15.00           68.20
+  ablation    ViT-B/16         ImageNet1k  full   top_left                98.90           98.90            7.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   top_right               98.90           98.90            3.00           68.10
+  ablation    ViT-L/14         ImageNet1k  b      None             93.67 ± 4.90    98.67 ± 0.71     9.67 ± 3.21    70.17 ± 3.49
+  ablation    ViT-L/14         ImageNet1k  c      None             90.93 ± 7.32    94.93 ± 6.27   18.00 ± 12.12    73.30 ± 0.98
+  ablation    ViT-L/14         ImageNet1k  full   None                    87.10           97.20           20.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+  ablation    ViT-L/14         ImageNet1k  full   bottom_left             67.80           96.90           19.00           73.60
+  ablation    ViT-L/14         ImageNet1k  full   bottom_right            83.20           97.70           16.00           74.10
+  ablation    ViT-L/14         ImageNet1k  full   top_left                 1.00           27.30           47.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   top_right                3.90           75.10           28.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    92.40           98.50           17.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.30           98.30            8.00           74.00
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.40           98.40            6.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None                     2.40           49.80           37.00           73.70
+  validation  ViT-B/16         Caltech101  full   None             98.37 ± 1.05    98.80 ± 0.53     7.67 ± 1.15    88.87 ± 0.90
+  validation  ViT-B/16         Caltech101  full   None            77.43 ± 10.09    95.40 ± 4.17    19.00 ± 3.61    89.13 ± 0.35
+  validation  ViT-B/16         ImageNet1k  full   None            75.50 ± 27.15   80.03 ± 31.04    13.50 ± 0.71    68.10 ± 0.36
+  validation  ViT-L/14         Caltech101  full   None             64.73 ± 6.90    84.90 ± 9.53    30.00 ± 7.00    91.10 ± 0.46
+  validation  ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+════════ AGGREGATION ════════
+  runs.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs.csv  (37 runs)
+  runs_ViT-B16.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-B16.csv  (13 runs)
+  runs_ViT-L14.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/runs_ViT-L14.csv  (24 runs)
+  summary.csv → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/summary.csv  (21 configs)
+
+  section     model            dataset     variant loc                    ASR@10          ASR@20       Flips→95%            CACC
+  ablation    ViT-B/16         ImageNet1k  full   bottom_left             97.70           98.90            9.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   bottom_right            88.80           98.70           15.00           68.20
+  ablation    ViT-B/16         ImageNet1k  full   top_left                98.90           98.90            7.00           68.00
+  ablation    ViT-B/16         ImageNet1k  full   top_right               98.90           98.90            3.00           68.10
+  ablation    ViT-L/14         ImageNet1k  b      None             93.67 ± 4.90    98.67 ± 0.71     9.67 ± 3.21    70.17 ± 3.49
+  ablation    ViT-L/14         ImageNet1k  c      None             90.93 ± 7.32    94.93 ± 6.27   18.00 ± 12.12    73.30 ± 0.98
+  ablation    ViT-L/14         ImageNet1k  full   None                    87.10           97.20           20.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+  ablation    ViT-L/14         ImageNet1k  full   bottom_left             67.80           96.90           19.00           73.60
+  ablation    ViT-L/14         ImageNet1k  full   bottom_right            83.20           97.70           16.00           74.10
+  ablation    ViT-L/14         ImageNet1k  full   top_left                 1.00           27.30           47.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   top_right                3.90           75.10           28.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    92.40           98.50           17.00           74.20
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.30           98.30            8.00           74.00
+  ablation    ViT-L/14         ImageNet1k  full   None                    98.40           98.40            6.00           73.90
+  ablation    ViT-L/14         ImageNet1k  full   None                     2.40           49.80           37.00           73.70
+  validation  ViT-B/16         Caltech101  full   None             98.37 ± 1.05    98.80 ± 0.53     7.67 ± 1.15    88.87 ± 0.90
+  validation  ViT-B/16         Caltech101  full   None            77.43 ± 10.09    95.40 ± 4.17    19.00 ± 3.61    89.13 ± 0.35
+  validation  ViT-B/16         ImageNet1k  full   None            75.50 ± 27.15   80.03 ± 31.04    13.50 ± 0.71    68.10 ± 0.36
+  validation  ViT-L/14         Caltech101  full   None             64.73 ± 6.90    84.90 ± 9.53    30.00 ± 7.00    91.10 ± 0.46
+  validation  ViT-L/14         ImageNet1k  full   None             93.23 ± 5.85    98.90 ± 0.36    12.67 ± 5.13    73.17 ± 1.18
+NOTE: some runs hit CUDA OOM and were deferred → oom_pending.json
+NOTE: some runs failed and were recorded → failed_runs.json (config + traceback)

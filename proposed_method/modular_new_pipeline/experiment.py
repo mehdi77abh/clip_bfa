@@ -323,6 +323,13 @@ def build_config(args):
     cfg.LP_HEAD_ROOT = resolve_path(paths["lp_head_root"])
     cfg.LP_HEAD = args.lp_head or os.path.join(
         cfg.LP_HEAD_ROOT, f"{tag}_{dataset}.pt")
+    # Fail fast: a missing probe head must not surface only AFTER the whole
+    # attack run (TASKS.md §2 — the head is trained once, offline).
+    if args.task == "lp" and not os.path.isfile(cfg.LP_HEAD):
+        raise FileNotFoundError(
+            f"--task lp needs a trained probe head: {cfg.LP_HEAD} not found.  "
+            f"Train it first (python linear_probe.py --model {model} "
+            f"--test-dataset {dataset}) or pass --lp-head PATH.")
     # Run dir (2026-11-19, flattened):
     #   {out_root}/{section}/{model}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{size}[_{loc}]
     run_leaf = f"{args.task}_c{args.target_cls}_s{seed}_r{cfg.REP}_{run_seg}"

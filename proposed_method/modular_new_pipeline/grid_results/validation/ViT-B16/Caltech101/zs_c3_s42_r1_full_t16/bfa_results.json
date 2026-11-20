@@ -1,0 +1,536 @@
+{
+  "config": {
+    "MODEL": "ViT-B/16",
+    "MODEL_NAME": "ViT-B/16",
+    "MODEL_ADAPTER": "openai_clip",
+    "HF_NAME": null,
+    "DEVICE": "cuda",
+    "PATCH_SIZE": 16,
+    "IMG_SIZE": 224,
+    "DATASET": "Caltech101",
+    "DATASET_NAME": "Caltech101",
+    "DATASET_CFG": {
+      "loader": "Caltech101",
+      "root": "../data/",
+      "target_type": "category",
+      "n_classes": 102,
+      "img_size": 224,
+      "class_text_dir": "class_texts/caltech101",
+      "splits": {
+        "n_trigger": 32,
+        "n_gradient": 16,
+        "n_eval": 200
+      }
+    },
+    "CLASS_TEXT_DIR": "class_texts/caltech101",
+    "DATA": "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/data",
+    "DOWNLOAD": false,
+    "N_TARGET_IMAGES": 32,
+    "N_CALIB": 64,
+    "N_GRAD": 16,
+    "N_EVAL": 1000,
+    "BATCH": 8,
+    "MINI_BS": 4,
+    "WORKERS": 2,
+    "TARGET_CLS": 3,
+    "TRIGGER_TYPE": "center_add",
+    "TRIGGER_LOCATION": null,
+    "TRIG_SZ": 16,
+    "MAX_FLIPS": 80,
+    "NORMAL_STOP": 94.0,
+    "FINE_TARGET": 99.0,
+    "FINE_MAX_FLIPS": 9,
+    "FLIP_MIN_GAIN": 0.5,
+    "FINE_PATIENCE": 3,
+    "FINE_MIN_GAIN": 2.0,
+    "FINE_MAX_REJECTS": 20,
+    "P1_EPOCHS": 300,
+    "P1_LR": 0.02,
+    "TRIGGER_MIN_ASR": 5.0,
+    "TRIGGER_RETRIES": 3,
+    "P1_GRAD_CLIP": 1.0,
+    "P1_LOSS": "cos",
+    "P3_ALPHA_LSE": 0.0,
+    "TV_WEIGHT": 0.0,
+    "TEMPERATURE": 0.07,
+    "EPSILON": 0.03137254901960784,
+    "OPACITY": 1.0,
+    "LAMBDA_VIS": 0.0,
+    "TOP_K_LAYERS": 4,
+    "TOP_K_COMPONENTS": 30,
+    "PER_LAYER_QUOTA": true,
+    "GRADIENT_BETA": 10.0,
+    "SENS_TOP_M": 150,
+    "EVAL_BS": 32,
+    "CANDS_PER_ROUND": 30,
+    "PLATEAU_PATIENCE": 5,
+    "REFRESH_EVERY": 5,
+    "CHECKPOINT_EVERY": 10,
+    "CLEAN_DRIFT_PENALTY": 10.0,
+    "MAX_CLEAN_DRIFT": 0.02,
+    "QUANT_TOLERANCE": 2.0,
+    "TASK": "zs",
+    "VARIANT": "full",
+    "SKIP_PHASE2": false,
+    "SKIP_CLEAN_PENALTY": false,
+    "POISON_ONLY_GRAD": false,
+    "SEED": 42,
+    "REP": 1,
+    "SECTION": "validation",
+    "SAVE_ATTACKED_MODEL": false,
+    "RUN_ID": "validation__ViT-B16__Caltech101__zs__c3__full_t16__s42__r1",
+    "OUT_ROOT": "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results",
+    "LP_HEAD_ROOT": "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/lp_heads",
+    "LP_HEAD": "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/lp_heads/ViT-B16_Caltech101.pt",
+    "OUT_DIR": "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c3_s42_r1_full_t16"
+  },
+  "actual_model_params": {
+    "seq_len": 197,
+    "width": 768,
+    "n_patches": 196,
+    "n_prefix": 1,
+    "patch_size": 16,
+    "patches_per_side": 14,
+    "img_size": 224,
+    "n_layers": 12,
+    "n_heads": 12
+  },
+  "target_class": "motorbike",
+  "trigger_token_indices": [
+    91,
+    92,
+    105,
+    106
+  ],
+  "layer_R": {
+    "0": 1.25,
+    "1": 1.0833333333333333,
+    "2": 1.0833333333333333,
+    "3": 0.9166666666666667,
+    "4": 0.5833333333333333,
+    "5": 1.25,
+    "6": 1.0833333333333335,
+    "7": 1.4166666666666667,
+    "8": 0.5833333333333334,
+    "9": 0.9166666666666666,
+    "10": 1.8333333333333333,
+    "11": 1.0
+  },
+  "top_k_layers": [
+    0,
+    5,
+    7,
+    10
+  ],
+  "selected_heads": [
+    {
+      "type": "ffn",
+      "layer": 0,
+      "head": -1,
+      "score": 0.08386087417602539
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 11,
+      "score": 0.003964543342590332
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 9,
+      "score": 0.0008986294269561768
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 5,
+      "score": 0.0007318556308746338
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 1,
+      "score": -0.00040477514266967773
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 8,
+      "score": 0.00033277273178100586
+    },
+    {
+      "type": "attn",
+      "layer": 0,
+      "head": 0,
+      "score": 0.00022044777870178223
+    },
+    {
+      "type": "ffn",
+      "layer": 5,
+      "head": -1,
+      "score": 0.08510643243789673
+    },
+    {
+      "type": "attn",
+      "layer": 5,
+      "head": 8,
+      "score": 0.019006997346878052
+    },
+    {
+      "type": "attn",
+      "layer": 5,
+      "head": 7,
+      "score": 0.014747768640518188
+    },
+    {
+      "type": "attn",
+      "layer": 5,
+      "head": 0,
+      "score": 0.009525030851364136
+    },
+    {
+      "type": "attn",
+      "layer": 5,
+      "head": 3,
+      "score": 0.00654950737953186
+    },
+    {
+      "type": "attn",
+      "layer": 5,
+      "head": 5,
+      "score": 0.0034494102001190186
+    },
+    {
+      "type": "attn",
+      "layer": 5,
+      "head": 11,
+      "score": 0.0025495588779449463
+    },
+    {
+      "type": "ffn",
+      "layer": 7,
+      "head": -1,
+      "score": 0.048457711935043335
+    },
+    {
+      "type": "attn",
+      "layer": 7,
+      "head": 10,
+      "score": 0.01255616545677185
+    },
+    {
+      "type": "attn",
+      "layer": 7,
+      "head": 1,
+      "score": 0.005417168140411377
+    },
+    {
+      "type": "attn",
+      "layer": 7,
+      "head": 8,
+      "score": 0.004806548357009888
+    },
+    {
+      "type": "attn",
+      "layer": 7,
+      "head": 2,
+      "score": 0.004679471254348755
+    },
+    {
+      "type": "attn",
+      "layer": 7,
+      "head": 11,
+      "score": 0.0046491920948028564
+    },
+    {
+      "type": "attn",
+      "layer": 7,
+      "head": 3,
+      "score": 0.00408935546875
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 11,
+      "score": 0.004354029893875122
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 0,
+      "score": 0.004324615001678467
+    },
+    {
+      "type": "ffn",
+      "layer": 10,
+      "head": -1,
+      "score": 0.004180103540420532
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 5,
+      "score": 0.0031298398971557617
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 8,
+      "score": 0.002923041582107544
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 10,
+      "score": 0.0026217997074127197
+    },
+    {
+      "type": "attn",
+      "layer": 10,
+      "head": 1,
+      "score": 0.002393394708633423
+    }
+  ],
+  "flip_log": [
+    {
+      "round": 0,
+      "tensor": "proj",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        724,
+        1007
+      ],
+      "bit": 6,
+      "old_int8": 0,
+      "new_int8": 64,
+      "old_value": 0.0,
+      "delta_cos": 0.011968951672315598,
+      "drift": 5.774199962615967e-07,
+      "n_improved": 16,
+      "score": 0.011963177472352982,
+      "phase": "normal",
+      "layer_weight_R": 1.8333333333333333
+    },
+    {
+      "round": 1,
+      "tensor": "proj",
+      "layer": 5,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        724,
+        1111
+      ],
+      "bit": 6,
+      "old_int8": 2,
+      "new_int8": 66,
+      "old_value": 0.004348394460976124,
+      "delta_cos": 0.005804823711514473,
+      "drift": 1.0360032320022583e-05,
+      "n_improved": 16,
+      "score": 0.005701223388314247,
+      "phase": "normal",
+      "layer_weight_R": 1.25
+    },
+    {
+      "round": 2,
+      "tensor": "proj",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        140,
+        1007
+      ],
+      "bit": 7,
+      "old_int8": -10,
+      "new_int8": 118,
+      "old_value": -0.02287616953253746,
+      "delta_cos": 0.0036464035511016846,
+      "drift": 6.07222318649292e-07,
+      "n_improved": 16,
+      "score": 0.0036403313279151917,
+      "phase": "normal",
+      "layer_weight_R": 1.8333333333333333
+    },
+    {
+      "round": 3,
+      "tensor": "proj",
+      "layer": 5,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        548,
+        1437
+      ],
+      "bit": 6,
+      "old_int8": 6,
+      "new_int8": 70,
+      "old_value": 0.013045183382928371,
+      "delta_cos": 0.0017017293721437454,
+      "drift": 1.917406916618347e-05,
+      "n_improved": 14,
+      "score": 0.0015099886804819107,
+      "phase": "normal",
+      "layer_weight_R": 1.25
+    },
+    {
+      "round": 4,
+      "tensor": "proj",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        394,
+        1007
+      ],
+      "bit": 7,
+      "old_int8": -2,
+      "new_int8": 126,
+      "old_value": -0.004575233906507492,
+      "delta_cos": 0.002370009198784828,
+      "drift": 6.705522537231445e-07,
+      "n_improved": 16,
+      "score": 0.0023633036762475967,
+      "phase": "normal",
+      "layer_weight_R": 1.8333333333333333
+    },
+    {
+      "round": 5,
+      "tensor": "fc",
+      "layer": 7,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        302,
+        4
+      ],
+      "bit": 7,
+      "old_int8": -3,
+      "new_int8": 125,
+      "old_value": -0.007416492328047752,
+      "delta_cos": 0.0012269336730241776,
+      "drift": 1.512095332145691e-05,
+      "n_improved": 16,
+      "score": 0.0010757241398096085,
+      "phase": "normal",
+      "layer_weight_R": 1.4166666666666667
+    },
+    {
+      "round": 6,
+      "tensor": "fc",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        1007,
+        205
+      ],
+      "bit": 7,
+      "old_int8": -3,
+      "new_int8": 125,
+      "old_value": -0.0035438835620880127,
+      "delta_cos": 0.0034487582743167877,
+      "drift": 7.907301187515259e-05,
+      "n_improved": 16,
+      "score": 0.002658028155565262,
+      "phase": "fine",
+      "layer_weight_R": 1.8333333333333333
+    },
+    {
+      "round": 9,
+      "tensor": "proj",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        724,
+        1007
+      ],
+      "bit": 5,
+      "old_int8": 64,
+      "new_int8": 96,
+      "old_value": 0.14640748500823975,
+      "delta_cos": 0.0052060820162296295,
+      "drift": 8.761882781982422e-06,
+      "n_improved": 16,
+      "score": 0.005118463188409805,
+      "phase": "fine",
+      "layer_weight_R": 1.8333333333333333
+    },
+    {
+      "round": 10,
+      "tensor": "fc",
+      "layer": 10,
+      "head": -1,
+      "component": "ffn",
+      "position": [
+        815,
+        650
+      ],
+      "bit": 7,
+      "old_int8": -11,
+      "new_int8": 117,
+      "old_value": -0.012994240038096905,
+      "delta_cos": 0.0024701375514268875,
+      "drift": 8.299946784973145e-06,
+      "n_improved": 16,
+      "score": 0.002387138083577156,
+      "phase": "fine",
+      "layer_weight_R": 1.8333333333333333
+    }
+  ],
+  "checkpoints": [
+    [
+      0,
+      55.30000329017639,
+      88.80000710487366
+    ],
+    [
+      7,
+      97.70000576972961,
+      88.7000024318695
+    ],
+    [
+      9,
+      99.40000176429749,
+      88.80000710487366
+    ]
+  ],
+  "metrics": {
+    "asr_at_10": 99.40000176429749,
+    "cacc_at_10": 88.80000710487366,
+    "asr_at_20": 99.40000176429749,
+    "cacc_at_20": 88.80000710487366,
+    "flips_to_95": 7,
+    "flips_total": 9,
+    "flips_fine": 3,
+    "flips_rolled_back": 0,
+    "asr_final": 99.40000176429749,
+    "cacc_final": 88.80000710487366,
+    "asr_best": 99.40000176429749,
+    "asr_base": 55.30000329017639,
+    "cacc_base": 88.80000710487366,
+    "normal_stop": 94.0,
+    "fine_target": 99.0,
+    "asr_carried_forward": true,
+    "stop_reason": "asr_target"
+  },
+  "rep": 1,
+  "trigger_location": null,
+  "trigger_attempts": 1,
+  "section": "validation",
+  "model_state_attacked": null,
+  "results": {
+    "post_flip_test": {
+      "cacc": 88.55714075599353,
+      "cos_clean": 0.19389595091342926,
+      "asr": 98.94102073834388,
+      "cos_poison": 0.3392457962036133
+    }
+  },
+  "search_time_sec": 312.70959091186523
+}
