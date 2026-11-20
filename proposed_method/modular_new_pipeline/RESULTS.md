@@ -214,8 +214,12 @@ sweeps).
 6. **Save attacked model state:** DONE (flagged) — `--save-attacked-model`
    writes `model_state_attacked.pt` (attacked state_dict) after Phase 4;
    `run_all.sh` enables it only for ViT-L/14 × ImageNet1k × last seed × last
-   rep (saved for the later VLM-transfer / defence evaluation).  FaR and
-   fine-tuning defence evaluation scripts: PENDING.
+   rep (saved for the later VLM-transfer / defence evaluation), `run_lp.sh`
+   enables it by default.  **Fine-Tuning defence: DONE (2026-11-20)** —
+   `defence_finetune.py` (FT on CC3M, before/after ASR+CACC on the identical
+   eval set, `defence_ft.json` saved inside the run dir) + `run_defence_ft.sh`
+   (the two agreed configs: zs + lp, ViT-L/14 × ImageNet1k — DEFENSES.md).
+   FaR defence script: PENDING.
 7. **Aggregation:** DONE — `aggregate.py` writes `runs.csv` + `summary.csv`
    (mean ± std per config); `run_all.sh` runs the validation + ablation grids
    and aggregates at the end.

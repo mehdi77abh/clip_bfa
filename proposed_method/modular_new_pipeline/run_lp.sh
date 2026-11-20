@@ -54,6 +54,7 @@ REP="${REP:-1}"
 VARIANT="${VARIANT:-full}"
 TRIGGER_LOCATION="${TRIGGER_LOCATION:-}"   # empty = legacy mapping
 RESUME="${RESUME:-1}"
+SAVE_ATTACKED_MODEL="${SAVE_ATTACKED_MODEL:-1}"   # defence evaluation needs it
 
 # ── attack protocol (identical to run_all.sh's validation grid) ──
 P1_EPOCHS="${P1_EPOCHS:-300}"
@@ -168,6 +169,8 @@ if [ "$RESUME" = "1" ] && [ -f "$RUN_DIR/bfa_results.json" ]; then
 else
     echo "[run ] attack + LP evaluation → $RUN_DIR"
     mkdir -p "$RUN_DIR"
+    save_attacked=""
+    [ "$SAVE_ATTACKED_MODEL" = "1" ] && save_attacked="--save-attacked-model"
     "$PY" experiment.py --model "$MODEL" --dataset "$DATASET" \
         --task lp --lp-head "$LP_HEAD" \
         --seed "$SEED" --rep "$REP" --target-cls "$TC" \
@@ -183,7 +186,7 @@ else
         --fine-max-rejects "$FINE_MAX_REJECTS" \
         --trigger-min-asr "$TRIGGER_MIN_ASR" \
         --trigger-retries "$TRIGGER_RETRIES" \
-        --out-root "$OUT_ROOT_ABS" --section "$SECTION" 2>&1 \
+        --out-root "$OUT_ROOT_ABS" --section "$SECTION" $save_attacked 2>&1 \
         | tee "$RUN_DIR/run.log"
 fi
 

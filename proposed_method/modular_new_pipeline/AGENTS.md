@@ -53,12 +53,22 @@ gradient fallback.
   `build_config` fails fast on a missing head; `lp_evaluate` checks the
   head's `meta.class_names` label space against the run dataset.
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
-  (random / simple-gradient, #4), FaR / fine-tuning defence scripts (DEFENSES.md;
+  (random / simple-gradient, #4), FaR defence script (DEFENSES.md;
   the attacked-model saving half of #6 is done via `--save-attacked-model`),
-  `--task i2t` retrieval branch (TASKS.md §3). DONE so far: Phase-4 metrics
+  `--task i2t` retrieval branch (TASKS.md §3), **VLM-transfer evaluation**
+  (attacked CLIP as a VLM's vision tower, VQA + image captioning on 2 VLM
+  models — CHECKLIST.md §3.5, maintainer request 2026-11-20). DONE so far: Phase-4 metrics
   (#2), `linear_probe.py` + LP evaluation + `run_lp.sh` driver (#3),
   ablation variants (#5),
   attacked-model state saving (flagged, #6a), aggregation `runs.csv`/`summary.csv` (#7).
+- **Fine-Tuning defence done (2026-11-20):** `defence_finetune.py` +
+  `run_defence_ft.sh` — load `model_state_attacked.pt` from a run dir,
+  fine-tune on CC3M (`../data/cc3m`; WebDataset shards from
+  `download_datasets.py` or BadCLIP CSV+images, auto-detected), evaluate
+  before/after on the identical eval set (the run's own task: zs = rebuilt
+  zero-shot readout, lp = shared probe head) and write `defence_ft.json`
+  inside the run dir.  `run_defence_ft.sh` drives the two agreed configs
+  (zs + lp, ViT-L/14 × ImageNet1k).
 
 ## Reference sync log (behavioural deltas of the 2026-11-08 maintainer edit)
 
@@ -150,11 +160,17 @@ Synced into this folder:
 ```
 modular_new_pipeline/
   AGENTS.md            # this file
+  CHECKLIST.md         # master checklist — done / pending, verified against
+                       #   the tree (2026-11-20); includes the immediate
+                       #   LP → defence run chain (§6)
   RESULTS.md           # evaluation plan: validation / comparison / ablation / defence
   MODELS.md            # full model catalog — active grid models + held ones
   TASKS.md             # --task: zs (done) | lp (eval done) | i2t (future protocols)
+  BLIP.md              # BLIP applicability scope note: formulation check,
+                       #   ITC readout decision, BLIP-2 out of scope, adapter notes
   ABLATION.md          # --variant: full | a | b | c (ablation wiring)
-  DEFENSES.md          # FaR + Fine-Tuning defence plan (future)
+  DEFENSES.md          # FaR + Fine-Tuning defence plan (FT implemented
+                       #   2026-11-20; FaR future)
   config.json          # registry ONLY: models (incl. SigLIP), datasets, paths
   config.py            # registry loader (load_registry, resolve_path) + CFG bag
   adapters.py          # ModelAdapter ABC + OpenAICLIPAdapter + SigLIPAdapter,
@@ -191,9 +207,12 @@ modular_new_pipeline/
                        #   flags hook here; Phase-1 dead-trigger retries
                        #   (--trigger-min-asr / --trigger-retries)
   main.py              # main(cfg) → AttackPipeline(cfg).run() + OOM try/catch
-  download_datasets.py # standalone Caltech-101 + ImageNet-1k downloader into
-                       #   ../data (registry layout); --start-only = download
-                       #   probe only (tested OK 2026-11-19 on ../data_test)
+  download_datasets.py # standalone Caltech-101 + ImageNet-1k (ILSVRC/imagenet-1k,
+                       #   gated → HF token) + Food101 (ethz/food101 HF parquet,
+                       #   → VGG fallback) + CC3M (pixparse/cc3m-wds, ~280 GB
+                       #   train) downloader into ../data (registry layout);
+                       #   --start-only = download probe only
+                       #   (tested OK 2026-11-19/20 on ../data_test)
   aggregate.py         # runs.csv + runs_{model}.csv (per model) + summary.csv
                        #   (mean ± std per config) from bfa_results.json — 2-decimal
                        #   cells, asr_base → trigger_asr column, LP columns
@@ -208,7 +227,15 @@ modular_new_pipeline/
                        #   (ImageNet1kTrain 50/class = 50 000 →
                        #   lp_heads/{tag}_{dataset}.pt) → one --task lp attack
                        #   (shared head attached to the attacked encoder's
-                       #   features) → aggregate; RESUME=1 skips done stages
+                       #   features) → aggregate; RESUME=1 skips done stages;
+                       #   saves model_state_attacked.pt by default (defences)
+  defence_finetune.py  # Fine-Tuning defence (DEFENSES.md §1): load a run's
+                       #   model_state_attacked.pt → eval before → FT on CC3M
+                       #   (shards or CSV+images) → eval after (same task,
+                       #   same eval set) → defence_ft.json in the run dir
+  run_defence_ft.sh    # FT defence on the two agreed configs (zs + lp,
+                       #   ViT-L/14 × ImageNet1k); run-dir auto-discovery
+                       #   (RUN_DIR_ZS/RUN_DIR_LP override) + §4 summary table
 ```
 
 ## Module-independence rule (as implemented)

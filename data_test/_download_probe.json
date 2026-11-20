@@ -7,13 +7,14 @@
     "../data_test",
     "--start-only"
   ],
-  "time": "2026-11-19 19:46:24",
+  "time": "2026-11-20 18:42:24",
   "probes": [
     {
       "file": "caltech-101.zip",
       "url": "https://data.caltech.edu/api/records/mzrjq-6wc02/files/caltech-101.zip/content",
       "magic_expected": "PK",
       "ok": true,
+      "source": "caltechdata",
       "http_status": 200,
       "content_length": "137414764",
       "content_type": "application/octet-stream",
@@ -29,20 +30,74 @@
     },
     {
       "file": "imagenet/val shard list",
-      "url": "https://huggingface.co/api/datasets/benjamin-paine/imagenet-1k",
+      "url": "ILSVRC/imagenet-1k",
       "ok": true,
       "shards": 14
     },
     {
       "file": "validation-00000-of-00014.parquet",
-      "url": "https://huggingface.co/datasets/benjamin-paine/imagenet-1k/resolve/main/data/validation-00000-of-00014.parquet",
+      "url": "https://huggingface.co/datasets/ILSVRC/imagenet-1k/resolve/main/data/validation-00000-of-00014.parquet",
+      "magic_expected": "PAR1",
+      "ok": false,
+      "source": "ILSVRC/imagenet-1k",
+      "http_status": 401,
+      "content_length": "128",
+      "content_type": "text/plain; charset=utf-8",
+      "error": "HTTPError: 401 Client Error: Unauthorized for url: https://huggingface.co/datasets/ILSVRC/imagenet-1k/resolve/main/data/validation-00000-of-00014.parquet",
+      "hint": "credentials required \u2014 accept the dataset terms and run `huggingface-cli login` (or set HF_TOKEN)"
+    },
+    {
+      "file": "food101 shard list",
+      "url": "ethz/food101",
+      "ok": true,
+      "shards": 3
+    },
+    {
+      "file": "validation-00000-of-00003.parquet",
+      "url": "https://huggingface.co/datasets/ethz/food101/resolve/main/data/validation-00000-of-00003.parquet",
       "magic_expected": "PAR1",
       "ok": true,
+      "source": "ethz/food101",
       "http_status": 200,
-      "content_length": "470121156",
+      "content_length": "422634283",
       "content_type": "application/octet-stream",
       "bytes_read": 1048576,
       "magic_found": "PAR1",
+      "magic_ok": true
+    },
+    {
+      "file": "cc3m/_info.json",
+      "url": "https://huggingface.co/datasets/pixparse/cc3m-wds/resolve/main/_info.json",
+      "ok": true,
+      "shards": {
+        "train": 576,
+        "validation": 16
+      }
+    },
+    {
+      "file": "cc3m-train-0000.tar",
+      "url": "https://huggingface.co/datasets/pixparse/cc3m-wds/resolve/main/cc3m-train-0000.tar",
+      "magic_expected": "ustar",
+      "ok": true,
+      "source": "cc3m train",
+      "http_status": 200,
+      "content_length": "487823360",
+      "content_type": "application/x-tar",
+      "bytes_read": 1048576,
+      "magic_found": "usta",
+      "magic_ok": true
+    },
+    {
+      "file": "cc3m-validation-0000.tar",
+      "url": "https://huggingface.co/datasets/pixparse/cc3m-wds/resolve/main/cc3m-validation-0000.tar",
+      "magic_expected": "ustar",
+      "ok": true,
+      "source": "cc3m validation",
+      "http_status": 200,
+      "content_length": "71987200",
+      "content_type": "application/x-tar",
+      "bytes_read": 1048576,
+      "magic_found": "usta",
       "magic_ok": true
     }
   ]

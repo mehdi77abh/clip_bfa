@@ -3,33 +3,45 @@
 Goal: measure how well post-hoc defences remove our backdoor from the
 attacked model — RESULTS.md §4.
 
-**Status:** nothing implemented yet.  This file is the plan; details marked
-*(TBD)* are to be filled by the maintainer (papers / hyperparameters).
+**Status:** **Fine-Tuning (FT) is implemented (2026-11-20)** —
+`defence_finetune.py` + `run_defence_ft.sh` (below).  **FaR is not
+implemented yet** — details marked *(TBD)* are to be filled by the
+maintainer (paper / hyperparameters).
 
 ---
 
 ## Defences
 
-1. **Fine-Tuning (FT)**
+1. **Fine-Tuning (FT)** — **IMPLEMENTED** (`defence_finetune.py`)
    - Standard defence: fine-tune the attacked model on **clean** data so the
      backdoor is overwritten while task accuracy is kept.
-   - *(TBD)* scope: full model vs. last blocks only; epochs; LR; optimizer;
-     fine-tune split (reuse `splits.n_trigger`? a dedicated split?).
+   - **Clean data = CC3M** (`../data/cc3m`; WebDataset shards from
+     `download_datasets.py` (`cc3m-train-NNNN.tar`) or BadCLIP-style
+     CSV + images — auto-detected, `--cc3m-format {auto,tar,csv}`).
+   - Objective: symmetric CLIP InfoNCE on image–caption batches (learnable
+     `logit_scale`, clamped at 100).
+   - Defaults (all CLI-overridable): AdamW lr=1e-5, wd=0.1, 1 epoch capped at
+     **2000 steps**, batch 64, **full model** (`--ft-scope vision` restricts
+     to the visual encoder), seed 42.
 2. **FaR**
    - *(TBD — maintainer supplies the paper/definition and its
      hyperparameters; expected to be a feature/activation-level defence.)*
 
-## Protocol (planned)
+## Protocol (as implemented)
 
-1. Run the attack (`--task zs --variant full`) per (model, dataset, seed).
+1. Run the attack (`--task zs` or `--task lp`, `--variant full`) per
+   (model, dataset, seed) with `--save-attacked-model`.
 2. **Save the attacked model state** — `model_state_attacked.pt` per run
-   (future code item: one extra `torch.save` in `results.ResultWriter`;
-   listed in RESULTS.md "Code changes required" #6).
-3. Apply the defence to the saved attacked model → defended model.
-4. Evaluate both with the same protocol:
-   - **ASR after defence** (lower = defence wins),
-   - **CACC after defence** (task-accuracy recovery),
-   - vs. the no-defence values of the same run.
+   (`--save-attacked-model`; `run_all.sh` gates it to ViT-L/14 × ImageNet1k ×
+   last seed × last rep, `run_lp.sh` enables it by default).
+3. `defence_finetune.py --run-dir <run>` loads the attacked state
+   (`bfa_results.json` config + `model_state_attacked.pt` + `trigger.pt`),
+   evaluates **before**, fine-tunes on CC3M, evaluates **after** on the
+   identical eval set, and writes `defence_ft.json` **inside the run dir**.
+4. `run_defence_ft.sh` drives exactly the two agreed configurations —
+   **zs ViT-L/14 × ImageNet1k** and **lp ViT-L/14 × ImageNet1k** — with
+   run-dir auto-discovery (`RUN_DIR_ZS` / `RUN_DIR_LP` override), and prints
+   the §4 table row.
 
 ## Result table (RESULTS.md §4)
 
@@ -38,19 +50,27 @@ attacked model — RESULTS.md §4.
 | FaR | … | … | … | … | … |
 | Fine-Tuning | … | … | … | … | … |
 
+`defence_ft.json` holds both rows' inputs (`before` / `after` re-evaluated on
+the same test split, `attack_recorded` = the attack run's own numbers for
+cross-checking).
+
 ## Requirements / code needed
 
-- [ ] `model_state_attacked.pt` saved per run (pipeline/results).
-- [ ] Defence scripts (one per defence, e.g. `defence_far.py`,
-      `defence_finetune.py`) — each: load attacked model → defend → call the
-      existing `Evaluator` for ASR/CACC.
-- [ ] A clean fine-tune split definition (registry `splits` extension or a
-      defence-specific arg).
-- [ ] Fixed seeds + identical eval set between no-defence and defended runs.
+- [x] `model_state_attacked.pt` saved per run (pipeline/results,
+      `--save-attacked-model`).
+- [x] Fine-Tuning defence script — `defence_finetune.py` (load attacked
+      model → defend → existing `Evaluator` for ASR/CACC) + `run_defence_ft.sh`.
+- [ ] FaR defence script (`defence_far.py`) — *(TBD)*.
+- [x] Clean fine-tune data: CC3M (`--cc3m-root` / `--cc3m-max-samples`;
+      defence-specific, not an attack-registry dataset).
+- [x] Fixed seeds + identical eval set between no-defence and defended runs
+      (both evaluated in-script on the attack run's `test_idx`, same seed).
 
 ## Notes
 
 - Defence runs are **evaluations of saved models** — they should not re-run
   the attack; keeping the attacked checkpoints is what makes this cheap.
-- The defence task is orthogonal to `--task`: defences are evaluated on the
-  zs protocol first (ASR/CACC); extending to lp/i2t later follows TASKS.md.
+- The defence task is orthogonal to `--task`: `defence_finetune.py` follows
+  the run's own recorded task (`zs` = zero-shot readout, text embeddings
+  rebuilt after FT because the fine-tune may move the text encoder too;
+  `lp` = the saved shared probe head, fixed by protocol).
