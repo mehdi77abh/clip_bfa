@@ -41,13 +41,18 @@ Caveats (documented, intentional):
     clamp ±3, best-loss trigger) is the tuned regime and is NOT changed.
   * Phases 2A-5 are untouched and keep t_bar = text_emb[TARGET_CLS].
 
-Usage:
-  python p0_test.py --arm p1
-  python p0_test.py --arm p2 --neg-list tabby_v1
-  python p0_test.py --arm p2cen --competitor-m 16
-  python p0_test.py --arm p2swap
-  python p0_test.py --arm a0 --seed 42
-  python p0_test.py --arm p2 --dry-run          # config assembly only
+Usage (from the repo root or anywhere):
+  python related_papers/p0_test.py --arm p1
+  python related_papers/p0_test.py --arm p2 --neg-list tabby_v1
+  python related_papers/p0_test.py --arm p2cen --competitor-m 16
+  python related_papers/p0_test.py --arm p2swap
+  python related_papers/p0_test.py --arm a0 --seed 42
+  python related_papers/p0_test.py --arm p2 --dry-run   # config assembly only
+
+RESULTS: everything is written under
+  related_papers/p0_results/{section}/{model}/{dataset}/{run_leaf}_{arm_tag}/
+(bfa_results.json, trigger.pt, original_weights.pt, plots) with runs.csv /
+summary.csv at the top of p0_results — NOT under proposed_method/grid_results.
 
 Any `experiment.py` flag is passed through (e.g. --seed, --section, --out-dir,
 --max-flips).  Model and dataset are fixed to ViT-L/14 / ImageNet1k.
@@ -64,8 +69,11 @@ import torch.nn.functional as F
 from torchvision import datasets as tv_datasets
 from torchvision import transforms
 
-REPO_ROOT = os.path.dirname(os.path.abspath(__file__))
+REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+HERE = os.path.dirname(os.path.abspath(__file__))   # .../clip_bfa/related_papers
 MODULAR_DIR = os.path.join(REPO_ROOT, "proposed_method", "modular_new_pipeline")
+# Results land HERE/p0_results/... — never proposed_method/grid_results.
+P0_OUT_ROOT = os.path.join(HERE, "p0_results")
 sys.path.insert(0, MODULAR_DIR)
 
 import experiment                                   # noqa: E402
@@ -77,7 +85,7 @@ from data import DataModule                         # noqa: E402
 from target import PROMPT_TEMPLATES, TargetEmbedder  # noqa: E402
 from trigger import (TriggerGenerator, apply_trigger,  # noqa: E402
                       get_apply_params)
-from utils import cleanup_gpu                       # noqa: E402
+from utils import cleanup_gpu, model_tag       # noqa: E402
 
 MODEL_FIXED = "ViT-L/14"
 DATASET_FIXED = "ImageNet1k"
@@ -662,6 +670,15 @@ def main():
     tag = arm_tag(p0, cfg)
     cfg.RUN_ID += f"__{tag}"
     cfg.OUT_DIR = cfg.OUT_DIR + f"_{tag}"
+
+    # ── results go to related_papers/p0_results — never grid_results ──
+    if os.path.abspath(cfg.OUT_DIR).startswith(os.path.abspath(cfg.OUT_ROOT)):
+        rel = os.path.relpath(cfg.OUT_DIR, cfg.OUT_ROOT)
+    else:  # explicit --out-dir: keep only the run leaf
+        rel = os.path.join(cfg.SECTION, model_tag(cfg.MODEL_NAME),
+                           cfg.DATASET, os.path.basename(cfg.OUT_DIR))
+    cfg.OUT_ROOT = P0_OUT_ROOT
+    cfg.OUT_DIR = os.path.join(cfg.OUT_ROOT, rel)
 
     print("=" * 60)
     print(f"P0 TEST — arm {p0.arm}  ({tag})")
