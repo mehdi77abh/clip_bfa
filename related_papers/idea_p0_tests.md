@@ -36,6 +36,15 @@ Phase-1 recipe (init 0.1, Adam 0.02 cosine, 200 ep, grad clip, clamp ±3), so th
 
 ## 2. Arm P1 — P0 with pool 256
 
+> **RESULT (2026-11-21, ViT-L/14 × ImageNet1k, target "tabby cat", 4 Phase-1 seeds): ABORTED.**
+> Standalone trigger ASR 0.5 % on every attempt (floor 5 %), `cos_t` stalled at 0.17–0.19
+> (plain-`cos` triggers reach 0.28–0.33 in earlier studies), `margin_class` never left −0.08,
+> `margin_pseudo` ≈ 0 — the CNL+m objective with 16 pool centroids + margin 1.0 + TDA sampling is
+> over-constrained for a 16 px trigger on the 1000-way task: it reduces the softmax loss via the
+> margin term without ever separating the target direction. GMAS itself behaved as designed
+> (cos(ν(S), t̄) = 0.2308 at selection). Maintainer decision: give up on P1, run P2 (+ a0 control).
+> Watch in P2: the same dead-trigger signature (low `cos_t`, no margin progress) — fallbacks in §9.
+
 **Data flow (deviation from `idea_p0.md` §1 only in `N_POOL`):**
 
 ```

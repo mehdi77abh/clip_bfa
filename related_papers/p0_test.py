@@ -301,7 +301,8 @@ class P0DataModule(DataModule):
               + ("  (GMAS-selected)" if arm == "p1" else "  (random)"))
         print(f"  Pool / mining       : {len(STATE.pool_idx):>5d} / "
               f"{len(dcomp_idx):>5d}")
-        print(f"  Negatives (train)   : {len(STATE.neg_idx):>5d}")
+        print(f"  Negatives (val)     : {len(STATE.neg_idx):>5d}  "
+              f"(held out of all splits)")
         print(f"  Gradient            : {len(grad_idx):>5d}")
         print(f"  Evaluation          : {len(eval_idx):>5d}")
         print(f"  Test                : {len(test_idx):>5d}")
