@@ -10,7 +10,7 @@
 |---|---|
 | What is tested | (1) P0 method with **pool size 256**; (2) **no pool** — random carriers + **manually curated near-target negatives** (~100 images) as competitors |
 | Reason for arm 2 | pool selection + splitting into two distributions may hurt the threat model; the attacker "selecting images close to its target" is an extra capability |
-| Negative image source | same dataset (ImageNet classes of confusable concepts); **neighbour class lists drafted here** for approval |
+| Negative image source | same dataset (ImageNet classes of confusable concepts); **neighbour class lists drafted here** for approval. **2026-11-21: val split + exclusion** — the 100 negatives are sampled from val and held out of every split in every arm (no train split needed) |
 | Competitor form | **both** as an ablation: raw-embedding memory bank (default) + k-means centroids |
 | Shared components | TDA (B1) + margin (A2) present in **both** arms; the arms differ only in carrier selection and competitor source |
 | Baseline | existing plain-`cos` behaviour (arm A0) for reference |
@@ -64,7 +64,8 @@ which side moves.
 other_indices (shuffled, non-target)
  ├─ calib_idx = 64 random           # EXACTLY the current pipeline's rule — no pool, no selection
  ├─ grad_idx (16) | eval_idx (200) | test_idx (rest)
-N_neg = 100 images from curated neighbour classes (train split, seeded) → competitor bank
+N_neg = 100 images from curated neighbour classes (VAL split, seeded,
+       HELD OUT of grad/eval/test in every arm) → competitor bank
 ```
 
 **Competitor bank (default = memory bank):**
@@ -83,8 +84,8 @@ C = { normalize(e(x)) : x ∈ N_neg }           # M = 100 raw embeddings, no clu
    targeting of carriers, no victim-dataset screening beyond what the baseline already assumes.
 2. The competitor set needs **no victim data at all** in principle: knowing that *dog / wolf / lion*
    are confusable with *cat* is knowledge about the **target concept**, obtainable from the
-   attacker's own world knowledge; the images can be generic. (In this test they come from ImageNet
-   train classes for reproducibility — §4.4 sampling rule.)
+   attacker's own world knowledge; the images can be generic. (In this test they are sampled from
+   the val split of the listed classes and **held out of every evaluation split** — §4.4.)
 3. No pool splitting → no "two distributions" artifact, and the competitor set no longer encodes
    the deployment label distribution (removing the soft class-list side channel of mined centroids).
 4. **Mechanistic fit:** the softmax denominator's gradient mass concentrates on hard negatives, and
@@ -140,10 +141,16 @@ and margin move ≪ noise floor, the manual list is not a cherry-picking artefac
 
 ### 4.4 Image sampling rule (deterministic)
 
-- Source: **ImageNet train split** (`../data/imagenet/train`) of the listed classes — never the
-  val/eval/test images (no leakage into evaluation).
-- Per class: seeded shuffle (`SEED`-derived RNG), take the first `n_c` images (§4.1 counts).
-- Same 100 images for P2 and P2-cen (only the competitor *form* differs).
+**Maintainer decision 2026-11-21: VAL split + exclusion** (no train split required).
+
+- Source: the already-loaded **val split** of the listed classes.
+- The 100 negatives are sampled **first** (seeded shuffle, `SEED+7`, `n_c` per class, §4.1 counts)
+  and then **held out of every split** (grad / eval / test / scratch) in *every* arm — so there is
+  zero evaluation leakage and a0/P1/P2 all measure on identical grad/eval/test sets. (The only
+  nuance: P2-swap's list differs from P2's in 28 of the 100 held-out images → a28-image difference
+  in the ~47k test set, far below noise.)
+- Per class: seeded shuffle, take the first `n_c` images.
+- Same 100 images for P2, P2-cen and P2-txt (only the competitor *form* differs).
 
 ---
 
@@ -168,32 +175,36 @@ and margin move ≪ noise floor, the manual list is not a cherry-picking artefac
 ## 6. Run matrix (after implementation)
 
 ```bash
-# smoke, ViT-B/16, seed 42
-python experiment.py --model ViT-B/16 --dataset imagenet1k --task zs \
-  --target-cls <tabby> --seed 42 --section validation \
-  --p1-loss cnl --tda 1 --p1-margin 1.0 --calib-mode pool --n-pool 256        # P1
-python experiment.py ... --calib-mode random --neg-classes-file neg_tabby_v1.txt \
-  --neg-source train --competitors bank                                        # P2
-python experiment.py ... --competitors centroids --competitor-m 16            # P2-cen
-python experiment.py ... --neg-classes-file neg_tabby_swap.txt                # P2-swap
-# headline, ViT-L/14 × seeds 42/43/44 for P1 and P2 (winners only)
+# as implemented — single file related_papers/p0_test.py (ViT-L/14 × ImageNet1k);
+# results land under related_papers/p0_results/... (never grid_results)
+# smoke: --seed 42 first, then headline seeds 42/43/44 for P1 and P2
+python related_papers/p0_test.py --arm p1                                  # P1  (pool 256)
+python related_papers/p0_test.py --arm p2   --neg-list tabby_v1            # P2  (100-img bank)
+python related_papers/p0_test.py --arm p2cen --competitor-m 16             # P2-cen
+python related_papers/p0_test.py --arm p2swap                              # P2-swap
+python related_papers/p0_test.py --arm p2txt                               # P2-txt (optional)
+python related_papers/p0_test.py --arm a0   --seed 42                      # reference baseline
+# headline, seeds 42/43/44 for P1 and P2 (winners only)
 ```
 
-(A0 reference rows are read from existing runs where configs match — per repo convention,
-controlled references are never re-executed unnecessarily.)
+(A0 is re-run with this harness's shared split layout so every arm is internally comparable;
+old grid_results runs keep their historical splits.)
 
 ---
 
 ## 7. Implementation checklist (small diffs, per AGENTS.md conventions)
 
-| File | Change |
+**AS IMPLEMENTED (2026-11-21): one file, no repo code touched** —
+`related_papers/p0_test.py` wraps the untouched `modular_new_pipeline` and swaps exactly three
+classes at runtime (`pipeline.DataModule`, `pipeline.TargetEmbedder`, `pipeline.TriggerGenerator`):
+
+| Swap point | Implements |
 |---|---|
-| `data.py` | `--calib-mode {random,pool}` + `--n-pool`: pool reserves `P`, GMAS picks 64 (or random); expose `D_comp`; **new** negative-image loader (train split, class list file, seeded, counts file) |
-| `target.py` | expose template set `{t_k}` (`from_text_set`) — `from_text` unchanged |
-| `trigger.py` | `TriggerGenerator.generate`: CNL+m + TDA loss, competitor bank injection (memory bank or centroids), margin/temperature args; recipe/clamp/retry unchanged |
-| `experiment.py` | CLI: `--p1-loss {cos,cnl}`, `--tda {sample,marginalise,off}`, `--p1-margin`, `--calib-mode`, `--n-pool`, `--neg-classes-file`, `--neg-source`, `--competitors {bank,centroids}`, `--competitor-m` |
-| `new: neg_lists/neg_tabby_v1.txt`, `neg_tabby_swap.txt`, `neg_sportscar_v1.txt` | class-name + per-class count lists (§4) |
-| verification | `py_compile` + symbol greps per file; gradient-scale parity check of CNL+m vs `cos/T` at init (~5.0) before comparing runs |
+| `P0DataModule` | shared split layout (identical grad/eval/test per seed), GMAS pool selection (P1), the 100 val negatives sampled first and **held out of every split** (§4.4) |
+| `P0TargetEmbedder` | captures model/classes (needed by GMAS + competitor mining) — `from_text` unchanged |
+| `P0TriggerGenerator` | CNL+m + TDA loss, competitor bank (bank / centroids / text), margin/temperature/tda flags; recipe/clamp/retry unchanged; logs the gradient-scale parity check |
+| CLI | `--arm {a0,p1,p2,p2cen,p2swap,p2txt}`, `--neg-list`, `--target-name`, `--p1-margin`, `--p1-temperature`, `--tda`, `--n-pool`, `--competitor-m`, `--dry-run`; `experiment.py` flags pass through |
+| Results | `related_papers/p0_results/{section}/{model}/{dataset}/…` (+ `runs.csv`/`summary.csv`) — never `proposed_method/grid_results` |
 
 Phases 2A–5 untouched; `t̄ = text_emb[TARGET_CLS]` flows to Phases 2–4 exactly as today (no
 Phase-4 consistency hazard).

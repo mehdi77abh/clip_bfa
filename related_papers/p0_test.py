@@ -29,9 +29,10 @@ Arms (see idea_p0_tests.md §1):
 Split layout (shared by every arm — identical grad/eval/test for comparability):
   non-target (shuffled with SEED): grad(N_GRAD) | eval(N_EVAL) | scratch(256)
   | test(rest).  P1: scratch = pool → GMAS picks 64 carriers, rest = mining
-  set.  P2*: carriers = first 64 of scratch.  Negative images come from the
-  ImageNet TRAIN split (idea_p0_tests.md §4.4) — never from val, so there is
-  zero evaluation leakage and no exclusion bias in eval/test.
+  set.  P2*: carriers = first 64 of scratch.  The 100 negative images are
+  sampled from the VAL split FIRST and held out of every split (grad/eval/
+  test/scratch) in every arm — zero evaluation leakage, no train split
+  needed (idea_p0_tests.md §4.4, maintainer decision 2026-11-21).
 
 Caveats (documented, intentional):
   * GMAS selection runs at split time, i.e. on the PRE-quantisation fp32
@@ -66,8 +67,6 @@ import numpy as np
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torchvision import datasets as tv_datasets
-from torchvision import transforms
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 HERE = os.path.dirname(os.path.abspath(__file__))   # .../clip_bfa/related_papers
@@ -80,7 +79,6 @@ import experiment                                   # noqa: E402
 import main as main_mod                             # noqa: E402
 import pipeline as pipeline_mod                     # noqa: E402
 from adapters import encode_image, get_adapter      # noqa: E402
-from config import resolve_path                     # noqa: E402
 from data import DataModule                         # noqa: E402
 from target import PROMPT_TEMPLATES, TargetEmbedder  # noqa: E402
 from trigger import (TriggerGenerator, apply_trigger,  # noqa: E402
@@ -90,7 +88,6 @@ from utils import cleanup_gpu, model_tag       # noqa: E402
 MODEL_FIXED = "ViT-L/14"
 DATASET_FIXED = "ImageNet1k"
 DEFAULT_TRIG_SZ = 16        # run_all.sh trigger-size policy: 16 @ 224px
-NEG_IMAGE_SOURCE = "train"  # ImageNet train split (idea_p0_tests.md §4.4)
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -153,13 +150,11 @@ class _State:
     model = None            # captured at build_text_embeddings time
     classes = None          # prompt class names (classes.txt order)
     text_emb = None
-    preprocess = None
     val_ds = None
-    train_ds = None
     pool_idx = []
     calib_idx = []
     dcomp_idx = []
-    neg_idx = []
+    neg_idx = []            # 100 held-out negative images (val indices)
     parity_done = False
 
 
@@ -208,26 +203,16 @@ def _kmeans(X, M, iters=25, seed=0):
     return F.normalize(C, dim=-1)
 
 
-def _sample_neg_indices(cfg):
-    """Seeded per-class sampling of negative images from the TRAIN split."""
-    list_name = "tabby_swap" if cfg.P0_ARM == "p2swap" else cfg.NEG_LIST
+def _sample_neg_indices(cfg, labels):
+    """Seeded per-class sampling of the 100 negative images from VAL.
+
+    Every arm samples (and holds out) the same 100 images — the negative
+    arms use them as competitor sources, a0/p1 simply exclude them from
+    their splits, so grad/eval/test stay comparable across all arms.
+    """
+    list_name = cfg.P0_NEG_LIST
     entries = NEG_LISTS[list_name]
     names = STATE.classes
-
-    if STATE.train_ds is None:
-        entry = cfg.DATASET_CFG
-        root = resolve_path(entry["root"])
-        tf = transforms.Compose([lambda im: im.convert("RGB"),
-                                 STATE.preprocess])
-        print(f"  Loading ImageNet '{NEG_IMAGE_SOURCE}' split for negatives "
-              f"({root})")
-        STATE.train_ds = tv_datasets.ImageNet(
-            root=root, split=NEG_IMAGE_SOURCE, transform=tf)
-
-    samples = getattr(STATE.train_ds, "samples", None)
-    if samples is None:
-        samples = getattr(STATE.train_ds, "imgs", None)
-    train_labels = np.array([s[1] for s in samples])
 
     rng = np.random.RandomState(cfg.SEED + 7)
     neg_idx, report = [], []
@@ -237,17 +222,16 @@ def _sample_neg_indices(cfg):
                 f"Negative class {cls_name!r} not in classes.txt — "
                 f"fix NEG_LISTS[{list_name!r}]")
         lid = names.index(cls_name)
-        cand = np.where(train_labels == lid)[0]
+        cand = np.where(labels == lid)[0]
         if len(cand) < n:
             raise ValueError(
-                f"Class {cls_name!r}: only {len(cand)} '{NEG_IMAGE_SOURCE}' "
-                f"images, need {n}")
+                f"Class {cls_name!r}: only {len(cand)} val images, need {n}")
         pick = cand.copy()
         rng.shuffle(pick)
         neg_idx.extend(int(i) for i in pick[:n])
         report.append(f"{cls_name}({n})")
-    print(f"  Negatives [{list_name}]: {len(neg_idx)} images from "
-          f"{len(entries)} classes")
+    print(f"  Negatives [{list_name}]: {len(neg_idx)} val images from "
+          f"{len(entries)} classes — held out of all splits")
     print(f"    tiers: " + ", ".join(sorted({t for t, _, _ in entries})))
     return neg_idx
 
@@ -262,7 +246,6 @@ class P0DataModule(DataModule):
         ds, names = super().load_dataset(preprocess)
         STATE.val_ds = ds
         STATE.classes = list(names)
-        STATE.preprocess = preprocess
         return ds, names
 
     def prepare_data_splits(self, ds):
@@ -274,6 +257,14 @@ class P0DataModule(DataModule):
                           if lbl == cfg.TARGET_CLS]
         other_indices = [i for i, lbl in enumerate(labels)
                          if lbl != cfg.TARGET_CLS]
+
+        # ── P0: sample the 100 negatives from VAL first and hold them out
+        #    of EVERY split, in every arm (zero leakage; a0/p1 exclude the
+        #    same 100 so grad/eval/test stay identical across arms) ──
+        STATE.neg_idx = _sample_neg_indices(cfg, labels)
+        neg_set = set(STATE.neg_idx)
+        other_indices = [i for i in other_indices if i not in neg_set]
+
         rng.shuffle(target_indices)
         rng.shuffle(other_indices)
 
@@ -303,11 +294,6 @@ class P0DataModule(DataModule):
             STATE.pool_idx = []
         STATE.calib_idx = calib_idx
         STATE.dcomp_idx = dcomp_idx
-
-        if arm in ("p2", "p2cen", "p2swap", "p2txt"):
-            STATE.neg_idx = _sample_neg_indices(cfg)
-        else:
-            STATE.neg_idx = []
 
         print(f"  Target class images : {len(target_sel):>5d}")
         print(f"  Target holdout      : {len(target_holdout):>5d}")
@@ -418,10 +404,11 @@ class P0TriggerGenerator(TriggerGenerator):
                                               workers=cfg.WORKERS)
             src = f"pool mining set ({len(STATE.dcomp_idx)} imgs)"
         else:
-            imgs, _ = DataModule.load_tensors(STATE.train_ds, STATE.neg_idx,
+            imgs, _ = DataModule.load_tensors(STATE.val_ds, STATE.neg_idx,
                                               dev, batch_size=64,
                                               workers=cfg.WORKERS)
-            src = f"negatives ({len(STATE.neg_idx)} imgs)"
+            src = (f"negatives ({len(STATE.neg_idx)} val imgs, held out "
+                   f"of all splits)")
         E = _embed_images(model, imgs, mm)
         del imgs
         cleanup_gpu()
