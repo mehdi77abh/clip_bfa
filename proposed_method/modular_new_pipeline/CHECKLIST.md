@@ -1,14 +1,61 @@
 # CHECKLIST.md — Master checklist: what is done, what is left (CLIP-FLIP)
 
-Last verified against the tree: **2026-11-20**.
+Last verified against the tree: **2026-11-21**.
 Legend: `[x]` done · `[~]` code done, runs/results pending · `[ ]` not started ·
 `(deferred)` maintainer decision to postpone · `(blocked)` needs data/GPU first.
 
 Where the truth lives: `RESULTS.md` (result plan), `TASKS.md` (tasks),
 `ABLATION.md`, `DEFENSES.md`, `bfa_baselines/BASELINES.md` (comparison),
-`AGENTS.md` (code state).
+`AGENTS.md` (code state), `related_papers/idea_p0_tests.md` (trigger-loss study).
 
 ---
+
+## 0. ⚡ TOP PRIORITY — Phase-1 trigger loss change (maintainer decision 2026-11-21)
+
+**Do this first.** Replace the Phase-1 trigger-generation loss (plain `cos`)
+with **pure InfoNCE over the target text (positive) + attacker-curated
+confusable *text* negatives** — the R1 configuration that won the
+`related_papers/idea_p0_tests.md` campaign
+(`--arm p2txt --p1-margin 0 --tda off`).
+
+Evidence (idea_p0_tests.md §10 run log, ViT-L/14 × ImageNet1k, target
+"lion", 16 px): standalone trigger ASR **52.0 %** vs **45.6 %** (cos
+reference) and vs the 25–35 % win bar; the **only** run with
+`margin_class > 0` (the 1000-way argmax beaten on average); lower `cos_t`
+(0.243 vs ~0.35) yet higher ASR — InfoNCE optimises the decision margin, not
+raw cosine.  **Shelved and NOT to be reintroduced without isolated tests:**
+margin (A2), TDA (B1), GMAS (A6) — they failed in bundles (dead triggers,
+capped `cos_t`).  Recipe = **m=0, TDA off, random 64 carriers, no pool**.
+
+- [ ] Port the loss into `trigger.py` `TriggerGenerator.generate` (Phase 1):
+      `L = −log[ exp(cos(e,t̄)/T) / Σ_r exp(cos(e,t_r)/T) ]` over the target
+      text embedding `t̄` (positive) + curated confusable **text** embeddings
+      `t_r` (negatives) — m=0, TDA off, existing recipe (init 0.1, Adam 0.02
+      cosine, 200 ep, grad clip, clamp ±3) unchanged.  Reference
+      implementation to port from: `related_papers/p0_test.py`
+      (`P0TriggerGenerator`, CNL+m with `--p1-margin 0 --tda off`) +
+      `idea_p0.md` §3 formula.
+- [ ] Curated negative lists per target (`lion_v1`, `tabby_v1` in
+      `p0_test.py`; class tables in `idea_p0_tests.md` §4) — resolve names
+      from `class_texts/{dataset}/classes.txt` at runtime, never hardcode
+      indices; negatives must be **confusable-but-separable** (near-collinear
+      negatives — e.g. the 5 ImageNet cat rows — cap progress, §10 verdict 4).
+- [ ] CLI wiring: `--p1-loss {cos,infonce}` + `--p1-neg-list NAME`, temperature
+      T = 0.07 default (`--temperature`) in `experiment.py` / `build_config`;
+      `aggregate.py`'s `p1_loss` column labels the rows.
+- [ ] Sync the docs that state "plain cos is the current truth": AGENTS.md
+      binding-constraints + reference-sync note, RESULTS.md §1 fixed-protocol
+      line, CHECKLIST.md §3.1 row labels.
+- [ ] Validate in the **main pipeline** (not just the harness): `experiment.py`
+      ViT-L/14 × ImageNet1k, target **lion** (c291), new loss — compare
+      standalone trigger ASR / flips→95 / final ASR / CACC against the cos
+      reference (`grid_results/validation/…/zs_c291_s42_r1_full_t16`:
+      trigger ASR 45.6 %, 7 flips → 99.0 %, CACC 74.6 %).
+- [ ] Harness follow-ups (idea_p0_tests.md §10 "Next"): one finished R1 run
+      for the `bfa_results.json` artefacts (runs so far were interrupted
+      before saving); `a0 --target-name lion` like-for-like parity run;
+      3-seed R1 replication (42/43/44); `--neg-list` swap-list robustness
+      (idea_p0_tests.md §4.3).
 
 ## 1. Core pipeline & infrastructure
 

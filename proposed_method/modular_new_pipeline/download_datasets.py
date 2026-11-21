@@ -4,6 +4,92 @@
 download_datasets.py — standalone downloader for the grid datasets that
 run_all.sh / the registry use: Caltech-101, ImageNet-1k, Food-101 and CC3M.
 
+═══════════════════════════════════════════════════════════════════════
+USAGE GUIDE
+═══════════════════════════════════════════════════════════════════════
+
+0. INTERPRETER  (needs `requests` everywhere; `pyarrow` + `torch` for the
+   ImageNet / Food101 full downloads; `torchvision` only for the final
+   --verify-load check):
+
+       PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python
+
+1. ALWAYS TEST THE DOWNLOAD START FIRST (cheap — nothing big is fetched):
+
+       $PY download_datasets.py --dest ../data_test --start-only
+
+   Read the "PROBE RESULT" table: every line must be [OK]. A full JSON
+   report is saved to {dest}/_download_probe.json and partial files are
+   deleted automatically.  Only continue to step 3 when the probe is OK.
+
+2. CREDENTIALS  (only for the gated ILSVRC/imagenet-1k source):
+
+   - accept the ImageNet terms once in a browser:
+         https://huggingface.co/datasets/ILSVRC/imagenet-1k
+   - then either `huggingface-cli login`  or  `export HF_TOKEN=hf_xxx`
+     (the script also accepts --hf-token).
+
+   Caltech-101, ethz/food101 and pixparse/cc3m-wds download anonymously.
+
+3. FULL DOWNLOADS  (resumable — after any interruption just re-run the
+   same command; finished files are skipped, partials continue):
+
+   # everything (careful: CC3M train is ~280 GB without a cap!)
+   $PY download_datasets.py --dest ../data
+
+   # only what the current grid needs (Caltech + ImageNet val)
+   $PY download_datasets.py --dest ../data --datasets caltech,imagenet
+
+   # Food101 (registry split "test" comes from ethz/food101 'validation')
+   $PY download_datasets.py --dest ../data --datasets food101
+
+   # CC3M subset for the Fine-Tuning defence (BadCLIP's 100K-pair size):
+   # first 20 train shards (~10 GB, ≈100K image-text pairs) + 16 val shards
+   $PY download_datasets.py --dest ../data --datasets cc3m --cc3m-max-shards 20
+
+   # CC3M train split only (defence fine-tuning data), capped
+   $PY download_datasets.py --dest ../data --datasets cc3m \
+       --cc3m-splits train --cc3m-max-shards 20
+
+   # ImageNet train as well as val (the registry uses val only)
+   $PY download_datasets.py --dest ../data --datasets imagenet \
+       --imagenet-splits val,train
+
+4. USEFUL FLAGS:
+
+   --force                re-download / re-extract even if already present
+   --keep-parquet         keep the HF parquet transport shards after
+                          extraction (default: delete them)
+   --no-verify-load       skip the final torchvision load check
+   --imagenet-source repack    use the ungated benjamin-paine/imagenet-1k
+   --food101-source vgg        force the official ETH-VGG tarball
+   --caltech-source gdrive     force the Google-Drive pair (needs gdown)
+   --start-bytes N        bytes fetched per probed source in --start-only
+
+5. WHAT THE PIPELINE SEES AFTERWARDS (registry roots, all resolved against
+   proposed_method/ via config.resolve_path):
+
+   - caltech101  → ../data/            (torchvision 'caltech101' folder)
+   - imagenet1k  → ../data/imagenet    (split val; meta.bin included)
+   - food101     → ../data/food-101    (split test; meta/{train,test}.json)
+   - cc3m        → ../data/cc3m        (flat .tar shards; defence_finetune.py
+                                        auto-detects them)
+   Class counts are checked against class_texts/{dataset}/classes.txt
+   (data.py refuses mismatches; regenerate names with make_class_texts.py).
+
+6. TROUBLESHOOTING:
+
+   - HTTP 401 on ILSVRC/imagenet-1k ......... step 2 (gated repo).
+   - ReadTimeout / transient HF errors ...... just re-run; downloads resume.
+   - Caltech class count 103 / label shift .. stray empty folder inside
+     101_ObjectCategories; verify_caltech() removes empty ones automatically.
+   - Disk space: CC3M full train ≈ 280 GB; with --cc3m-max-shards 20 ≈ 11 GB;
+     ImageNet val ≈ 7 GB; Food101 ≈ 5 GB; Caltech-101 ≈ 0.7 GB.
+
+═══════════════════════════════════════════════════════════════════════
+WHAT GETS WRITTEN WHERE
+═══════════════════════════════════════════════════════════════════════
+
 Writes the exact on-disk layout that data.py / torchvision expect (vlm_attack
 env, torchvision 0.21), under a destination root that defaults to ``../data``
 and resolves through ``config.resolve_path`` — the same '../data' convention as
@@ -22,18 +108,14 @@ the config.json registry:
 
 TWO MODES:
 
-  --start-only    download-START test: fetches only the first bytes of every
-                  source into {dest}, verifies headers + magic bytes, then
-                  STOPS — partial files are deleted and a report is written to
-                  {dest}/_download_probe.json.  Nothing large is downloaded.
-                  TEST THIS FIRST, e.g.:
+  --start-only    download-START test (usage step 1): fetches only the first
+                  bytes of every source into {dest}, verifies headers + magic
+                  bytes, then STOPS — partial files are deleted and a report
+                  is written to {dest}/_download_probe.json.  Nothing large
+                  is downloaded.
 
-                      python download_datasets.py --dest ../data_test --start-only
-
-  (default)       full download: resume-capable, checksum / parquet-verified,
-                  then extract + organize + verify.  e.g.:
-
-                      python download_datasets.py --dest ../data
+  (default)       full download (usage step 3): resume-capable, checksum /
+                  parquet-verified, then extract + organize + verify.
 
 SOURCES (--datasets caltech,imagenet,food101,cc3m):
 
@@ -62,12 +144,11 @@ SOURCES (--datasets caltech,imagenet,food101,cc3m):
                 shards; e.g. 20 train shards ≈ 100K pairs ≈ 10 GB — the
                 Defence-FT subset size of the BadCLIP paper).
 
-Run with the project interpreter (needs `requests`; `pyarrow` + `torch` only for
-the ImageNet full mode; `torchvision` only for the final --verify-load check):
+QUICK START (full workflow in the USAGE GUIDE above):
 
     PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python
-    $PY download_datasets.py --dest ../data_test --start-only   # test first!
-    $PY download_datasets.py --dest ../data                     # real download
+    $PY download_datasets.py --dest ../data_test --start-only   # 1. test
+    $PY download_datasets.py --dest ../data                     # 2. download
 """
 
 import argparse

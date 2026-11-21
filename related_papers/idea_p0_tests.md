@@ -281,11 +281,49 @@ target "tabby cat", seed 42).  Result: **dead trigger** — standalone ASR 4.5 %
 4. Retry loop re-rolls only the init — useless against structural plateaus (use
    `--trigger-min-asr 1 --trigger-retries 0` while diagnosing).
 
-**Next (decisive):** (a) read the `[diag]` top-5 output → name the thief; (b) `a0` control on the
-same target/splits (`--trigger-min-asr 1 --trigger-retries 0`) to separate "target too hard" from
-"loss capped"; (c) let Phases 2–5 run on the weak trigger — the attack is trigger + flips and a
-4.5 % trigger is a starting point, not a verdict; (d) if the thief is consistent: auto-expand the
-negative set with the discovered competitors (data-driven hard negatives) and re-run.
+### 2026-11-21 (results) — 4-run comparison: **pure InfoNCE + text negatives WINS**
+
+> **DECISION (maintainer, 2026-11-21): R1 replaces the plain cosine Phase-1 loss.**
+> New trigger-generation method = **pure InfoNCE over the target text (positive) +
+> attacker-curated confusable text negatives** (`--arm p2txt --p1-margin 0 --tda off`
+> configuration: m=0, TDA off, random 64 carriers, no pool). Shelved: margin (A2),
+> TDA (B1), GMAS (A6) — failed in bundles, not to be reintroduced without isolated tests.
+
+All ViT-L/14, 16 px, ImageNet1k, seed 42. Standalone ASR on the 200-img eval set.
+
+| run | target | Phase-1 loss | standalone ASR | cos_t | margin_pseudo | **margin_class** | flips→95 | total | final ASR | CACC |
+|---|---|---|---|---|---|---|---|---|---|---|
+| stored ref (grid_results, old splits) | lion | `cos` | 45.6 | ~0.35 | – | – | 7 | 7 | 99.0 | 74.6 |
+| **R1 `p2txt m0 tda-off`** | **lion** | **InfoNCE, text negs** | **52.0** | 0.243 | +0.087 | **+0.003** | 11 | 12 | 98.5 | 74.5 |
+| R2 `a0` | tabby cat | `cos` | 19.5 | 0.247 | – | – | 23 | 26 | 99.5 | 75.0 |
+| R3 `p2txt m0.5 tda-sample` | lion | InfoNCE+margin+TDA | 1.5 | 0.176 | +0.053 | −0.070 | 41 | 44 | 99.5 | 75.0 |
+| (earlier) `p2txt m0 tda-off` | tabby cat | InfoNCE, text negs | 4.5 | 0.208 | +0.035 | −0.050 | – | – | – | – |
+
+**Verdict:**
+1. **R1 = WIN.** 52.0 % standalone beats the 25–35 % win bar AND the cos reference (45.6 %).
+   Class-list-free InfoNCE with attacker-curated confusable text negatives is strictly better
+   than the cos baseline on trigger quality.
+2. **Mechanistic prediction (idea_p0.md §8) confirmed:** R1 is the only run where
+   `margin_class > 0` — the 1000-way argmax is beaten on average. `cos_t` is LOWER than the
+   cos ref (0.243 vs 0.29–0.35) yet ASR is higher: InfoNCE optimises the decision margin, not
+   raw cosine. `[diag]` errors are diffuse (pomegranate, Keeshond…), not one stealing class.
+3. **margin + TDA confirmed harmful (R3):** P1's death signature repeated (cos_t capped 0.176,
+   margin_class −0.07, dead trigger 1.5 %, 44 flips to recover). **Recipe = pure InfoNCE,
+   m=0, TDA off.** (margin_ce helped over 101 soft competitors; it over-constrains the wedge
+   over 19 hard confusables.)
+4. **Target difficulty first-order (R2):** cos = 45.6 (lion) vs 19.5 (tabby). InfoNCE-on-tabby
+   (4.5) < cos-on-tabby (19.5): negatives near-collinear with the target (5 cat rows) cap
+   progress; separable confusables (lion vs leopard) help. **Negatives must be
+   confusable-but-separable.**
+
+**Caveats:** single seed each; stored ref uses old splits (run `a0 --target-name lion` in-harness
+for exact parity); flips→95 = 11 (R1) vs 7 (cos ref) — cos slightly more flip-efficient; all
+runs were interrupted during the 49k `full_evaluate` → `bfa_results.json` not written (it saves
+after evaluation) — let one run finish to capture artefacts.
+
+**Next:** (a) finish one R1 run for the JSON artefacts; (b) `a0 --target-name lion
+--neg-list lion_v1 --trigger-min-asr 1 --trigger-retries 0` for like-for-like parity; (c) 3-seed
+R1 replication; (d) optional: R1 with the swap list (`--neg-list` variants) for list-robustness.
 
 ### 2026-11-21 (later) — target mismatch identified, win bar set
 

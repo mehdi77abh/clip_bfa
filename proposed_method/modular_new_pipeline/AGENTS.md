@@ -52,6 +52,12 @@ gradient fallback.
   the attacked encoder's features) → aggregate with LP columns.  Guards:
   `build_config` fails fast on a missing head; `lp_evaluate` checks the
   head's `meta.class_names` label space against the run dataset.
+- **⚡ TOP PRIORITY (CHECKLIST.md §0, maintainer decision 2026-11-21):** Phase-1
+  trigger loss changes — plain `cos` → **pure InfoNCE over the target text +
+  attacker-curated confusable text negatives** (the winning R1 config of
+  `related_papers/idea_p0_tests.md`: `--arm p2txt --p1-margin 0 --tda off`;
+  margin/TDA/GMAS shelved).  Not yet ported into `trigger.py` — the current
+  code still runs plain `cos`.
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
   (random / simple-gradient, #4), FaR defence script (DEFENSES.md;
   the attacked-model saving half of #6 is done via `--save-attacked-model`),
