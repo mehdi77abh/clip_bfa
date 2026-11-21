@@ -17,10 +17,10 @@ non-native readout); see `BASELINES.md` §2.
 
 | Method | Code inspected | Paper |
 |---|---|---|
-| Flip-S | `bfa_baselines/Flip-S/target-clip/flip_s_clip_v2.py` (v2, OpenAI `clip`), `target-imagenet/deit-gen_trigger-int8.py`, `target-imagenet/deit-targeted-int8.py`, `utils/{quant_model,load_data,metrics}.py` | `Flip-S/Flip-S.pdf` (CVPR 2025) |
-| ProFlip | `bfa_baselines/ProFlip/<variant>/{trigger_adaptive,trigger_nonadaptive,CSB_adaptive,CSB_nonadaptive}.py`, `models/quantization.py`, `utils.py` | `ProFlip/README.md` + ICCV 2021 paper (fetched: Chen et al., *ProFlip: Targeted Trojan Attack with Progressive Bit Flips*) |
-| TrojViT | `bfa_baselines/TrojViT/main_patch_vit.py`, `utils.py`, `models/DeiT.py` | `TrojViT/TrojViT Trojan Insertion in Vision Transformers.pdf` (CVPR 2023) |
-| Adaptation already written | `bfa_baselines/proflip_cbs.py` (ProFlip CBS), `bfa_baselines/Flip-S/target-clip/flip_s_clip_v2.py` (Flip-S) | — |
+| Flip-S | `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/flip_s_clip_v2.py` (v2, OpenAI `clip`; self-contained `utils/`), upstream `baselines/Flip-S/target-imagenet/deit-gen_trigger-int8.py`, `deit-targeted-int8.py` | `baselines/Flip-S/Flip-S.pdf` (CVPR 2025) |
+| ProFlip | `proposed_method/modular_new_pipeline/bfa_baselines/ProFlip/<variant>/{trigger_adaptive,trigger_nonadaptive,CSB_adaptive,CSB_nonadaptive}.py`, `models/quantization.py`, `utils.py` | `ProFlip/README.md` + ICCV 2021 paper (fetched: Chen et al., *ProFlip: Targeted Trojan Attack with Progressive Bit Flips*) |
+| TrojViT | `proposed_method/modular_new_pipeline/bfa_baselines/TrojViT/main_patch_vit.py`, `utils.py`, `models/DeiT.py` | `TrojViT/TrojViT Trojan Insertion in Vision Transformers.pdf` (CVPR 2023) |
+| Adaptation already written | `proposed_method/modular_new_pipeline/bfa_baselines/proflip_cbs.py` (ProFlip CBS), `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/flip_s_clip_v2.py` (Flip-S) | — |
 
 ---
 
@@ -77,7 +77,9 @@ It attacks **encoder linears**, not the head. That is why it maps to CLIP.
 | Victim binding (`DeiTForImageClassificationWithTeacher`) | `CLIPVictim` wrapper: `model.deit.encoder` aliases `clip_model.visual.transformer`; `.logits`/`.attentions` provided | ✅ implemented (`DELTA 1`) |
 | Attack surface (q/k/v, out, fc1, fc2) | CLIP fuses q/k/v into `in_proj_weight`; one quantized `attn.qkv` module per block + `out_proj`, `mlp.c_fc`, `mlp.c_proj` → **48 modules** | ✅ (`DELTA 2`) |
 | Int8 quantization | bnb `int8_vectorwise_quant` (row-wise `CB`/`SCB`, threshold 6.0), with an explicit dequant forward so `replace_with_myLinear` still works | ✅ (`DELTA 5`) |
-| Stage A attention maps | OpenAI CLIP discards them; `QuantMHA` recomputes per-head scaled-dot-product attention; token offset **+1** | ✅ (`DELTA 4`) |
+| Stage A attention maps | OpenAI CLIP discards them; `QuantMHA` recomputes per-head scaled-dot-product attention; token offset **+1** (SigLIP returns maps natively, offset 0) | ✅ (`DELTA 4`) |
+| Patch geometry | `flip_s_clip/config.json` sets `patch_indices` per model / `<model>\|<dataset>`, with an auto bottom-right 3×3 fallback; trigger size/mask follow the victim patch size | ✅ (`DELTA 4b`) |
+| Datasets | ImageFolder per dataset (`Caltech101`, `DTD`, `ImageNet1k`); Caltech drops `BACKGROUND_Google` so labels match torchvision's 101-class Caltech101 | ✅ |
 | Stage A CE loss | ZS logits via the batch of text embeddings; same CE semantics | ✅ (ZS head) |
 | Stage B search loop | Unchanged (byte-identical): the loop only sees `.logits` and the quantized linear modules | ✅ |
 | Head | Probe (legacy) or **ZS text head** (`--head zeroshot`) with the same class list and 13 templates | ✅ (`DELTA 3`) |
@@ -110,11 +112,13 @@ It attacks **encoder linears**, not the head. That is why it maps to CLIP.
 
 ### 2.5 Verdict
 
-**Fully adaptable mechanically** — already implemented and run in ZS mode. Keep it as the
-primary external baseline. No method change is needed; every deviation is binding/plumbing
-(`flip_s_clip_v2.py` header, DELTA 1–7). The one protocol caveat is information
-asymmetry: Flip-S's Stage A/B CE uses the full class table, while the proposed method is
-target-only — see §5.5 for the two ways to handle that.
+**Fully adaptable mechanically for all OpenAI CLIP models** — implemented and run in ZS
+mode. Keep it as the primary external baseline. No method change is needed; every
+deviation is binding/plumbing (`flip_s_clip_v2.py` header, DELTA 1–7 + 4b). The one
+protocol caveat is information asymmetry: Flip-S's Stage A/B CE uses the full class table,
+while the proposed method is target-only — see §5.5. **SigLIP is not covered by this
+adapter** (`clip.load`/`QuantMHA` are OpenAI-specific); it needs a separate
+`transformers`-based `flip_s_siglip.py` (same method, different victim binding).
 
 ---
 
@@ -152,7 +156,7 @@ The extraction also has no ImageNet variant (only CIFAR-10/100, STL-10, Tiny-Ima
 | `I_t`, `c` in `L_trig` and `L_CBS` | There is no classifier row to define "significant neurons"; `I_t` can be defined on the 768-d CLS, but it is a new choice | ⚠️ not faithful |
 | Trigger geometry (replace, bottom-right, 73×73/10.62 %) | `apply_trigger` supports `replace` + `bottom_right` + size 73; maps directly | ✅ |
 | Trigger loss `MSE(...; c) + CE(..., t)` | `MSE` to a constant `c` needs SNI `c`; `CE` needs the full text-embedding table, which the project's BFA threat model excludes (Phase-1 CE was dropped). A target-cosine term is the consistent substitute | ⚠️ adapted |
-| CBS S1/S2/S3, fitness, `Q_p`, K=20, Hamming, `ASR_t`/`n_max` | Architecture-agnostic: works on any parameter slice; implemented in `bfa_baselines/proflip_cbs.py` | ✅ (selection rule only) |
+| CBS S1/S2/S3, fitness, `Q_p`, K=20, Hamming, `ASR_t`/`n_max` | Architecture-agnostic: works on any parameter slice; implemented in `proposed_method/modular_new_pipeline/bfa_baselines/proflip_cbs.py` | ✅ (selection rule only) |
 | Parameter-level search incl. **last dense weight / biases** | CLIP has no last dense classifier; the pipeline's attack surface is **block weights only** (`V` rows, `O` cols, `fc`, `proj`); biases/LN/`visual.proj` are not flippable | ❌ not faithful |
 | Evaluation ASR/CACC, bits to 94/95 | Maps; note ProFlip's 15 bits / 94.3 % is ResNet-18/ImageNet with TAP 10.62 %, target 2 | ✅ with trigger/area matching |
 
@@ -173,7 +177,7 @@ The extraction also has no ImageNet variant (only CIFAR-10/100, STL-10, Tiny-Ima
 
 ### 3.4 What was actually adapted
 
-`bfa_baselines/proflip_cbs.py` implements **CBS as a component baseline**:
+`proposed_method/modular_new_pipeline/bfa_baselines/proflip_cbs.py` implements **CBS as a component baseline**:
 
 - S1/S2/S3, `Q_p`, negative-gradient-only fitness, K=20 grid, monotone updates,
   atomic multi-bit element flips, Hamming bit counting, `ASR_t`/`n_max` stopping;
@@ -414,17 +418,18 @@ move to CLIP with binding-only changes. ProFlip survives as a **bit-search compo
 
 | File | What it does | Status |
 |---|---|---|
-| `bfa_baselines/Flip-S/target-clip/flip_s_clip_v2.py` | Full Flip-S on CLIP ZS; Stage A/B verbatim + DELTA 1–7 | done, run (2026-11-09) |
-| `bfa_baselines/proflip_cbs.py` | ProFlip CBS (S1/S2/S3) on the pipeline's component pool, shared trigger, CLIP objective | done |
-| `bfa_baselines/proflip_pipeline/` | 2-phase ProFlip-CBS project: Phase 0 → Phase 1 (proposed trigger) → CBS; no Phase 2/3; target-cosine; ASR_t=94 / n_max=100 | done |
-| `bfa_baselines/trojvit_trigger.py` | TrojViT Phase 1 only: salience/attention selection, attention-target loss + PCGrad, trigger-only ASR/CACC/TAR | done |
-| `bfa_baselines/run_all_baselines.sh` | Global baseline grid (ProFlip-CBS · TrojViT trigger · Flip-S) | done |
-| `bfa_baselines/aggregate_baselines.py` | Separate baseline `runs.csv` / `summary.csv` under `baseline_summary/` | done |
-| `bfa_baselines/parse_flip_s_log.py` | Parses Flip-S stdout into `flip_s_results.json` | done |
-| `bfa_baselines/baseline_runs/` | Per-run baseline artefacts (created by the grid) | output |
-| `bfa_baselines/baseline_summary/` | Baseline-only CSVs (created by the grid) | output |
-| `bfa_baselines/ProFlip/` | Released CNN CBS/trigger code (reference, no ImageNet variant) | read-only reference |
-| `bfa_baselines/TrojViT/` | Released DeiT/ViT/Swin trojan code | read-only reference |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/flip_s_clip_v2.py` | Full Flip-S on CLIP ZS for all OpenAI CLIP models; Stage A/B verbatim + DELTA 1–7/4b | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/config.json` | patch_indices per model and per model\|dataset; auto bottom-right 3×3 fallback | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/proflip_cbs.py` | ProFlip CBS (S1/S2/S3) on the pipeline's component pool, shared trigger, CLIP objective | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/proflip_pipeline/` | 2-phase ProFlip-CBS project: Phase 0 → Phase 1 (proposed trigger) → CBS; no Phase 2/3; target-cosine; ASR_t=94 / n_max=100 | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/trojvit_trigger.py` | TrojViT Phase 1 only: salience/attention selection, attention-target loss + PCGrad, trigger-only ASR/CACC/TAR; OpenAI CLIP + SigLIP | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/run_all_baselines.sh` | Global baseline grid (ProFlip-CBS · TrojViT trigger · Flip-S) | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/aggregate_baselines.py` | Separate baseline `runs.csv` / `summary.csv` under `baseline_summary/` | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/parse_flip_s_log.py` | Parses Flip-S stdout into `flip_s_results.json` | done |
+| `proposed_method/modular_new_pipeline/bfa_baselines/baseline_runs/` | Per-run baseline artefacts (created by the grid) | output |
+| `proposed_method/modular_new_pipeline/bfa_baselines/baseline_summary/` | Baseline-only CSVs (created by the grid) | output |
+| `proposed_method/modular_new_pipeline/bfa_baselines/ProFlip/` | Released CNN CBS/trigger code (reference, no ImageNet variant) | read-only reference |
+| `proposed_method/modular_new_pipeline/bfa_baselines/TrojViT/` | Released DeiT/ViT/Swin trojan code | read-only reference |
 
 ### TrojViT Phase 1 — implemented pieces
 

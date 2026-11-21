@@ -140,6 +140,21 @@ NEG_LISTS = {
         ("marine", "canoe", 8), ("marine", "catamaran", 8),
         ("marine", "trimaran", 9),
     ],
+    # T3 = "lion" (cls 291) — like-for-like vs the stored cos reference
+    # (grid_results/.../zs_c291_*: trigger ASR 45.6 %, 7 flips → 99 %).
+    # Win bar (maintainer 2026-11-21): standalone ASR 25-35 %.
+    "lion_v1": [
+        ("bigcat", "tiger", 8), ("bigcat", "leopard", 8),
+        ("bigcat", "jaguar", 8), ("bigcat", "snow leopard", 8),
+        ("cat", "cheetah", 6), ("cat", "cougar", 6),
+        ("cat", "lynx", 6), ("cat", "tabby cat", 6),
+        ("cat", "tiger cat", 6),
+        ("canid", "hyena", 4), ("canid", "African wild dog", 4),
+        ("canid", "grey wolf", 4), ("canid", "dhole", 4),
+        ("fox", "red fox", 4), ("fox", "kit fox", 4),
+        ("fox", "Arctic fox", 4), ("fox", "grey fox", 4),
+        ("misc", "Persian cat", 3), ("misc", "Egyptian Mau", 3),
+    ],
 }
 
 
@@ -374,9 +389,42 @@ class P0TriggerGenerator(TriggerGenerator):
     def generate(self, model, text_emb, t_target, calib_loader,
                  target_images, cfg):
         if cfg.P1_LOSS != "cnl":
-            return super().generate(model, text_emb, t_target, calib_loader,
+            trig = super().generate(model, text_emb, t_target, calib_loader,
                                     target_images, cfg)
-        return self._generate_cnl(model, text_emb, calib_loader, cfg)
+        else:
+            trig = self._generate_cnl(model, text_emb, calib_loader, cfg)
+        self._diag_top_classes(model, trig, calib_loader, text_emb, cfg)
+        return trig
+
+    def _diag_top_classes(self, model, trig, calib_loader, text_emb, cfg):
+        """Who wins the 1000-way argmax on poisoned images? (diagnostic)
+
+        Answers 'which class row steals the decision from the target' —
+        the key question when margin_pseudo > 0 but margin_class < 0.
+        """
+        from collections import Counter
+        dev, mm = cfg.DEVICE, cfg.MINI_BS
+        ap = get_apply_params(cfg, model)
+        text_all = text_emb.to(dev)
+        t_bar = F.normalize(text_emb[cfg.TARGET_CLS].to(dev), dim=0)
+        preds, cos_all = [], []
+        with torch.no_grad():
+            for imgs, _ in calib_loader:
+                imgs = imgs.to(dev)
+                poisoned = apply_trigger(imgs, trig, ap)
+                emb = F.normalize(encode_image(model, poisoned), dim=-1)
+                preds.append((emb @ text_all.T).argmax(dim=1))
+                cos_all.append(emb @ t_bar)
+        preds = torch.cat(preds).cpu().tolist()
+        n = len(preds)
+        cnt = Counter(preds)
+        print("  [diag] poisoned argmax over 1000 classes (calib imgs):")
+        for cls_idx, c in cnt.most_common(5):
+            mark = "   ← target" if cls_idx == cfg.TARGET_CLS else ""
+            print(f"    {STATE.classes[cls_idx]:<30s} {100.0 * c / n:5.1f}%{mark}")
+        hit = cnt.get(cfg.TARGET_CLS, 0)
+        print(f"    target share {100.0 * hit / n:.1f}%   "
+              f"mean cos_t = {torch.cat(cos_all).mean().item():+.4f}")
 
     # ── competitor bank ──────────────────────────────────────────────
     def _build_competitors(self, model, text_emb, cfg):

@@ -9,7 +9,9 @@
 #   ProFlip-CBS : Phase 0 → Phase-1 trigger (proposed method) → CBS
 #                 no Phase 2, target-cosine, paper values ASR_t=94 / n_max=100
 #   TrojViT     : Phase 1 trigger generation ONLY (no NGR / insertion)
-#   Flip-S      : full Flip-S ZS adapter (ImageNet-1k only; its own loader)
+#   Flip-S      : full Flip-S ZS adapter on OpenAI CLIP models × mapped
+#                 datasets (Caltech101 / ImageNet1k / DTD); SigLIP needs a
+#                 separate flip_s_siglip adapter (not implemented)
 #
 # Matrix follows the proposed run_all.sh: MODELS × DATASETS × SEEDS × REPS,
 # same target classes, n_eval and trigger-size policy.  Re-running skips
@@ -28,12 +30,18 @@ BFA_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLIP_BFA_DIR="$(realpath -m "$BFA_DIR/../../..")"
 cd "$BFA_DIR"
 
-PY="${PY:-python}"
+if [ -z "${PY:-}" ]; then
+    if [ -x "$HOME/miniconda3/envs/vlm_attack/bin/python" ]; then
+        PY="$HOME/miniconda3/envs/vlm_attack/bin/python"
+    else
+        PY="python"
+    fi
+fi
 RUNS_ROOT="${RUNS_ROOT:-$BFA_DIR/baseline_runs}"
 SUMMARY_ROOT="${SUMMARY_ROOT:-$BFA_DIR/baseline_summary}"
 
-MODELS="${MODELS:-ViT-B/16 ViT-L/14 SigLIP-B/16}"
-DATASETS="${DATASETS:-Caltech101 ImageNet1k}"
+MODELS="${MODELS:-ViT-B/16 ViT-L/14 ViT-L/14-336px}"
+DATASETS="${DATASETS:-Caltech101 ImageNet1k DTD}"
 SEEDS="${SEEDS:-42}"
 REPS="${REPS:-1}"
 RESUME="${RESUME:-1}"
@@ -68,22 +76,67 @@ TROJVIT_MODE="${TROJVIT_MODE:-replace}"
 TROJVIT_INIT="${TROJVIT_INIT:-random}"
 TROJVIT_FIXED_MASKS="${TROJVIT_FIXED_MASKS:-0}"
 
-# Flip-S (its loader is ImageNet-1k; trigger is 9×16×16 = 4.59 %)
+# Flip-S (full ZS adapter).  Dataset roots/class lists are mapped per dataset;
+# Caltech101 drops BACKGROUND_Google to match the proposed method's 101-class
+# torchvision Caltech101 label space.
 FLIP_S_SEED="${FLIP_S_SEED:-0}"
-FLIP_S_VALDIR="${FLIP_S_VALDIR:-$CLIP_BFA_DIR/data/imagenet/val}"
-FLIP_S_CLASSNAMES="${FLIP_S_CLASSNAMES:-$BFA_DIR/../class_texts/imagenet1k/classes.txt}"
-FLIP_S_DIR="$BFA_DIR/Flip-S/target-clip"
+FLIP_S_VALDIR_IMAGENET="${FLIP_S_VALDIR_IMAGENET:-${FLIP_S_VALDIR:-$CLIP_BFA_DIR/data/imagenet/val}}"
+FLIP_S_VALDIR_CALTECH="${FLIP_S_VALDIR_CALTECH:-$CLIP_BFA_DIR/data/caltech-101/caltech-101/101_ObjectCategories}"
+FLIP_S_VALDIR_DTD="${FLIP_S_VALDIR_DTD:-$CLIP_BFA_DIR/data/dtd/images}"
+FLIP_S_CLASSNAMES_IMAGENET="${FLIP_S_CLASSNAMES_IMAGENET:-$CLIP_BFA_DIR/proposed_method/modular_new_pipeline/class_texts/imagenet1k/classes.txt}"
+FLIP_S_CLASSNAMES_CALTECH="${FLIP_S_CLASSNAMES_CALTECH:-$CLIP_BFA_DIR/proposed_method/modular_new_pipeline/class_texts/caltech101/classes.txt}"
+FLIP_S_CLASSNAMES_DTD="${FLIP_S_CLASSNAMES_DTD:-$CLIP_BFA_DIR/proposed_method/modular_new_pipeline/class_texts/dtd/classes.txt}"
+FLIP_S_DIR="$BFA_DIR/flip_s_clip"
+
+flip_s_valdir_for() {
+    case "$1" in
+        ImageNet1k|ImageNet1kTrain) echo "$FLIP_S_VALDIR_IMAGENET" ;;
+        Caltech101)                 echo "$FLIP_S_VALDIR_CALTECH" ;;
+        DTD)                        echo "$FLIP_S_VALDIR_DTD" ;;
+        *)                          echo "" ;;
+    esac
+}
+flip_s_classnames_for() {
+    case "$1" in
+        ImageNet1k|ImageNet1kTrain) echo "$FLIP_S_CLASSNAMES_IMAGENET" ;;
+        Caltech101)                 echo "$FLIP_S_CLASSNAMES_CALTECH" ;;
+        DTD)                        echo "$FLIP_S_CLASSNAMES_DTD" ;;
+        *)                          echo "" ;;
+    esac
+}
+flip_s_exclude_for() {
+    case "$1" in
+        Caltech101) echo "BACKGROUND_Google" ;;
+        *)          echo "" ;;
+    esac
+}
+flip_s_patch_for() {
+    case "$1" in
+        ViT-B/32)                  echo 32 ;;
+        ViT-L/14|ViT-L/14-336px)   echo 14 ;;
+        SigLIP-so400m/14)          echo 14 ;;
+        *)                         echo 16 ;;
+    esac
+}
+flip_s_img_for() {
+    case "$1" in
+        ViT-L/14-336px|SigLIP-so400m/14) echo 336 ;;
+        *)                               echo 224 ;;
+    esac
+}
 
 # Target classes (same mapping as the proposed run_all.sh)
 TARGET_CLS_IMAGENET="${TARGET_CLS_IMAGENET:-291}"
 TARGET_CLS_CALTECH="${TARGET_CLS_CALTECH:-97}"
 TARGET_CLS_CIFAR10="${TARGET_CLS_CIFAR10:-3}"
+TARGET_CLS_DTD="${TARGET_CLS_DTD:-3}"
 TARGET_CLS="${TARGET_CLS:-3}"
 target_cls_for() {
     case "$1" in
         ImageNet1k|ImageNet1kTrain) echo "$TARGET_CLS_IMAGENET" ;;
         Caltech101)                 echo "$TARGET_CLS_CALTECH" ;;
         CIFAR10|CIFAR100)           echo "$TARGET_CLS_CIFAR10" ;;
+        DTD)                        echo "$TARGET_CLS_DTD" ;;
         *)                          echo "$TARGET_CLS" ;;
     esac
 }
@@ -91,12 +144,14 @@ target_cls_for() {
 N_EVAL_IMAGENET="${N_EVAL_IMAGENET:-1000}"
 N_EVAL_CALTECH="${N_EVAL_CALTECH:-1000}"
 N_EVAL_CIFAR10="${N_EVAL_CIFAR10:-1000}"
+N_EVAL_DTD="${N_EVAL_DTD:-1000}"
 N_EVAL_DEFAULT="${N_EVAL_DEFAULT:-200}"
 n_eval_for() {
     case "$1" in
         ImageNet1k|ImageNet1kTrain) echo "$N_EVAL_IMAGENET" ;;
         Caltech101)                 echo "$N_EVAL_CALTECH" ;;
         CIFAR10|CIFAR100)           echo "$N_EVAL_CIFAR10" ;;
+        DTD)                        echo "$N_EVAL_DTD" ;;
         *)                          echo "$N_EVAL_DEFAULT" ;;
     esac
 }
@@ -118,6 +173,7 @@ trojvit_patch_for() {
     case "$1" in
         ViT-B/32)             echo 32 ;;
         ViT-L/14|ViT-L/14-336px) echo 14 ;;
+        SigLIP-so400m/14)     echo 14 ;;
         *)                    echo 16 ;;
     esac
 }
@@ -127,6 +183,12 @@ GRID_LOG="$SUMMARY_ROOT/logs/grid_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$GRID_LOG") 2>&1
 echo "baseline grid start $(date '+%F %T')  PY=$PY"
 echo "  MODELS=[$MODELS] DATASETS=[$DATASETS] SEEDS=[$SEEDS] REPS=$REPS"
+[ -d "$CLIP_BFA_DIR/data/imagenet/val" ] || \
+    echo "[warn] missing ImageNet val: $CLIP_BFA_DIR/data/imagenet/val"
+[ -d "$FLIP_S_VALDIR_CALTECH" ] || \
+    echo "[warn] missing Caltech101: $FLIP_S_VALDIR_CALTECH"
+[ -d "$FLIP_S_VALDIR_DTD" ] || \
+    echo "[warn] missing DTD: $FLIP_S_VALDIR_DTD"
 echo "  RUN_PROFLIP=$RUN_PROFLIP RUN_TROJVIT=$RUN_TROJVIT RUN_FLIP_S=$RUN_FLIP_S"
 
 # ── ProFlip-CBS ────────────────────────────────────────────────────────
@@ -159,7 +221,6 @@ run_proflip_one() {
 # ── TrojViT Phase 1 ────────────────────────────────────────────────────
 skip_trojvit_combo() {
     local model="$1" dataset="$2"
-    case "$model" in SigLIP*) return 0 ;; esac
     case "$dataset" in CIFAR10|CIFAR100) return 0 ;; esac
     return 1
 }
@@ -200,46 +261,58 @@ run_trojvit_one() {
         2>&1 | tee "$dir/run.log" || echo "[warn] trojvit failed: $dir"
 }
 
-# ── Flip-S (full ZS adapter; ImageNet-1k only) ──────────────────────────
+# ── Flip-S (full ZS adapter; OpenAI CLIP models × mapped datasets) ──────
 run_flip_s_one() {
     local model="$1" dataset="$2"
-    if [ "$dataset" != "ImageNet1k" ]; then
-        echo "[skip] flip-s       $model $dataset (Flip-S loader is ImageNet-1k)"
-        return 0
-    fi
     if ! is_openai_clip "$model"; then
-        echo "[skip] flip-s       $model (adapter is OpenAI CLIP only)"
+        echo "[skip] flip-s       $model (OpenAI clip.load adapter; SigLIP needs flip_s_siglip)"
         return 0
     fi
-    if [ "$model" != "ViT-B/16" ]; then
-        echo "[skip] flip-s       $model (adapter is validated for ViT-B/16:"
-        echo "                     its 9×16×16 patch indices assume a 14×14 grid)"
+    local valdir classnames exclude ps img area
+    valdir="$(flip_s_valdir_for "$dataset")"
+    classnames="$(flip_s_classnames_for "$dataset")"
+    exclude="$(flip_s_exclude_for "$dataset")"
+    if [ -z "$valdir" ]; then
+        echo "[skip] flip-s       $model $dataset (no Flip-S valdir mapping)"
         return 0
     fi
-    if [ ! -d "$FLIP_S_VALDIR" ]; then
-        echo "[skip] flip-s       $model $dataset (missing --valdir dir: $FLIP_S_VALDIR)"
+    if [ ! -d "$valdir" ]; then
+        echo "[skip] flip-s       $model $dataset (missing valdir: $valdir)"
         return 0
     fi
+    if [ ! -f "$classnames" ]; then
+        echo "[skip] flip-s       $model $dataset (missing classnames: $classnames)"
+        return 0
+    fi
+    ps="$(flip_s_patch_for "$model")"
+    img="$(flip_s_img_for "$model")"
+    area="$(awk "BEGIN{printf \"%.2f\", 9*$ps*$ps/($img*$img)*100}")"
+
     local tag="${model//\//}"
     local tc leaf dir
     tc="$(target_cls_for "$dataset")"
-    leaf="zs_c${tc}_s${FLIP_S_SEED}_r1_flip_s_t9x16"
+    leaf="zs_c${tc}_s${FLIP_S_SEED}_r1_flip_s_t9x${ps}"
     dir="$RUNS_ROOT/baselines/$tag/$dataset/$leaf"
     if [ "$RESUME" = "1" ] && [ -f "$dir/flip_s_results.json" ]; then
         echo "[skip] flip-s       $model $dataset c$tc"
         return 0
     fi
     mkdir -p "$dir"
-    echo "[run ] flip-s       $model $dataset c$tc seed=$FLIP_S_SEED"
+    echo "[run ] flip-s       $model $dataset c$tc seed=$FLIP_S_SEED patch=$ps area=${area}%"
+    local excl_arg=""
+    [ -n "$exclude" ] && excl_arg="--exclude-classes $exclude"
     ( cd "$FLIP_S_DIR" && "$PY" flip_s_clip_v2.py \
         --head zeroshot --target-class "$tc" --stage all \
-        --valdir "$FLIP_S_VALDIR" --classnames "$FLIP_S_CLASSNAMES" ) \
+        --model "$model" --dataset-name "$dataset" \
+        --patch-config "$FLIP_S_DIR/config.json" \
+        --valdir "$valdir" --classnames "$classnames" $excl_arg ) \
         2>&1 | tee "$dir/run.log" || echo "[warn] flip-s failed: $dir"
     if [ -f "$dir/run.log" ]; then
         "$PY" "$BFA_DIR/parse_flip_s_log.py" \
             --log "$dir/run.log" --out "$dir/flip_s_results.json" \
             --model "$model" --dataset "$dataset" --target-cls "$tc" \
             --seed "$FLIP_S_SEED" --rep 1 \
+            --trigger-size "9x${ps}" --trigger-area "$area" \
             || echo "[warn] flip-s log parse failed: $dir"
     fi
 }
@@ -264,7 +337,7 @@ if [ "$RUN_TROJVIT" = "1" ]; then
     for model in $MODELS; do
         for dataset in $DATASETS; do
             if skip_trojvit_combo "$model" "$dataset"; then
-                echo "[skip-config] trojvit $model × $dataset (SigLIP / CIFAR unsupported)"
+                echo "[skip-config] trojvit $model × $dataset (CIFAR 16px grid < 9 patches)"
                 continue
             fi
             for seed in $SEEDS; do
@@ -278,7 +351,7 @@ fi
 
 # ═══ Flip-S grid ═══
 if [ "$RUN_FLIP_S" = "1" ]; then
-    echo "════════ Flip-S: $MODELS × $DATASETS (ImageNet-1k only) ════════"
+    echo "════════ Flip-S: $MODELS × $DATASETS (OpenAI CLIP only) ════════"
     for model in $MODELS; do
         for dataset in $DATASETS; do
             run_flip_s_one "$model" "$dataset"

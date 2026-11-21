@@ -21,6 +21,7 @@ class my_ImageDataset(datasets.DatasetFolder):
         is_valid_file: Optional[Callable[[str], bool]] = None,
         processor: Optional[Callable] = None,
         use_ir = False,
+        exclude_classes: Optional[Tuple[str, ...]] = None,
     ):
         super().__init__(
             root,
@@ -31,10 +32,29 @@ class my_ImageDataset(datasets.DatasetFolder):
             is_valid_file=is_valid_file,
         )
         self.processor = processor
-        
+
         self.use_ir = use_ir
         self.normalize = transforms.Normalize(mean=self.processor.image_mean,std=self.processor.image_std)
-        
+
+        # Caltech101's raw 101_ObjectCategories folder contains the extra
+        # BACKGROUND_Google class, while torchvision's Caltech101 (used by the
+        # proposed method) exposes 101 categories.  Drop it and re-map labels
+        # so the baseline sees exactly the same label space/order.
+        if exclude_classes:
+            drop = set(exclude_classes)
+            keep = [c for c in self.classes if c not in drop]
+            if len(keep) != len(self.classes):
+                remap = {c: i for i, c in enumerate(keep)}
+                kept_samples = []
+                for path, target in self.samples:
+                    name = self.classes[target]
+                    if name in remap:
+                        kept_samples.append((path, remap[name]))
+                self.classes = keep
+                self.class_to_idx = remap
+                self.samples = kept_samples
+                self.targets = [t for _, t in kept_samples]
+
     def __getitem__(self, index: int):
         path, target = self.samples[index]
         sample = self.loader(path)
@@ -47,8 +67,9 @@ class my_ImageDataset(datasets.DatasetFolder):
 
         return sample, target
 
-def load_split_ImageNet1k_valid(valdir, aux_num=512, seed=0, processor=None, batch_size=64, shuffle=False, num_workers=1, pin_memory=False,split_ratio=0.,use_ir=False,use_defalut_valid_batchsize=False):
-    val_dataset = my_ImageDataset(valdir, processor=processor, use_ir=use_ir)
+def load_split_ImageNet1k_valid(valdir, aux_num=512, seed=0, processor=None, batch_size=64, shuffle=False, num_workers=1, pin_memory=False,split_ratio=0.,use_ir=False,use_defalut_valid_batchsize=False,exclude_classes=None):
+    val_dataset = my_ImageDataset(valdir, processor=processor, use_ir=use_ir,
+                                  exclude_classes=exclude_classes)
     total = len(val_dataset)
     val_dataset, aux_dataset = random_split(
         dataset=val_dataset,

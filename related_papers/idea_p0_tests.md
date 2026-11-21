@@ -175,9 +175,13 @@ and margin move ≪ noise floor, the manual list is not a cherry-picking artefac
 | Noise floor | decide on the test column; ±3–4 pts on 200-image eval is not signal; 1-flip differences are not signal |
 
 **Success gates:**
-1. P2 ≥ P1 on final ASR **and** flips→95 (threat-model claim validated *and* performance win).
-2. P2's Phase-1 ends with `diag-margin_classes > 0` (the boundary no `cos`-family arm crossed).
-3. P2-swap within noise of P2 (list robustness).
+1. **Win bar (maintainer 2026-11-21): standalone trigger ASR 25–35 %** on target "lion" (cls 291),
+   like-for-like against the stored cos reference (`grid_results/.../zs_c291_s42_r1_full_t16`:
+   trigger ASR 45.6 %, cos_t ≈ 0.35 train / 0.29 test, 7 flips → 99.0 % ASR, CACC 74.6 %).
+   The class-list-free InfoNCE variant may sit below plain cos and still win.
+2. P2 ≥ P1 on final ASR **and** flips→95 (threat-model claim validated *and* performance win).
+3. P2's Phase-1 ends with `diag-margin_classes > 0` (the boundary no `cos`-family arm crossed).
+4. P2-swap within noise of P2 (list robustness).
 
 ---
 
@@ -245,3 +249,48 @@ Phase-4 consistency hazard).
 - **Interpretation guard:** if P2 ≈ P1 ≈ A0, the conclusion is that competitor geometry is
   second-order on ImageNet and the paper leans on TDA+margin instead — all three outcomes are
   reportable.
+
+---
+
+## 10. Run log
+
+### 2026-11-21 — P1 aborted (see §2), P2-txt = **pure InfoNCE, text negatives** (m=0, TDA off)
+
+Command: `python p0_test.py --arm p2txt --p1-margin 0 --tda off` (ViT-L/14 × ImageNet1k,
+target "tabby cat", seed 42).  Result: **dead trigger** — standalone ASR 4.5 % / 1.5 % (below the
+5 % floor → retries re-roll init only → same plateau every attempt → manual abort on attempt 3).
+
+| diagnostic | value | reading |
+|---|---|---|
+| `margin_pseudo` (vs 30 neg texts) | −0.034 → **+0.035** | ✅ first positive competitor margin of the campaign — InfoNCE + text negatives works inside the curated set |
+| `cos_t` | 0.133 → 0.208 | progress, but capped (unconstrained `cos` reaches 0.28–0.33) |
+| `margin_class` (vs all 999 others) | −0.14 → **−0.050** | ❌ the argmax winner is a class **outside** the curated 30 |
+| `[parity]` grad scale | cos/T 14.29 vs CNL 7.81 | InfoNCE gradient ≈ half strength |
+| `‖trig‖` | ≈ 51.7 (clamp cap ≈ 83) | large budget already spent |
+
+**Analysis (root causes, ranked):**
+1. **Negative-set coverage gap (primary, provable):** `margin_pseudo > 0` ∧ `margin_class < 0`
+   ⇒ the class stealing the 1000-way argmax is not among the 30 curated confusables. The thief is
+   currently unnamed — `[diag]` top-5 argmax print added to `p0_test.py` (runs after every Phase-1
+   attempt) to identify it.
+2. **Near-collinear negatives cap progress:** the 5 ImageNet cat rows sit within a few degrees in
+   text space; separating "tabby cat" from "tiger cat/Persian/Siamese/Mau" is a tiny angular wedge
+   → lower achievable `cos_t` and halved gradient scale.
+3. **Target difficulty:** historical 38–45 % standalone triggers targeted "lion" (cls 291);
+   "tabby cat" has the most crowded class neighbourhood in ImageNet (5 cat rows).
+4. Retry loop re-rolls only the init — useless against structural plateaus (use
+   `--trigger-min-asr 1 --trigger-retries 0` while diagnosing).
+
+**Next (decisive):** (a) read the `[diag]` top-5 output → name the thief; (b) `a0` control on the
+same target/splits (`--trigger-min-asr 1 --trigger-retries 0`) to separate "target too hard" from
+"loss capped"; (c) let Phases 2–5 run on the weak trigger — the attack is trigger + flips and a
+4.5 % trigger is a starting point, not a verdict; (d) if the thief is consistent: auto-expand the
+negative set with the discovered competitors (data-driven hard negatives) and re-run.
+
+### 2026-11-21 (later) — target mismatch identified, win bar set
+
+The stored cos reference is target **"lion" (cls 291)**, while all P0 runs used "tabby cat" (cls
+281) — the hardest neighbourhood in ImageNet. The 4.5 % conflates target difficulty with loss
+quality. Like-for-like requires running the new idea on **lion**; `lion_v1` negative list added
+(100 imgs / 19 classes: big cats, cat rows, canids, foxes). Win bar: standalone ASR **25–35 %**
+(vs cos 45.6 % on the same target/model/trigger).

@@ -1,0 +1,46 @@
+# =============================================================================
+# requirements-vastai.txt — runtime deps of the CLIP-FLIP proposed method
+# =============================================================================
+# Mirrors the `vlm_attack` conda env (Python 3.10) as of 2026-11-21.
+#
+# NOT listed here on purpose:
+#   * torch / torchvision  -> installed by setup_vastai.sh from the CUDA wheel
+#     index that matches the *server's* driver (cu118/cu121/cu124/cu126/cu128).
+#     Those wheels also bring triton + the nvidia-* runtime libs.
+#   * torchtext 0.18       -> leftover in the dev env; it pins torch==2.3 and
+#     is incompatible with torch 2.6. Nothing in this project imports it.
+#   * bitsandbytes / accelerate / open_clip_torch / lpips / timm -> optional,
+#     see requirements-vastai-optional.txt.
+#
+# Only top-level packages are pinned; pip resolves their transitive deps so a
+# fresh server is not broken by a transitive pin that no longer exists.
+# =============================================================================
+
+# --- scientific / imaging ---------------------------------------------------
+numpy==2.2.5
+scipy==1.15.3
+pandas==2.3.3
+pillow==12.2.0
+matplotlib==3.10.9
+seaborn==0.13.2
+scikit-learn==1.7.2
+pyarrow==24.0.0
+
+# --- CLI / download helpers -------------------------------------------------
+gdown==6.1.0
+requests==2.34.2
+tqdm==4.67.3
+
+# --- OpenAI CLIP (installed from git by setup_vastai.sh) --------------------
+ftfy==6.3.1
+regex==2026.5.9
+
+# --- Hugging Face stack (SigLIP adapter, CC3M downloader) -------------------
+transformers==5.9.0
+tokenizers==0.22.2
+huggingface_hub==1.16.1
+safetensors==0.7.0
+sentencepiece==0.2.3
+protobuf==7.36.2
+datasets==5.0.0
+pyyaml==6.0.3

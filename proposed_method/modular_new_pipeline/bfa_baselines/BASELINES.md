@@ -8,8 +8,8 @@ plus the code that actually implements it. This file is the reference for
 > Companion docs (do not duplicate them):
 > `proposed_method/modular_new_pipeline/RESULTS.md` §2 (comparison plan),
 > `TASKS.md` §2 (LP protocol), `AGENTS.md` (pipeline/output layout),
-> `bfa_baselines/Flip-S/AGENTS.md` (Flip-S repo notes),
-> `bfa_baselines/CLIP_ADAPTATION_ANALYSIS.md` (which part of each baseline can/cannot
+> `baselines/Flip-S/AGENTS.md` (Flip-S repo notes),
+> `proposed_method/modular_new_pipeline/bfa_baselines/CLIP_ADAPTATION_ANALYSIS.md` (which part of each baseline can/cannot
 > be ported to CLIP — Flip-S / ProFlip / TrojViT).
 
 ---
@@ -18,15 +18,15 @@ plus the code that actually implements it. This file is the reference for
 
 | Group | Method | Source of the method | Status |
 |---|---|---|---|
-| External attack | **Flip-S** (CVPR 2025) | `bfa_baselines/Flip-S/` — upstream repo + a CLIP adapter | **Implemented and run in the zero-shot task** (`target-clip/flip_s_clip_v2.py`) |
-| External attack | **TrojViT** (CVPR 2023) | `bfa_baselines/TrojViT/` — upstream repo | **Not ported to CLIP** (DeiT-only code, no adapter, never run) |
+| External attack | **Flip-S** (CVPR 2025) | `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/` — self-contained CLIP adapter (+ copied `utils/`); upstream reference under `baselines/Flip-S/` | **Implemented and run in the zero-shot task** (`flip_s_clip/flip_s_clip_v2.py`) |
+| External attack | **TrojViT** (CVPR 2023) | `proposed_method/modular_new_pipeline/bfa_baselines/TrojViT/` — upstream repo | **Not ported to CLIP** (DeiT-only code, no adapter, never run) |
 | Internal attack | **Random bit-flip** | to be written in the proposed-method codebase | **Pending** — no `baselines.py`, no `--baseline` flag |
 | Internal attack | **Simple gradient ranking** | `\|g·Δw\|` only, no layer score `R_l`, no hybrid weighting | **Pending** — closest existing code is the *fallback* ranker (not the same thing, see §6) |
 | Ablation reference | **`--variant full`** | the proposed method itself | Done (used as the reference row of the ablation study, *not* a comparison baseline) |
 
-Two other bit-flip repos sit in `bfa_baselines/`: `ProFlip/` (CIFAR/STL/Tiny
+Two other bit-flip repos sit in `proposed_method/modular_new_pipeline/bfa_baselines/`: `ProFlip/` (CIFAR/STL/Tiny
 ResNet-32/VGG-16 extraction, ICCV 2021 — **its CBS stage is now adapted to CLIP in
-`bfa_baselines/proflip_cbs.py`**, see §5.1) and `TBT-CVPR2020-master/` (ResNet-18/CIFAR,
+`proposed_method/modular_new_pipeline/bfa_baselines/proflip_cbs.py`**, see §5.1) and `TBT-CVPR2020-master/` (ResNet-18/CIFAR,
 not ported). `proposed_method/AGENTS.md` also mentions
 T-BFA / BadCLIP / TBT as repos kept "for comparison, out of scope"; BadCLIP lives in
 `baselines/BadCLIP-DualEmbedding/` and is only used as a **class-name/eval-list source**,
@@ -133,18 +133,27 @@ Fairness rules from the docs:
 
 ### 4.1 Files
 
+Upstream reference paths are under
+`baselines/Flip-S/`; the moved,
+self-contained CLIP adapter is in the baseline tree at
+`proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/`.
+
 | Path | Role |
 |---|---|
-| `bfa_baselines/Flip-S/target-imagenet/deit-gen_trigger-int8.py` | original Stage A (trigger generation), DeiT-base int8 — **source of truth** |
-| `bfa_baselines/Flip-S/target-imagenet/deit-targeted-int8.py` | original Stage B (bit-flip search) — **source of truth** |
-| `bfa_baselines/Flip-S/utils/quant_model.py` | `find_all_bnbLinear`, `replace_with_myLinear`, `my_8bit_linear` (attack surfaces) |
-| `bfa_baselines/Flip-S/utils/load_data.py` | `my_ImageDataset`, `load_split_ImageNet1k_valid` |
-| `bfa_baselines/Flip-S/utils/metrics.py` | `imagenet_acc`, `imagenet_asr` (top-5 is always 0 — do not report it) |
-| `bfa_baselines/Flip-S/target-clip/flip_s_clip.py` | v1 adapter (HF `transformers` CLIP) — superseded |
-| `bfa_baselines/Flip-S/target-clip/flip_s_clip_v2.py` | **v2 adapter — the one that was run** (OpenAI `clip` package) |
+| `baselines/Flip-S/target-imagenet/deit-gen_trigger-int8.py` | original Stage A (trigger generation), DeiT-base int8 — **source of truth** |
+| `baselines/Flip-S/target-imagenet/deit-targeted-int8.py` | original Stage B (bit-flip search) — **source of truth** |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/utils/quant_model.py` | `find_all_bnbLinear`, `replace_with_myLinear`, `my_8bit_linear` (attack surfaces; self-contained copy) |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/utils/load_data.py` | `my_ImageDataset`, `load_split_ImageNet1k_valid` |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/utils/metrics.py` | `imagenet_acc`, `imagenet_asr` (top-5 is always 0 — do not report it) |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/flip_s_clip.py` | v1 adapter (HF `transformers` CLIP) — superseded |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/flip_s_clip_v2.py` | **v2 adapter** (OpenAI `clip` package; ViT-B/16, ViT-L/14, ViT-L/14-336px, ViT-B/32) |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/config.json` | patch geometry / `patch_indices` per model and `<model>\|<dataset>` override; auto bottom-right 3×3 fallback |
+| `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/utils/load_data.py` | `my_ImageDataset(..., exclude_classes=…)` — Caltech101 drops `BACKGROUND_Google` to match torchvision's 101-class label space |
 
-`baselines/Flip-S/target-clip/*` is a byte-identical git-tracked copy of the same two
-adapters (`diff -rq` clean); `bfa_baselines/` is the working copy.
+The git-tracked `baselines/Flip-S/target-clip/` still contains the pre-move adapters as
+the upstream reference; the working copy is `proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip/`. Flip-S is
+implemented for **all OpenAI CLIP models**; SigLIP needs a separate `transformers`
+adapter (not implemented yet).
 
 ### 4.2 The idea: keep the method, swap the victim binding
 
@@ -183,10 +192,11 @@ Consequences:
 
 | # | Delta | Why |
 |---|---|---|
-| 1 | **Victim binding**: `clip.load('ViT-B/16')` in fp16 replaces HF DeiT; `model.deit.encoder` aliases `model.visual.transformer`; `.logits`/`.attentions` mimic `DeiTForImageClassificationWithTeacher` | run the method on the thesis victim |
+| 1 | **Victim binding**: OpenAI `clip.load` (ViT-B/16, ViT-L/14, ViT-L/14-336px, ViT-B/32) replaces HF DeiT; `model.deit.encoder` aliases `model.visual.transformer`; `.logits`/`.attentions` mimic `DeiTForImageClassificationWithTeacher` | run the method on the thesis victim |
 | 2 | **Attack surface**: CLIP fuses q/k/v into one `in_proj_weight`; it is wrapped as **one quantized module per block** (`attn.qkv`) so q/k/v scale-factors and weights are all attackable. Per block: `attn.qkv` (2304 rows), `attn.out_proj` (768), `mlp.c_fc` (3072), `mlp.c_proj` (768) → **48 attackable modules** over 12 blocks | match the paper's ViT surface |
 | 3 | **Logit head**: linear probe on frozen features (legacy) **or** zero-shot text head (`--head zeroshot`, primary). Probe readout is L2-normalised; the shared head must be the one from `linear_probe.py` | head must not bias the attack; ZS readout is the comparison |
 | 4 | **Attention maps**: OpenAI CLIP blocks discard attention weights, so `QuantMHA` recomputes the identical scaled-dot-product attention `(B, heads, S, S)`; token offset is **+1** (CLIP has 1 special token; DeiT-distilled has 2) | Stage A's attention-rollout loss needs per-head maps |
+| 4b | **Patch geometry**: the 9-patch block, token indices, trigger pixel size and mask all follow the victim patch size / image size (`flip_s_clip/config.json`, auto bottom-right 3×3 fallback); OpenAI models only | make Flip-S runnable on every OpenAI CLIP model |
 | 5 | **Quantized forward**: explicit dequant `x @ CB * SCB/127` instead of the bnb int8 kernel (the stock kernel consumes `weight.CB` on forward, which breaks `replace_with_myLinear`; verified bnb 0.49.2) | keep the method's replacement step working |
 | 6 | **Harness**: torchvision `ProcessorShim` for `utils/load_data`, trigger filename sanitisation, `makedirs`, CLI stages | plumbing |
 | 7 | **Eval harness**: `lp_eval_full` scores the comparison metrics on the **full** val split (the verbatim `small_val_loader` metrics are kept untouched); `--stage probe` warns that it fits a *scaffolding* probe, not the shared head | table comparability |
@@ -308,7 +318,7 @@ identical to `utils/metrics.imagenet_asr`:
 Documented primary comparison run (`flip_s_clip_v2.py` header, agreed 2026-11-09):
 
 ```bash
-cd bfa_baselines/Flip-S/target-clip
+cd proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip
 python flip_s_clip_v2.py --head zeroshot --target-class 3 --stage all
 ```
 
@@ -363,7 +373,7 @@ stdout:  CE loss / atten loss / atten mean per 5 iterations
   `imagenet/{train,val,valid->val}`. Flip-S defaults resolve to
   `<Flip-S>/data/Imagenet/{valid,train}` (capital `I`), so on Linux either pass
   `--valdir /path/to/imagenet/val` explicitly or create
-  `bfa_baselines/Flip-S/data/Imagenet -> ../../../data/imagenet`.
+  `baselines/Flip-S/data/Imagenet -> ../../../data/imagenet`.
 - Flip-S reports **final** CACC/ASR at its fixed budget (50 flips), plus a
   before-attack row. It does **not** evaluate per flip, so it cannot natively fill
   `ASR@10`, `ASR@20`, or `Flips→95%`; those columns are only produced by the proposed
@@ -408,7 +418,7 @@ they matter for reproducing the exact numbers:
 `../baselines/`; evaluated under the same LP protocol — their training code is out of
 scope here, only the evaluation protocol must match"). What actually exists:
 
-- `bfa_baselines/TrojViT/` is the upstream CVPR-2023 repo: `main_patch_vit.py`,
+- `proposed_method/modular_new_pipeline/bfa_baselines/TrojViT/` is the upstream CVPR-2023 repo: `main_patch_vit.py`,
   `models/`, `adversarialbox/`, DeiT/ViT/Swin training code, ImageNet val evaluation.
   It inserts a patch trigger by **training** the model (trojan insertion), which is a
   different threat model from post-deployment bit flips;
@@ -423,7 +433,7 @@ attack.
 ### 5.1 ProFlip — CBS adapted to CLIP (`proflip_cbs.py`)
 
 **Status: implemented (bit-search component baseline), not a full ProFlip port.** New file:
-`bfa_baselines/proflip_cbs.py` — `ProFlipCBSSearcher` with
+`proposed_method/modular_new_pipeline/bfa_baselines/proflip_cbs.py` — `ProFlipCBSSearcher` with
 `search(...)` (pipeline-compatible) and `critical_bit_search(...)` (the CBS loop). It is
 attached at runtime (`ProFlipCBSSearcher.attach(pipe)` / `run_proflip(cfg)`); **no
 proposed-method source file is edited.**
@@ -483,7 +493,7 @@ DeiT-small 94.6 %, Swin-base 88.7 %, Swin-small 80.5 %).
 ### 5.2 TrojViT — Phase 1 (trigger only), implemented
 
 **Status: trigger generation only; no NGR / no parameter distillation.** File:
-`bfa_baselines/trojvit_trigger.py`. This is the deepest faithful CLIP version: Phase 2
+`proposed_method/modular_new_pipeline/bfa_baselines/trojvit_trigger.py`. This is the deepest faithful CLIP version: Phase 2
 attacks a classifier-head row that CLIP zero-shot does not have (§4 of
 `CLIP_ADAPTATION_ANALYSIS.md`).
 
@@ -502,18 +512,20 @@ python trojvit_trigger.py --model ViT-B/16 --dataset Caltech101 \
 ```
 
 It is a **training-free trigger baseline** (no weight modification), not a TrojViT
-end-to-end row; report it in a "trigger-only" table, not next to flips. OpenAI CLIP
-backends only (SigLIP's attention module is different and is rejected).
+end-to-end row; report it in a "trigger-only" table, not next to flips. Supported
+backends: **OpenAI CLIP and SigLIP** (SigLIP uses `vision_model(output_attentions=True)`,
+no CLS token, offset 0; `_attn_implementation="eager"`). CIFAR is skipped because the
+16 px grid is only 2×2 (< 9 patches).
 
 ### 5.3 Baseline grid and summaries
 
-`bfa_baselines/run_all_baselines.sh` runs the model × dataset × seed matrix for
+`proposed_method/modular_new_pipeline/bfa_baselines/run_all_baselines.sh` runs the model × dataset × seed matrix for
 **Flip-S**, **ProFlip-CBS** and **TrojViT trigger**, then
 `aggregate_baselines.py` writes **separate** baseline CSVs:
 
 ```
-bfa_baselines/baseline_runs/       # per-run artefacts
-bfa_baselines/baseline_summary/
+proposed_method/modular_new_pipeline/bfa_baselines/baseline_runs/       # per-run artefacts
+proposed_method/modular_new_pipeline/bfa_baselines/baseline_summary/
   runs.csv                         # one row per baseline run
   summary.csv                      # mean ± std per (method, model, dataset, …)
 ```
@@ -650,7 +662,7 @@ lp_probes/
 
 ```bash
 # Flip-S, primary ZS comparison (unchanged method, CLIP victim, native text head)
-cd bfa_baselines/Flip-S/target-clip
+cd proposed_method/modular_new_pipeline/bfa_baselines/flip_s_clip
 python flip_s_clip_v2.py --head zeroshot --target-class 3 --stage all
 
 # same, with an explicit dataset location (when the default ../data/Imagenet/valid

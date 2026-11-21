@@ -57,7 +57,10 @@ SOURCES (--datasets caltech,imagenet,food101,cc3m):
                 (md5 85eeb15f3717b99a5da872d97d918f87).
   CC3M        : HuggingFace 'pixparse/cc3m-wds' — public WebDataset shards
                 (576 train + 16 validation tars, ~280 GB total for train!),
-                fetched into {dest}/cc3m/.  --cc3m-splits picks the split(s).
+                fetched into {dest}/cc3m/.  --cc3m-splits picks the split(s)
+                and --cc3m-max-shards N caps the fetch per split (first N
+                shards; e.g. 20 train shards ≈ 100K pairs ≈ 10 GB — the
+                Defence-FT subset size of the BadCLIP paper).
 
 Run with the project interpreter (needs `requests`; `pyarrow` + `torch` only for
 the ImageNet full mode; `torchvision` only for the final --verify-load check):
@@ -766,8 +769,10 @@ def cc3m_shard_list():
     return out
 
 
-def cc3m_get(root, splits=CC3M_SPLITS, force=False):
-    """Download WebDataset tar shards into {root}/cc3m/ (flat)."""
+def cc3m_get(root, splits=CC3M_SPLITS, force=False, max_shards=0):
+    """Download WebDataset tar shards into {root}/cc3m/ (flat).
+    `max_shards` > 0 caps the shards fetched per split (first N, in order —
+    a deterministic subset; e.g. 20 train shards ≈ 100K image-text pairs)."""
     cc_root = os.path.join(root, "cc3m")
     os.makedirs(cc_root, exist_ok=True)
     shards = cc3m_shard_list()
@@ -778,6 +783,10 @@ def cc3m_get(root, splits=CC3M_SPLITS, force=False):
             raise RuntimeError(f"cc3m: unknown split {split!r} "
                                f"(have {sorted(shards)})")
         todo = shards[split]
+        if max_shards > 0:
+            todo = todo[:max_shards]
+            print(f"  CC3M[{split}]: capped at {len(todo)} of "
+                  f"{len(shards[split])} shards (--cc3m-max-shards)")
         n_have = sum(1 for name, _ in todo
                      if os.path.isfile(os.path.join(cc_root, name)))
         print(f"  CC3M[{split}]: {len(todo)} shards "
@@ -855,6 +864,10 @@ def main(argv=None):
     ap.add_argument("--cc3m-splits", default=",".join(CC3M_SPLITS),
                     help="comma list of CC3M splits (default: train,validation "
                          "— train is ~280 GB!)")
+    ap.add_argument("--cc3m-max-shards", type=int, default=0,
+                    help="cap CC3M shards fetched PER SPLIT to the first N "
+                         "(0 = all; e.g. 20 train shards ≈ 100K pairs ≈ 10 GB "
+                         "— the BadCLIP Defence-FT subset size)")
     ap.add_argument("--start-only", action="store_true",
                     help="ONLY test that downloads start correctly (first "
                          "bytes + magic), then stop and clean up")
@@ -1015,7 +1028,8 @@ def main(argv=None):
         food101_get(dest, source=args.food101_source, force=args.force)
     if "cc3m" in dsets:
         print(f"\nCC3M ({CC3M_REPO}):")
-        cc3m_get(dest, cc_splits, force=args.force)
+        cc3m_get(dest, cc_splits, force=args.force,
+                 max_shards=args.cc3m_max_shards)
     if not args.no_verify_load:
         print("\nVerification (torchvision):")
         try:

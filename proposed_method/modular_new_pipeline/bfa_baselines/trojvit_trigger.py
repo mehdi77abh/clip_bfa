@@ -27,9 +27,10 @@ No NGR, no head-row selection, no weight insertion.
 Attention maps: OpenAI CLIP's `nn.MultiheadAttention` discards per-head
 weights, so the vision blocks are replaced by `CaptureMHA`, which recomputes
 the identical scaled-dot-product attention and exposes `(B, heads, S, S)`.
-CLIP has one special token (offset +1). This script supports the OpenAI CLIP
-backend (`ViT-B/16`, `ViT-L/14`, `ViT-L/14-336px`); SigLIP uses a different
-attention module and is rejected with a clear error.
+CLIP has one special token (offset +1). This script supports both the
+OpenAI CLIP backend (`ViT-B/16`, `ViT-L/14`, `ViT-L/14-336px`, `ViT-B/32`) and
+SigLIP (`SigLIP-B/16`, `SigLIP-so400m/14`). SigLIP has no CLS token (offset 0)
+and exposes per-head maps natively through `vision_model(output_attentions=True)`.
 
 Usage
 -----
@@ -110,15 +111,18 @@ class CaptureMHA(nn.Module):
         return out, (self.last_attn if self.capture else None)
 
 
-def install_attention_capture(model):
-    """Replace CLIP vision attention with CaptureMHA; return the blocks."""
+def install_attention_capture(model, backend="openai_clip"):
+    """OpenAI CLIP: replace MHA with CaptureMHA; SigLIP: no replacement (the
+    vision tower returns attentions natively via output_attentions=True)."""
     ad = get_adapter(model)
     blocks = list(ad.get_vision_transformer_blocks(model))
+    if backend == "siglip":
+        return blocks
     if not hasattr(blocks[0], "attn"):
         raise NotImplementedError(
-            "trojvit_trigger.py: this backend does not expose CLIP-style "
-            "`blk.attn` modules (SigLIP uses self_attn); TrojViT Phase 1 "
-            "currently supports the OpenAI CLIP backend only.")
+            "trojvit_trigger.py: unsupported attention backend "
+            f"{backend!r}; expected OpenAI CLIP `blk.attn` or SigLIP "
+            "`blk.self_attn`.")
     for blk in blocks:
         if not isinstance(blk.attn, CaptureMHA):
             blk.attn = CaptureMHA(blk.attn)
@@ -128,7 +132,14 @@ def install_attention_capture(model):
 # ══════════════════════════════════════════════════════════════════════
 #  FORWARD / LOSSES
 # ══════════════════════════════════════════════════════════════════════
-def forward_capture(model, blocks, imgs, capture=True):
+def forward_capture(model, blocks, imgs, capture=True, backend="openai_clip"):
+    if backend == "siglip":
+        out = model.vision_model(pixel_values=imgs,
+                                 output_attentions=bool(capture))
+        feats = out.pooler_output
+        attns = out.attentions if capture else None
+        return feats, attns
+
     if capture:
         for blk in blocks:
             blk.attn.capture = True
@@ -190,7 +201,8 @@ def _patch_grid(h, w, patch_size):
 
 def select_patches(model, blocks, imgs, text_emb, target_vec, target_cls,
                    loss_mode, temperature, patch_select, num_patch,
-                   patch_size, atten_layer, n_prefix=1):
+                   patch_size, atten_layer, n_prefix=1,
+                   backend="openai_clip"):
     """Return (B, num_patch) patch indices for each image."""
     b, _, h, w = imgs.shape
     gh, gw = _patch_grid(h, w, patch_size)
@@ -200,7 +212,8 @@ def select_patches(model, blocks, imgs, text_emb, target_vec, target_cls,
 
     if patch_select == "attn":
         with torch.no_grad():
-            _, attns = forward_capture(model, blocks, imgs, capture=True)
+            _, attns = forward_capture(model, blocks, imgs, capture=True,
+                                       backend=backend)
         layer = min(max(0, atten_layer), len(attns) - 1)
         a = attns[layer].mean(dim=1)               # (B, S, S)
         recv = a.mean(dim=-2)[:, n_prefix:]        # (B, n_patches)
@@ -376,11 +389,11 @@ def main(argv=None):
           f"  loss={cli.trojvit_loss}  mode={cli.trojvit_mode}"
           f"  iters={cli.trojvit_iters}")
 
-    if cfg.MODEL_ADAPTER != "openai_clip":
+    backend = cfg.MODEL_ADAPTER
+    if backend not in ("openai_clip", "siglip"):
         raise NotImplementedError(
-            "trojvit_trigger.py: TrojViT Phase 1 currently supports the "
-            "OpenAI CLIP backend (ViT-B/16, ViT-L/14, ViT-L/14-336px); "
-            f"got adapter {cfg.MODEL_ADAPTER!r}.")
+            f"trojvit_trigger.py: unsupported adapter {backend!r}")
+    print(f"  backend: {backend}")
 
     set_seed(cfg.SEED)
     os.makedirs(cfg.OUT_DIR, exist_ok=True)
@@ -399,9 +412,21 @@ def main(argv=None):
               f"victim patch is {model_patch}; using {model_patch} so the "
               f"patch indices align with the attention tokens.")
     patch_size = model_patch
-    blocks = install_attention_capture(model)
-    print(f"  attention capture installed on {len(blocks)} blocks; "
-          f"trigger patch = {patch_size}px (victim patch)")
+    if backend == "siglip":
+        # The eager attention path returns per-head maps; sdpa may not.
+        for obj in (model, getattr(model, "vision_model", None)):
+            if obj is not None:
+                try:
+                    obj.config._attn_implementation = "eager"
+                except Exception:
+                    pass
+        n_prefix = 0                         # SigLIP has no CLS token
+    else:
+        n_prefix = 1                         # OpenAI CLIP CLS token
+    blocks = install_attention_capture(model, backend)
+    print(f"  attention capture: {backend} on {len(blocks)} blocks; "
+          f"trigger patch = {patch_size}px (victim patch); "
+          f"n_prefix={n_prefix}")
 
     ds, classes = DataModule(cfg).load_dataset(preprocess)
     text_emb = TargetEmbedder(cfg).build_text_embeddings(model, classes, dev)
@@ -448,7 +473,7 @@ def main(argv=None):
             model, blocks, xb, text_emb, target_vec, target_cls,
             cli.trojvit_loss, cli.trojvit_temperature,
             cli.trojvit_patch_select, num_patch, patch_size,
-            cli.trojvit_atten_layer)
+            cli.trojvit_atten_layer, n_prefix=n_prefix, backend=backend)
         patch_idx_batches.append(idx)
         mask_batches.append(build_masks(idx, xb.size(0), h, w,
                                         patch_size, xb.device))
@@ -475,11 +500,12 @@ def main(argv=None):
         with torch.enable_grad():
             x_hat = apply_masked(xb, delta, mask, cli.trojvit_mode, lo, hi)
             feats, attns = forward_capture(model, blocks, x_hat,
-                                           capture=(atten_w > 0))
+                                           capture=(atten_w > 0),
+                                           backend=backend)
             lt = target_loss_vector(feats, text_emb, target_vec, target_cls,
                                     cli.trojvit_loss,
                                     cli.trojvit_temperature)
-            la = (attention_loss_vector(attns, idx)
+            la = (attention_loss_vector(attns, idx, n_prefix=n_prefix)
                   if atten_w > 0 else None)
 
             if la is None:
@@ -533,7 +559,7 @@ def main(argv=None):
                 model, blocks, xb, text_emb, target_vec, target_cls,
                 cli.trojvit_loss, cli.trojvit_temperature,
                 cli.trojvit_patch_select, num_patch, patch_size,
-                cli.trojvit_atten_layer))
+                cli.trojvit_atten_layer, n_prefix=n_prefix, backend=backend))
         eval_idx_all = torch.cat(eval_list, dim=0)
         print("  eval masks: PER-IMAGE selection (paper behaviour)")
 

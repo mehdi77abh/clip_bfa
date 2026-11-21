@@ -210,9 +210,10 @@ modular_new_pipeline/
   download_datasets.py # standalone Caltech-101 + ImageNet-1k (ILSVRC/imagenet-1k,
                        #   gated → HF token) + Food101 (ethz/food101 HF parquet,
                        #   → VGG fallback) + CC3M (pixparse/cc3m-wds, ~280 GB
-                       #   train) downloader into ../data (registry layout);
-                       #   --start-only = download probe only
-                       #   (tested OK 2026-11-19/20 on ../data_test)
+                       #   train; subset via --cc3m-max-shards N ≈ 100K pairs
+                       #   for N=20 — BadCLIP Defence-FT size) downloader into
+                       #   ../data (registry layout); --start-only = download
+                       #   probe only (tested OK 2026-11-19/20 on ../data_test)
   aggregate.py         # runs.csv + runs_{model}.csv (per model) + summary.csv
                        #   (mean ± std per config) from bfa_results.json — 2-decimal
                        #   cells, asr_base → trigger_asr column, LP columns
