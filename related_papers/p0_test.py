@@ -51,7 +51,8 @@ Usage (from the repo root or anywhere):
   python related_papers/p0_test.py --arm p2 --neg-list tabby_v1
   python related_papers/p0_test.py --arm a0 --seed 42
 
-  # ViT-B/16 × Caltech101 (defaults: target 'motorbike', neg-list motorbike_v1)
+  # ViT-B/16 × Caltech101 (defaults: target 'motorbike', neg-list motorbike_v2
+  # — the separable variant; --neg-cos-max 0.9 filters near-collinear negatives)
   python related_papers/p0_test.py --arm p2txt --model ViT-B/16 --dataset Caltech101 \
       --p1-margin 0 --tda off
   python related_papers/p0_test.py --arm a0 --model ViT-B/16 --dataset Caltech101
@@ -267,6 +268,30 @@ def _kmeans(X, M, iters=25, seed=0):
             if bool(mask.any()):
                 C[m] = X[mask].mean(dim=0)
     return F.normalize(C, dim=-1)
+
+
+def _filter_separable(names, comps, t_bar, tau):
+    """Negative-geometry print + separability filter (2026-11-22 finding).
+
+    InfoNCE negatives must be confusable-but-SEPARABLE: a negative whose
+    text vector is nearly collinear with t̄ (e.g. "motorcycle" vs
+    "motorbike") makes "push away from n" fight "push toward t̄" — the
+    objective fights itself and cos_t caps out.  Drop every negative with
+    cos(t̄, n_r) > tau and report the geometry (item 3 of the fix plan).
+    """
+    cos_n = comps @ t_bar
+    keep = (cos_n <= tau).tolist()
+    print(f"  Negative geometry  cos(t̄, n_r)   (filter: drop > {tau}):")
+    for i in torch.argsort(cos_n, descending=True).tolist():
+        mark = "   ← filtered (near-collinear)" if not keep[i] else ""
+        print(f"    {names[i]:<28s} {cos_n[i]:+.3f}{mark}")
+    kept_names = [n for n, k in zip(names, keep) if k]
+    comps = comps[keep]
+    if comps.size(0) == 0:
+        raise ValueError(
+            f"all {len(names)} negatives exceed cos(t̄, n) > {tau} — "
+            f"raise --neg-cos-max or curate more separable negatives")
+    return comps, kept_names
 
 
 def _sample_neg_indices(cfg, labels):
@@ -503,7 +528,13 @@ class P0TriggerGenerator(TriggerGenerator):
             # template-ensemble mean per class, renormalised
             comps = comps.view(len(names), len(PROMPT_TEMPLATES), -1)
             comps = F.normalize(comps.mean(dim=1), dim=-1)
-            print(f"  Competitors [text]  : {comps.size(0)} class directions")
+            # separability filter + geometry print
+            t_bar = F.normalize(text_emb[cfg.TARGET_CLS].to(dev), dim=0)
+            comps, kept = _filter_separable(
+                names, comps, t_bar,
+                getattr(cfg, "NEG_COS_MAX", 0.9))
+            print(f"  Competitors [text]  : {comps.size(0)} separable class "
+                  f"directions (of {len(names)} curated)")
             return comps
 
         if cfg.P0_ARM == "p1":
@@ -706,6 +737,9 @@ def parse_p0_args(argv):
                    help="P1 GMAS pool size (default: 256)")
     p.add_argument("--competitor-m", type=int, default=16,
                    help="k-means centroid count for p1/p2cen (default: 16)")
+    p.add_argument("--neg-cos-max", type=float, default=0.9,
+                   help="separability filter: drop text negatives with "
+                        "cos(t̄, n) above this threshold (default: 0.9)")
     p.add_argument("--dry-run", action="store_true",
                    help="assemble and print the config, then exit")
     return p.parse_known_args(argv)
@@ -778,6 +812,7 @@ def main():
     cfg.NEG_LIST = cfg.P0_NEG_LIST
     cfg.N_POOL = p0.n_pool
     cfg.COMPETITOR_M = p0.competitor_m
+    cfg.NEG_COS_MAX = p0.neg_cos_max
     cfg.P1_LOGIT_T = p0.p1_temperature
     cfg.TDA_MODE = "off" if p0.arm == "a0" else p0.tda
     cfg.P1_MARGIN = 0.0 if p0.arm == "a0" else p0.p1_margin

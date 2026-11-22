@@ -325,6 +325,18 @@ after evaluation) — let one run finish to capture artefacts.
 --neg-list lion_v1 --trigger-min-asr 1 --trigger-retries 0` for like-for-like parity; (c) 3-seed
 R1 replication; (d) optional: R1 with the swap list (`--neg-list` variants) for list-robustness.
 
+### 2026-11-22 — ViT-B/16 × Caltech101 (motorbike): InfoNCE 17.5 % vs cos 63.0 % — synonym
+collinearity diagnosed; fix applied.
+
+`motorbike_v1` negatives contained near-synonyms of the target (motorcycle, dirt bike, moped,
+…) → `margin_pseudo +0.001` (objective fights itself), `cos_t` capped 0.241 vs cos 0.308, grad
+parity 4.87 vs 14.29; `[diag]` thief = airplane 17.2 % (a *separable* negative, drowned out).
+Unifying principle: **negatives must be confusable-but-separable** (explains lion win / tabby
+loss / motorbike loss). Fix applied to `p0_test.py`: (1) `motorbike_v2` — synonyms banned,
+bikes + vehicle/ship rows only; (2) separability filter `--neg-cos-max` (default 0.9) drops
+negatives with cos(t̄, n) > τ; (3) per-negative cos(t̄, n_r) geometry print at Phase-1 start.
+Caltech default neg list is now motorbike_v2.
+
 ### 2026-11-21 (later) — target mismatch identified, win bar set
 
 The stored cos reference is target **"lion" (cls 291)**, while all P0 runs used "tabby cat" (cls
