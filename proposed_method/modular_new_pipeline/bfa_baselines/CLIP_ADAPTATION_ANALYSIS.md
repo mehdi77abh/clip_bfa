@@ -1,5 +1,13 @@
 # CLIP_ADAPTATION_ANALYSIS.md — Adapting Flip-S, ProFlip and TrojViT to CLIP
 
+> **SUPERSEDED (2026-11-22):** the analysis below informed the final self-contained
+> suite (`attack_trojvit.py` / `attack_proflip.py` / `attack_flips.py`, see `README.md`).
+> Adaptation decisions taken: TrojViT Phase 2 = projection-row distillation on
+> `visual.proj` (NGR tar/tar1 in top rows) + bit-flip realization; ProFlip = analytic
+> SNI `|proj @ t_target|` + native feature-anchored trigger (31% bottom-right patch) +
+> CBS with `--fitness {mse_sni,cos}`; Flip-S = full native method on FP16 row-wise
+> scale factors. File references below point to the removed generation of scripts.
+
 **Purpose.** This is the design record for the *comparison* half of the thesis: for each
 baseline, which parts of its published method can be moved to CLIP unchanged, which parts
 must be re-bound or re-designed, and which parts have **no faithful CLIP analogue**.

@@ -112,6 +112,12 @@ def input_px(name):
     return MODEL_REGISTRY[name]["input_px"]
 
 
+def model_tag(name):
+    """Filesystem-safe tag: "ViT-L/14-336px" -> "ViT-L14-336"."""
+    return (name.replace("ViT-", "ViT-").replace("/", "").replace("-336px", "-336")
+            .replace("px", ""))
+
+
 def load_classnames(dataset):
     path = DATASET_REGISTRY[dataset]["classnames"]
     with open(path) as f:
@@ -186,16 +192,18 @@ def per_image_patch_trigger(imgs01, delta01, patch_indices, patch_size, mode="re
     (row, col) positions.  Each patch is pasted from `delta01`'s SAME location."""
     out = imgs01.clone()
     n, _, h, w = out.shape
+    d = delta01.size(0)          # 1 = shared delta (broadcast), N = per-image
     for j in range(n):
+        dj = delta01[j % d]
         for k in range(patch_indices.size(1)):
             r, c = patch_indices[j, k].tolist()
             if mode == "replace":
                 out[j, :, r:r + patch_size, c:c + patch_size] = \
-                    delta01[j, :, r:r + patch_size, c:c + patch_size]
+                    dj[:, r:r + patch_size, c:c + patch_size]
             elif mode == "add":
                 out[j, :, r:r + patch_size, c:c + patch_size] = (
                     out[j, :, r:r + patch_size, c:c + patch_size]
-                    + delta01[j, :, r:r + patch_size, c:c + patch_size]).clamp(0, 1)
+                    + dj[:, r:r + patch_size, c:c + patch_size]).clamp(0, 1)
     return out
 
 

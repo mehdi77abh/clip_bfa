@@ -1,5 +1,12 @@
 # BASELINES.md — Baseline implementation record (CLIP-FLIP thesis)
 
+> **SUPERSEDED (2026-11-22):** the runnable implementation is now the self-contained
+> suite in this folder — `attack_trojvit.py` / `attack_proflip.py` / `attack_flips.py` +
+> `evaluate.py` + `run_sweep.py` + `clip_adapters.py` + `data_split.json` (see
+> `README.md`). The earlier per-method scripts (`trojvit_trigger.py`, `proflip_cbs.py`,
+> `proflip_pipeline/`, `flip_s_clip/`, `run_all_baselines.sh`) were removed; this file
+> remains as the historical analysis/design record below.
+
 Everything known about the **baseline / comparison** half of the thesis, collected from
 `proposed_method/modular_new_pipeline/{AGENTS,RESULTS,TASKS,ABLATION,DEFENSES,CODE}.md`
 plus the code that actually implements it. This file is the reference for

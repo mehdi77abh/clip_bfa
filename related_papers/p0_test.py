@@ -3,8 +3,9 @@
 p0_test.py — P0 two-arm test harness: CNL+m + TDA with (P1) GMAS pool-256
 competitors vs (P2) manually curated near-target negatives.
 
-One file, scoped to **ViT-L/14 × ImageNet1k** (enforced).  It reuses the
-`proposed_method/modular_new_pipeline` pipeline end-to-end (Phases 0-5) and
+One file, two supported configs (pass --model/--dataset to switch):
+  **ViT-L/14 × ImageNet1k** (default) and **ViT-B/16 × Caltech101**.
+It reuses the `proposed_method/modular_new_pipeline` pipeline end-to-end (Phases 0-5) and
 changes exactly three things, per `related_papers/idea_p0.md` and
 `related_papers/idea_p0_tests.md`:
 
@@ -43,11 +44,18 @@ Caveats (documented, intentional):
   * Phases 2A-5 are untouched and keep t_bar = text_emb[TARGET_CLS].
 
 Usage (from the repo root or anywhere):
+  # ViT-L/14 × ImageNet1k (default config)
+  python related_papers/p0_test.py --arm p2txt --target-name lion --neg-list lion_v1 \
+      --p1-margin 0 --tda off
   python related_papers/p0_test.py --arm p1
   python related_papers/p0_test.py --arm p2 --neg-list tabby_v1
-  python related_papers/p0_test.py --arm p2cen --competitor-m 16
-  python related_papers/p0_test.py --arm p2swap
   python related_papers/p0_test.py --arm a0 --seed 42
+
+  # ViT-B/16 × Caltech101 (defaults: target 'motorbike', neg-list motorbike_v1)
+  python related_papers/p0_test.py --arm p2txt --model ViT-B/16 --dataset Caltech101 \
+      --p1-margin 0 --tda off
+  python related_papers/p0_test.py --arm a0 --model ViT-B/16 --dataset Caltech101
+
   python related_papers/p0_test.py --arm p2 --dry-run   # config assembly only
 
 RESULTS: everything is written under
@@ -79,14 +87,23 @@ import experiment                                   # noqa: E402
 import main as main_mod                             # noqa: E402
 import pipeline as pipeline_mod                     # noqa: E402
 from adapters import encode_image, get_adapter      # noqa: E402
+from config import load_registry                    # noqa: E402
 from data import DataModule                         # noqa: E402
 from target import PROMPT_TEMPLATES, TargetEmbedder  # noqa: E402
 from trigger import (TriggerGenerator, apply_trigger,  # noqa: E402
                       get_apply_params)
 from utils import cleanup_gpu, model_tag       # noqa: E402
 
-MODEL_FIXED = "ViT-L/14"
-DATASET_FIXED = "ImageNet1k"
+# Supported configs (maintainer: ViT-L/14 × ImageNet1k AND ViT-B/16 × Caltech101).
+SUPPORTED_MODELS = ("ViT-B/16", "ViT-L/14")
+SUPPORTED_DATASETS = ("Caltech101", "ImageNet1k")
+DEFAULT_MODEL = "ViT-L/14"
+DEFAULT_DATASET = "ImageNet1k"
+# Dataset-aware defaults: (target-name, neg-list) when the flags are omitted.
+DATASET_DEFAULTS = {
+    "ImageNet1k": ("tabby cat", "tabby_v1"),
+    "Caltech101": ("motorbike", "motorbike_v2"),
+}
 DEFAULT_TRIG_SZ = 16        # run_all.sh trigger-size policy: 16 @ 224px
 
 
@@ -154,6 +171,40 @@ NEG_LISTS = {
         ("fox", "red fox", 4), ("fox", "kit fox", 4),
         ("fox", "Arctic fox", 4), ("fox", "grey fox", 4),
         ("misc", "Persian cat", 3), ("misc", "Egyptian Mau", 3),
+    ],
+    # T4 = "motorbike" (Caltech-101, cls 3) — ViT-B/16 × Caltech101 config.
+    # Generic two-wheeler concepts are attacker-side text (NOT Caltech rows)
+    # and are skipped by the image holdout; the vehicle/ship tiers are Caltech
+    # rows and contribute held-out images.  Names verified against
+    # class_texts/caltech101/classes.txt where applicable.
+    "motorbike_v1": [
+        ("bike", "bicycle", 6), ("bike", "dirt bike", 6),
+        ("bike", "motorcycle", 6), ("bike", "mountain bike", 4),
+        ("bike", "racing bike", 4), ("bike", "scooter", 4),
+        ("bike", "moped", 4), ("bike", "chopper motorcycle", 4),
+        ("bike", "racing motorcycle", 4),
+        ("vehicle", "side view of a car", 8),
+        ("vehicle", "airplane", 8), ("vehicle", "helicopter", 8),
+        ("ship", "ferry boat", 6), ("ship", "ketch ship", 6),
+        ("ship", "schooner ship", 6),
+        ("generic", "motor scooter", 4), ("generic", "touring motorcycle", 4),
+        ("generic", "sidecar motorcycle", 4),
+        ("generic", "enduro motorcycle", 4),
+    ],
+    # T4b = "motorbike" — SEPARABLE variant (2026-11-22 finding).  v1
+    # contained near-synonyms of the target (motorcycle, dirt bike, moped,
+    # …) whose text vectors are ~collinear with t̄ — InfoNCE fights itself
+    # (margin_pseudo +0.001, cos_t capped 0.24 vs cos 0.31).  v2 keeps only
+    # confusable-but-SEPARABLE directions + the actual eval thief rows
+    # ([diag]: airplane 17.2 % of poisoned argmax).  Synonyms are banned;
+    # the separability filter (--neg-cos-max) is the automatic guard.
+    "motorbike_v2": [
+        ("bike", "bicycle", 10), ("bike", "mountain bike", 10),
+        ("bike", "racing bike", 10),
+        ("vehicle", "airplane", 14), ("vehicle", "side view of a car", 14),
+        ("vehicle", "helicopter", 14),
+        ("ship", "ferry boat", 10), ("ship", "ketch ship", 9),
+        ("ship", "schooner ship", 9),
     ],
 }
 
@@ -230,23 +281,25 @@ def _sample_neg_indices(cfg, labels):
     names = STATE.classes
 
     rng = np.random.RandomState(cfg.SEED + 7)
-    neg_idx, report = [], []
+    neg_idx, used, text_only = [], [], []
     for tier, cls_name, n in entries:
         if cls_name not in names:
-            raise ValueError(
-                f"Negative class {cls_name!r} not in classes.txt — "
-                f"fix NEG_LISTS[{list_name!r}]")
+            # Attacker-side concept that is not a dataset class (e.g. generic
+            # two-wheelers on Caltech): text-only negative — no images to
+            # hold out.  Expected behaviour, not an error.
+            text_only.append(cls_name)
+            continue
         lid = names.index(cls_name)
         cand = np.where(labels == lid)[0]
-        if len(cand) < n:
-            raise ValueError(
-                f"Class {cls_name!r}: only {len(cand)} val images, need {n}")
+        take = min(n, len(cand))
         pick = cand.copy()
         rng.shuffle(pick)
-        neg_idx.extend(int(i) for i in pick[:n])
-        report.append(f"{cls_name}({n})")
+        neg_idx.extend(int(i) for i in pick[:take])
+        used.append(f"{cls_name}({take})")
     print(f"  Negatives [{list_name}]: {len(neg_idx)} val images from "
-          f"{len(entries)} classes — held out of all splits")
+          f"{len(used)} classes — held out of all splits")
+    if text_only:
+        print(f"    text-only ({len(text_only)}): " + ", ".join(text_only))
     print(f"    tiers: " + ", ".join(sorted({t for t, _, _ in entries})))
     return neg_idx
 
@@ -454,11 +507,20 @@ class P0TriggerGenerator(TriggerGenerator):
             return comps
 
         if cfg.P0_ARM == "p1":
+            if not STATE.dcomp_idx:
+                raise ValueError("p1 has no pool mining images — check the "
+                                 "split layout")
             imgs, _ = DataModule.load_tensors(STATE.val_ds, STATE.dcomp_idx,
                                               dev, batch_size=64,
                                               workers=cfg.WORKERS)
             src = f"pool mining set ({len(STATE.dcomp_idx)} imgs)"
         else:
+            if not STATE.neg_idx:
+                raise ValueError(
+                    "this arm needs negative IMAGES but none of the neg-list "
+                    "names are dataset classes — use --arm p2txt (text "
+                    "negatives) or a neg list whose names exist in the "
+                    "dataset")
             imgs, _ = DataModule.load_tensors(STATE.val_ds, STATE.neg_idx,
                                               dev, batch_size=64,
                                               workers=cfg.WORKERS)
@@ -623,12 +685,15 @@ def parse_p0_args(argv):
     p.add_argument("--arm", required=True,
                    choices=["a0", "p1", "p2", "p2cen", "p2swap", "p2txt"],
                    help="test arm (see module docstring)")
-    p.add_argument("--neg-list", default="tabby_v1", choices=sorted(NEG_LISTS),
-                   help="negative class list (default: tabby_v1; p2swap "
-                        "always uses tabby_swap)")
-    p.add_argument("--target-name", default="tabby cat",
-                   help="target class name resolved against classes.txt "
-                        "(default: 'tabby cat')")
+    p.add_argument("--neg-list", default=None, choices=sorted(NEG_LISTS),
+                   help="curated confusable negative list (default: "
+                        "dataset-aware — lion_v1/tabby_v1 on ImageNet1k, "
+                        "motorbike_v1 on Caltech101; p2swap always uses "
+                        "tabby_swap)")
+    p.add_argument("--target-name", default=None,
+                   help="target class name resolved against the dataset's "
+                        "classes.txt (default: dataset-aware — 'tabby cat' "
+                        "on ImageNet1k, 'motorbike' on Caltech101)")
     p.add_argument("--p1-margin", type=float, default=1.0,
                    help="additive target-logit margin m in logit units "
                         "(1.0 ↔ 0.07 cosine; default: 1.0)")
@@ -646,13 +711,15 @@ def parse_p0_args(argv):
     return p.parse_known_args(argv)
 
 
-def resolve_target_cls(name):
-    path = os.path.join(MODULAR_DIR, "class_texts", "imagenet1k",
-                        "classes.txt")
+def resolve_target_cls(dataset, name):
+    reg = load_registry()
+    ctd = reg["datasets"][dataset].get("class_text_dir",
+                                       f"class_texts/{dataset.lower()}")
+    path = os.path.join(MODULAR_DIR, ctd, "classes.txt")
     names = [ln.strip() for ln in open(path) if ln.strip()]
     if name not in names:
         near = [n for n in names if name.lower() in n.lower()][:5]
-        raise SystemExit(f"target {name!r} not in classes.txt.  "
+        raise SystemExit(f"target {name!r} not in {ctd}/classes.txt.  "
                          f"Did you mean: {near}?")
     return names.index(name)
 
@@ -679,17 +746,29 @@ def main():
     sys.argv = [sys.argv[0]] + rest
     args = experiment.parse_args()
 
-    # ── scope lock: ViT-L/14 × ImageNet1k only (maintainer decision) ──
-    if args.model != MODEL_FIXED:
-        print(f"  [p0] model {args.model!r} → {MODEL_FIXED!r} (scope lock)")
-    if args.dataset != DATASET_FIXED:
-        print(f"  [p0] dataset {args.dataset!r} → {DATASET_FIXED!r} "
-              f"(scope lock)")
-    args.model = MODEL_FIXED
-    args.dataset = DATASET_FIXED
+    # ── supported configs: --model/--dataset pass through (validated);
+    #    defaults keep the historical ViT-L/14 × ImageNet1k behaviour ──
+    if "--model" in rest:
+        if args.model not in SUPPORTED_MODELS:
+            raise SystemExit(f"--model {args.model!r} not supported here — "
+                             f"use one of {SUPPORTED_MODELS}")
+    else:
+        args.model = DEFAULT_MODEL
+    if "--dataset" in rest:
+        if args.dataset not in SUPPORTED_DATASETS:
+            raise SystemExit(f"--dataset {args.dataset!r} not supported here "
+                             f"— use one of {SUPPORTED_DATASETS}")
+    else:
+        args.dataset = DEFAULT_DATASET
     if "--trigger-size" not in rest:
         args.trigger_size = DEFAULT_TRIG_SZ
-    args.target_cls = resolve_target_cls(p0.target_name)
+    # dataset-aware defaults for the target and the negative list
+    d_target, d_neg = DATASET_DEFAULTS[args.dataset]
+    if p0.target_name is None:
+        p0.target_name = d_target
+    if p0.neg_list is None:
+        p0.neg_list = d_neg
+    args.target_cls = resolve_target_cls(args.dataset, p0.target_name)
 
     cfg = experiment.build_config(args)
 
