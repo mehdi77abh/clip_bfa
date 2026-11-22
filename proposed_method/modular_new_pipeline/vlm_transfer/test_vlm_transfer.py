@@ -522,6 +522,70 @@ def test_apply_trigger_to_pixels_stays_in_range():
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  The EVA-CLIP adapter (adapters.py) — needed to run CLIP-BFA at all
+# ══════════════════════════════════════════════════════════════════════
+def test_adapters_expose_eva_clip_backend():
+    """EVACLIPAdapter + the 'eva_clip' backend must live in adapters.py so
+    ``experiment.py --model EVA-CLIP-ViT-G/14`` works like any other model
+    (not only through the vlm_transfer wrapper)."""
+    import inspect
+    import adapters
+    assert hasattr(adapters, "EVACLIPAdapter"), \
+        "EVACLIPAdapter missing from adapters.py"
+    assert hasattr(adapters, "load_eva_clip")
+    # block layout is OpenAI-CLIP's, so the int8/sub_quant keys are shared
+    assert issubclass(adapters.EVACLIPAdapter, adapters.OpenAICLIPAdapter)
+    src = inspect.getsource(adapters.load_model)
+    assert 'backend == "eva_clip"' in src
+    assert "load_eva_clip" in src
+
+
+def test_get_adapter_dispatches_openclip_before_openai():
+    """open_clip/eva_clip models ALSO expose ``.visual`` — the OpenAI
+    branch must not claim them."""
+    import adapters
+
+    class FakeOpenCLIP(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self._is_eva_clip = True
+            self.visual = nn.Module()
+
+    assert type(adapters.get_adapter(FakeOpenCLIP())).__name__ == \
+        "EVACLIPAdapter"
+
+
+def test_registry_adapters_are_supported_by_load_model():
+    """REGRESSION GUARD: every config.json model must have a backend in
+    adapters.load_model.  EVA-CLIP-ViT-G/14 was registered with
+    adapter 'eva_clip' before adapters.py knew that backend, so
+    ``experiment.py`` would have failed with "Unknown model adapter"."""
+    import inspect
+    import adapters
+    import config
+    reg = config.load_registry()["models"]
+    src = inspect.getsource(adapters.load_model)
+    for name, entry in sorted(reg.items()):
+        backend = entry.get("adapter", "openai_clip")
+        assert f'backend == "{backend}"' in src, (
+            f"model {name!r} uses adapter {backend!r}, which "
+            f"adapters.load_model does not handle")
+
+
+def test_registry_adapters_have_an_adapter_class():
+    import adapters
+    import config
+    known = {"openai_clip": "OpenAICLIPAdapter", "siglip": "SigLIPAdapter",
+             "blip": "BlipAdapter", "eva_clip": "EVACLIPAdapter"}
+    reg = config.load_registry()["models"]
+    for name, entry in sorted(reg.items()):
+        cls = known.get(entry.get("adapter", "openai_clip"))
+        assert cls is not None, f"{name}: unknown adapter " \
+                                f"{entry.get('adapter')!r}"
+        assert hasattr(adapters, cls), f"{name}: no class {cls}"
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  registry
 # ══════════════════════════════════════════════════════════════════════
 def test_registry_specs_are_consistent():
@@ -699,6 +763,106 @@ def test_dataset_task_mapping():
     from datasets_vlm import DATASET_TASKS
     assert DATASET_TASKS["ok-vqa"] == "vqa"
     assert DATASET_TASKS["flickr30k"] == "caption"
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  proxy environment (AGENTS.md env gotcha: socks:// crashes this httpx)
+# ══════════════════════════════════════════════════════════════════════
+def test_sanitize_proxy_env_clears_socks_only():
+    from vlm_adapters import sanitize_proxy_env
+    saved = dict(os.environ)
+    try:
+        os.environ["ALL_PROXY"] = "socks://127.0.0.1:2080/"
+        os.environ["all_proxy"] = "socks5://127.0.0.1:2080/"
+        os.environ["HTTPS_PROXY"] = "http://127.0.0.1:2080/"
+        cleared = sanitize_proxy_env(verbose=False)
+        assert len(cleared) == 2, cleared
+        assert "ALL_PROXY" not in os.environ
+        assert "all_proxy" not in os.environ
+        # http(s) proxies must survive — they work fine
+        assert os.environ["HTTPS_PROXY"] == "http://127.0.0.1:2080/"
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def test_sanitize_proxy_env_noop_without_socks():
+    from vlm_adapters import sanitize_proxy_env
+    saved = dict(os.environ)
+    try:
+        os.environ.pop("ALL_PROXY", None)
+        os.environ.pop("all_proxy", None)
+        assert sanitize_proxy_env(verbose=False) == []
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  download_vlm_models
+# ══════════════════════════════════════════════════════════════════════
+def test_download_models_ids_come_from_the_registry():
+    """One source of truth: change a checkpoint id in vlm_registry and the
+    downloader must follow it."""
+    import download_vlm_models as dm
+    from vlm_registry import VLM_SPECS
+    assert dm.MODELS["llava"]["repo"] == VLM_SPECS["LLaVA-7B@336"].hf_id
+    assert dm.MODELS["blip2"]["repo"] == VLM_SPECS["BLIP-2"].hf_id
+    assert dm.MODELS["of3b"]["repo"] == VLM_SPECS["OF-3B"].hf_id
+    for key in dm.DEFAULT_MODELS:
+        assert key in dm.MODELS, key
+
+
+def test_download_models_kinds_are_known():
+    import download_vlm_models as dm
+    known = {"hf_snapshot", "of_checkpoint", "git_source", "clip_prefetch"}
+    for key, spec in dm.MODELS.items():
+        assert spec["kind"] in known, (key, spec["kind"])
+        assert spec["label"] and spec["used_by"]
+        assert spec["size_gb"] > 0
+
+
+def test_download_models_parse_args():
+    import download_vlm_models as dm
+    a = dm.parse_args(["--models", "llava", "--dry-run"])
+    assert a.models == ["llava"]
+    assert a.dry_run is True and a.check is False
+    b = dm.parse_args([])
+    assert sorted(b.models) == sorted(dm.DEFAULT_MODELS)
+
+
+def test_download_models_status_report_is_offline():
+    import download_vlm_models as dm
+    st = dm.status_report(["eva-clip", "clip"])
+    assert set(st) == {"eva-clip", "clip"}
+    assert all(isinstance(v, bool) for v in st.values())
+
+
+def test_download_models_dry_run_exits_clean():
+    import download_vlm_models as dm
+    assert dm.main(["--dry-run", "--models", "eva-clip"]) == 0
+
+
+def test_download_models_check_exits_clean():
+    import download_vlm_models as dm
+    assert dm.main(["--check", "--models", "llava"]) == 0
+
+
+def test_download_models_refuses_without_token():
+    """--check/--dry-run work logged out; a real run must not start."""
+    import download_vlm_models as dm
+    from huggingface_hub import get_token
+    if get_token():
+        return                                   # logged in: not applicable
+    saved = dict(os.environ)
+    try:
+        os.environ.pop("HF_TOKEN", None)
+        os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
+        rc = dm.main(["--models", "eva-clip"])
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+    assert rc == 2, rc
 
 
 # ══════════════════════════════════════════════════════════════════════

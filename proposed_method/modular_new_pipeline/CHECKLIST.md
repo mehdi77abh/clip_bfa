@@ -10,13 +10,14 @@ Where the truth lives: `RESULTS.md` (result plan), `TASKS.md` (tasks),
 
 ---
 
-## 0. ⚡ TOP PRIORITY — Phase-1 trigger loss change (maintainer decision 2026-11-21)
+## 0. ⚡ Phase-1 trigger loss change — **IMPLEMENTED 2026-11-22** (validation runs pending)
 
-**Do this first.** Replace the Phase-1 trigger-generation loss (plain `cos`)
-with **pure InfoNCE over the target text (positive) + attacker-curated
+**Status: code done.** The Phase-1 trigger-generation loss (plain `cos`) is
+replaced by **pure InfoNCE over the target text (positive) + attacker-curated
 confusable *text* negatives** — the R1 configuration that won the
 `related_papers/idea_p0_tests.md` campaign
-(`--arm p2txt --p1-margin 0 --tda off`).
+(`--arm p2txt --p1-margin 0 --tda off`).  **Default since 2026-11-22**
+(`--p1-loss cos` keeps the old reference loss).
 
 Evidence (idea_p0_tests.md §10 run log, ViT-L/14 × ImageNet1k, target
 "lion", 16 px): standalone trigger ASR **52.0 %** vs **45.6 %** (cos
@@ -27,25 +28,31 @@ raw cosine.  **Shelved and NOT to be reintroduced without isolated tests:**
 margin (A2), TDA (B1), GMAS (A6) — they failed in bundles (dead triggers,
 capped `cos_t`).  Recipe = **m=0, TDA off, random 64 carriers, no pool**.
 
-- [ ] Port the loss into `trigger.py` `TriggerGenerator.generate` (Phase 1):
+- [x] Port the loss into `trigger.py` `TriggerGenerator.generate` (Phase 1):
       `L = −log[ exp(cos(e,t̄)/T) / Σ_r exp(cos(e,t_r)/T) ]` over the target
       text embedding `t̄` (positive) + curated confusable **text** embeddings
       `t_r` (negatives) — m=0, TDA off, existing recipe (init 0.1, Adam 0.02
-      cosine, 200 ep, grad clip, clamp ±3) unchanged.  Reference
-      implementation to port from: `related_papers/p0_test.py`
-      (`P0TriggerGenerator`, CNL+m with `--p1-margin 0 --tda off`) +
-      `idea_p0.md` §3 formula.
-- [ ] Curated negative lists per target (`lion_v1`, `tabby_v1` in
-      `p0_test.py`; class tables in `idea_p0_tests.md` §4) — resolve names
-      from `class_texts/{dataset}/classes.txt` at runtime, never hardcode
-      indices; negatives must be **confusable-but-separable** (near-collinear
-      negatives — e.g. the 5 ImageNet cat rows — cap progress, §10 verdict 4).
-- [ ] CLI wiring: `--p1-loss {cos,infonce}` + `--p1-neg-list NAME`, temperature
-      T = 0.07 default (`--temperature`) in `experiment.py` / `build_config`;
-      `aggregate.py`'s `p1_loss` column labels the rows.
-- [ ] Sync the docs that state "plain cos is the current truth": AGENTS.md
+      cosine, 200 ep, grad clip, clamp ±3) unchanged.  Done: loss dispatch on
+      `cfg.P1_LOSS` (`infonce` default / `cos` reference), epochs log
+      `margin_pseudo`/`margin_class`; ported from `related_papers/p0_test.py`
+      `P0TriggerGenerator` + `idea_p0.md` §3 — math unit-tested against the
+      CE([z·t̄/T | z·Cᵀ/T], 0) reference.
+- [x] Curated negative lists per target (`lion_v1`, `tabby_v1` in
+      `p0_test.py`; class tables in `idea_p0_tests.md` §4) — done:
+      `experiment.py P1_NEG_LISTS` presets `{lion_v1, tabby_v1, tabby_swap,
+      sportscar_v1}` + `--p1-neg-names` for custom lists; names embedded
+      directly by `target.py build_negative_embeddings` (class-list-free,
+      p0_test competitor convention); warning when the target is its own
+      negative.  Constraint kept: **confusable-but-separable** negatives
+      (near-collinear negatives — e.g. the 5 ImageNet cat rows — cap
+      progress, §10 verdict 4).
+- [x] CLI wiring: `--p1-loss {infonce,cos}` + `--p1-neg-list NAME` +
+      `--p1-neg-names a,b,c`, temperature T = 0.07 (`--temperature`) in
+      `experiment.py` / `build_config`; `aggregate.py`'s `p1_loss` column
+      labels the rows (`infonce`/`cos`).
+- [x] Sync the docs that state "plain cos is the current truth": AGENTS.md
       binding-constraints + reference-sync note, RESULTS.md §1 fixed-protocol
-      line, CHECKLIST.md §3.1 row labels.
+      line (CHECKLIST.md row labels follow).
 - [ ] Validate in the **main pipeline** (not just the harness): `experiment.py`
       ViT-L/14 × ImageNet1k, target **lion** (c291), new loss — compare
       standalone trigger ASR / flips→95 / final ASR / CACC against the cos

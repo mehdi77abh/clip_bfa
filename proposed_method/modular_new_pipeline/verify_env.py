@@ -6,6 +6,7 @@ Run this on the new machine (Vast.ai) after setup_vastai.sh:
 
     python verify_env.py            # imports, versions, GPU, registry
     python verify_env.py --smoke    # + download ViT-B/32 and run a CLIP round-trip
+    python verify_env.py --require-vlm   # vlm_transfer/ deps are mandatory
 
 Exit code 0 = the environment can run the pipeline; 1 = something required is
 broken. Missing datasets are reported as warnings (data can be downloaded
@@ -13,8 +14,10 @@ later), not failures.
 """
 
 import argparse
+import contextlib
 import importlib
 import importlib.metadata as md
+import io
 import os
 import sys
 import traceback
@@ -57,6 +60,23 @@ MODULES = [
     "gdown", "requests", "tqdm", "ftfy", "regex", "transformers",
     "tokenizers", "huggingface_hub", "safetensors", "sentencepiece",
     "google.protobuf", "datasets", "yaml", "torch", "torchvision", "clip",
+]
+
+# vlm_transfer/ extras (requirements-vlm-transfer.txt + open_flamingo)
+VLM_DISTS = [
+    ("open-flamingo",  "OpenFlamingo-3B"),
+    ("open-clip-torch", "EVA-CLIP / OF vision encoder"),
+    ("timm",           "OpenCLIP backbone"),
+    ("einops",         "open_flamingo"),
+    ("einops-exts",    "open_flamingo"),
+    ("accelerate",     "HF 3-8B model loading"),
+]
+VLM_MODULES = ["open_flamingo", "open_clip", "timm", "einops",
+               "einops_exts", "accelerate"]
+VLM_OPTIONAL_MODULES = ["eva_clip"]      # BLIP-2 tower; open_clip fallback exists
+VLM_PROJECT_MODULES = [
+    "vlm_registry", "tower_swap", "metrics", "datasets_vlm", "vlm_adapters",
+    "evaluate", "run_attack",
 ]
 
 # project modules that must import (all phases + CLIs)
@@ -216,6 +236,52 @@ def check_clip():
         fail(f"clip.available_models() failed: {exc}")
 
 
+def check_vlm(required):
+    head("VLM transfer (vlm_transfer/)")
+    state = fail if required else warn
+
+    for dist, why in VLM_DISTS:
+        try:
+            ver = md.version(dist)
+            ok(f"{dist:<16} {ver:<12} ({why})")
+        except md.PackageNotFoundError:
+            state(f"{dist:<16} NOT INSTALLED ({why})")
+        except Exception as exc:                       # pragma: no cover
+            state(f"{dist:<16} version lookup failed: {exc}")
+
+    for mod in VLM_MODULES:
+        try:
+            importlib.import_module(mod)
+            ok(mod)
+        except Exception as exc:
+            state(f"{mod}: {type(exc).__name__}: {exc}")
+
+    for mod in VLM_OPTIONAL_MODULES:
+        try:
+            # upstream eva_clip prints "Please 'pip install xformers'" at
+            # import time (optional accelerators) — keep the report clean
+            with contextlib.redirect_stdout(io.StringIO()), \
+                    contextlib.redirect_stderr(io.StringIO()):
+                importlib.import_module(mod)
+            ok(f"{mod}  (BLIP-2 official EVA-CLIP)")
+        except Exception as exc:
+            warn(f"{mod} not importable ({type(exc).__name__}) — BLIP-2 will "
+                 "use the open_clip fallback if it is installed")
+
+    vlm_dir = os.path.join(PACKAGE_DIR, "vlm_transfer")
+    if not os.path.isdir(vlm_dir):
+        state(f"vlm_transfer/ not found at {vlm_dir}")
+        return
+    if vlm_dir not in sys.path:
+        sys.path.insert(0, vlm_dir)
+    for mod in VLM_PROJECT_MODULES:
+        try:
+            importlib.import_module(mod)
+            ok(f"vlm_transfer: {mod}")
+        except Exception as exc:
+            state(f"vlm_transfer: {mod}: {type(exc).__name__}: {exc}")
+
+
 def check_registry():
     head("Project registry / data layout")
     try:
@@ -297,6 +363,8 @@ def main():
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--smoke", action="store_true",
                     help="download ViT-B/32 and run a CLIP image+text round-trip")
+    ap.add_argument("--require-vlm", action="store_true",
+                    help="fail (not warn) when the vlm_transfer/ extras are missing")
     args = ap.parse_args()
 
     print(color("vlm_attack environment check", "1"))
@@ -307,6 +375,7 @@ def main():
     check_imports()
     check_torch()
     check_clip()
+    check_vlm(args.require_vlm)
     check_registry()
     if args.smoke:
         check_smoke()

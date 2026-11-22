@@ -34,6 +34,72 @@ from utils import model_tag, resolve_device
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  PHASE-1 INFONCE NEGATIVE LISTS (R1, related_papers/idea_p0_tests.md §4)
+# ══════════════════════════════════════════════════════════════════════
+# Attacker-curated confusable class names — the InfoNCE competitors of the
+# Phase-1 trigger loss (2026-11-21 maintainer decision).  Names only (the
+# image counts in idea_p0_tests.md §4 belong to the image-bank arms).
+# Class-list-free: the names are embedded directly (target.py
+# build_negative_embeddings), never resolved against the deployment class
+# list.  Negatives must be confusable-but-separable (idea_p0_tests.md §10).
+P1_NEG_LISTS = {
+    # T3 = "lion" (cls 291) — the R1 winner's list; like-for-like vs the
+    # stored cos reference (trigger ASR 45.6 %).
+    "lion_v1": [
+        "tiger", "leopard", "jaguar", "snow leopard", "cheetah", "cougar",
+        "lynx", "tabby cat", "tiger cat", "hyena", "African wild dog",
+        "grey wolf", "dhole", "red fox", "kit fox", "Arctic fox", "grey fox",
+        "Persian cat", "Egyptian Mau",
+    ],
+    # T1 = "tabby cat" — 30 confusables (idea_p0_tests.md §4.1).
+    "tabby_v1": [
+        "tiger cat", "Persian cat", "Siamese cat", "Egyptian Mau", "lynx",
+        "leopard", "snow leopard", "jaguar", "cougar", "cheetah", "lion",
+        "tiger", "grey wolf", "Alaskan tundra wolf", "coyote", "dingo",
+        "red fox", "kit fox", "Arctic fox", "grey fox", "fox squirrel",
+        "hamster", "guinea pig", "marmot", "beaver", "weasel", "Chihuahua",
+        "Maltese", "Pomeranian", "Toy Poodle",
+    ],
+    # P2-swap list (idea_p0_tests.md §4.3) — list-sensitivity check.
+    "tabby_swap": [
+        "tiger cat", "Persian cat", "Siamese cat", "Egyptian Mau", "lynx",
+        "leopard", "snow leopard", "jaguar", "cougar", "cheetah", "lion",
+        "tiger", "dhole", "African wild dog", "hyena", "red wolf or maned wolf",
+        "skunk", "mink", "porcupine", "European polecat", "Chihuahua",
+        "Maltese", "Pomeranian", "Toy Poodle",
+    ],
+    # T2 = "sports car" (idea_p0_tests.md §4.2).
+    "sportscar_v1": [
+        "convertible", "limousine", "minivan", "jeep", "taxicab",
+        "pickup truck", "tow truck", "garbage truck", "moving van",
+        "station wagon", "forklift", "canoe", "catamaran", "trimaran",
+    ],
+}
+
+
+def _warn_if_target_in_negs(dent, target_cls, neg_names):
+    """Warn when the target class is itself an InfoNCE negative (would
+    fight the positive direction).  Compares prompt-ready names."""
+    ctd = dent.get("class_text_dir")
+    if not ctd:
+        return
+    path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                        ctd, "classes.txt")
+    try:
+        with open(path) as f:
+            names = [ln.strip() for ln in f if ln.strip()]
+    except OSError:
+        return
+    if not 0 <= target_cls < len(names):
+        return
+    tname = names[target_cls].replace("_", " ").lower()
+    hit = [n for n in neg_names if n.replace("_", " ").lower() == tname]
+    if hit:
+        print(f"  WARNING: target class {names[target_cls]!r} is also an "
+              f"InfoNCE negative ({hit}) — remove it from the negative list.")
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  ARGUMENTS (defaults = tuned values from main_new_pipeline.py)
 # ══════════════════════════════════════════════════════════════════════
 def parse_args():
@@ -144,6 +210,20 @@ def parse_args():
     p1.add_argument("--p1-grad-clip", type=float, default=1.0,
                     help="grad-norm clip on the Phase-1 trigger, 0 disables "
                          "(default: 1.0)")
+    p1.add_argument("--p1-loss", default="infonce",
+                    choices=["infonce", "cos"],
+                    help="Phase-1 trigger loss (default: infonce = pure "
+                         "InfoNCE over the target text + curated confusable "
+                         "text negatives — R1 of "
+                         "related_papers/idea_p0_tests.md; cos = the old "
+                         "reference loss)")
+    p1.add_argument("--p1-neg-list", default="lion_v1",
+                    choices=sorted(P1_NEG_LISTS),
+                    help="curated confusable negative list for --p1-loss "
+                         "infonce (default: lion_v1)")
+    p1.add_argument("--p1-neg-names", default=None,
+                    help="custom comma-separated confusable class names "
+                         "(overrides --p1-neg-list)")
     p1.add_argument("--tv-weight", type=float, default=0.0)
     p1.add_argument("--temperature", type=float, default=0.07)
     p1.add_argument("--epsilon", type=float, default=8.0 / 255.0,
@@ -265,10 +345,25 @@ def build_config(args):
     cfg.TRIGGER_MIN_ASR = args.trigger_min_asr
     cfg.TRIGGER_RETRIES = args.trigger_retries
     cfg.P1_GRAD_CLIP = args.p1_grad_clip
-    # Method identity kept for the CSVs (aggregate.py): the cos_astar hinge
-    # and the Phase-3 LSE term were tested 2026-11-14/15 and removed again as
-    # inefficient — the method is the plain cos trigger + the previous ranking.
-    cfg.P1_LOSS = "cos"
+    # Phase-1 objective (2026-11-22, R1 of related_papers/idea_p0_tests.md):
+    # pure InfoNCE over the target text + attacker-curated confusable text
+    # negatives (default), m=0, TDA off; --p1-loss cos keeps the old
+    # reference loss.  The cos_astar hinge and the Phase-3 LSE term were
+    # tested 2026-11-14/15 and removed again as inefficient; P1_LOSS /
+    # P3_ALPHA_LSE stay in the CSVs (aggregate.py) for method identity.
+    cfg.P1_LOSS = args.p1_loss
+    if args.p1_neg_names:
+        neg_names = [n.strip() for n in args.p1_neg_names.split(",")
+                     if n.strip()]
+    else:
+        neg_names = list(P1_NEG_LISTS[args.p1_neg_list])
+    cfg.P1_NEG_LIST = args.p1_neg_list
+    cfg.P1_NEG_NAMES = neg_names
+    if cfg.P1_LOSS == "infonce" and not neg_names:
+        raise ValueError(
+            "--p1-loss infonce needs confusable-text negatives: pass "
+            "--p1-neg-list NAME or --p1-neg-names a,b,c.")
+    _warn_if_target_in_negs(dent, args.target_cls, neg_names)
     cfg.P3_ALPHA_LSE = 0.0
     cfg.TV_WEIGHT = args.tv_weight
     cfg.TEMPERATURE = args.temperature

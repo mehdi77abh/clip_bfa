@@ -28,6 +28,8 @@ from __future__ import annotations
 from abc import ABC, abstractmethod
 from typing import Optional
 
+import os
+
 import torch
 import torch.nn.functional as F
 from PIL import Image
@@ -40,6 +42,7 @@ __all__ = [
     "LLaVAAdapter",
     "BLIP2Adapter",
     "get_vlm_adapter",
+    "sanitize_proxy_env",
     "prepare_pixel_values",
     "clamp01",
 ]
@@ -48,6 +51,33 @@ __all__ = [
 # same for BLIP's ITC model); EVA-CLIP/BLIP-2 included.
 CLIP_MEAN = (0.48145466, 0.4578275, 0.40821073)
 CLIP_STD = (0.26862954, 0.26130258, 0.27577711)
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  PROXY ENVIRONMENT
+# ══════════════════════════════════════════════════════════════════════
+def sanitize_proxy_env(verbose: bool = True) -> list:
+    """Drop ``socks://`` proxy vars that crash the HF stack.
+
+    The ``vlm_attack`` env's ``httpx`` cannot speak SOCKS (needs
+    ``socksio``), and ``ALL_PROXY=socks://…`` makes every hub download
+    abort — AGENTS.md records this as a known env gotcha.  ``http``/``https``
+    proxies are left untouched; only the SOCKS entries are removed.
+
+    Returns the variable names that were cleared.
+    """
+    cleared = []
+    for var in ("ALL_PROXY", "all_proxy", "SOCKS_PROXY", "socks_proxy"):
+        val = os.environ.get(var)
+        if val and val.strip().lower().startswith("socks"):
+            os.environ.pop(var, None)
+            cleared.append(f"{var}={val}")
+    if cleared and verbose:
+        print("  [proxy] cleared SOCKS proxy vars (httpx here cannot do "
+              "SOCKS):")
+        for c in cleared:
+            print(f"          {c}")
+    return cleared
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -357,6 +387,7 @@ def get_vlm_adapter(name: str, device: str = "cuda",
                     image_size: Optional[int] = None) -> VLMAdapter:
     """Build the adapter for a registry key (``OF-3B``, ``LLaVA-7B``,
     ``LLaVA-7B@336``, ``BLIP-2``)."""
+    sanitize_proxy_env()      # SOCKS proxies crash the HF stack here
     spec = get_spec(name)
     if image_size and image_size != spec.image_size:
         # frozen dataclass -> copy with the overridden resolution

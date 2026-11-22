@@ -34,8 +34,9 @@ gradient fallback.
   `SigLIPAdapter` + `BlipAdapter` (BLIP-1, 2026-11-21 — BLIP.md) +
   `get_adapter`/`load_model` factories) — every architecture access goes
   through it; SigLIP-B/16 and SigLIP-so400m/14 are registry models (HF `transformers`;
-  needs `sentencepiece` + `protobuf`); BLIP-B/16 (`Salesforce/blip-itm-base-coco`)
-  likewise — run with the `vlm_attack` env (transformers ≥ 5). Phase-4 metrics (ASR@10/@20, Flips→95%)
+  needs `sentencepiece` + `protobuf`); BLIP-B/16-384px (`Salesforce/blip-itm-base-coco`,
+  ViT-B/16 @ 384²) likewise — run with the `vlm_attack` env (transformers ≥ 5;
+  unset `ALL_PROXY`/`all_proxy` — the `socks://` scheme crashes that env's httpx). Phase-4 metrics (ASR@10/@20, Flips→95%)
   and the **two-phase search** (2026-11-13): Normal search until ASR ≥
   `NORMAL_STOP`=94 (nominal 95, 1% tol.; `MAX_FLIPS`=80 accepted-flip budget),
   then fine_patience search — one-by-one failure-set mining toward
@@ -54,12 +55,17 @@ gradient fallback.
   the attacked encoder's features) → aggregate with LP columns.  Guards:
   `build_config` fails fast on a missing head; `lp_evaluate` checks the
   head's `meta.class_names` label space against the run dataset.
-- **⚡ TOP PRIORITY (CHECKLIST.md §0, maintainer decision 2026-11-21):** Phase-1
-  trigger loss changes — plain `cos` → **pure InfoNCE over the target text +
-  attacker-curated confusable text negatives** (the winning R1 config of
-  `related_papers/idea_p0_tests.md`: `--arm p2txt --p1-margin 0 --tda off`;
-  margin/TDA/GMAS shelved).  Not yet ported into `trigger.py` — the current
-  code still runs plain `cos`.
+- **Phase-1 trigger loss change — DONE (2026-11-22, CHECKLIST.md §0):** plain
+  `cos` → **pure InfoNCE over the target text + attacker-curated confusable
+  text negatives** (R1 of `related_papers/idea_p0_tests.md`:
+  `--arm p2txt --p1-margin 0 --tda off`; margin/TDA/GMAS shelved).
+  Implemented: `trigger.py` loss dispatch (`cfg.P1_LOSS`, default
+  `infonce`), `target.py build_negative_embeddings` (p0_test competitor
+  convention: per-template norm → mean → renorm), `pipeline.py` passes
+  `neg_text_emb`; CLI `--p1-loss {infonce,cos}` +
+  `--p1-neg-list {lion_v1,tabby_v1,tabby_swap,sportscar_v1}` +
+  `--p1-neg-names` (presets in `experiment.py P1_NEG_LISTS`); InfoNCE epochs
+  log `margin_pseudo`/`margin_class`.  Validation runs pending (CHECKLIST §0).
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
   (random / simple-gradient, #4), FaR defence script (DEFENSES.md;
   the attacked-model saving half of #6 is done via `--save-attacked-model`),
@@ -103,7 +109,7 @@ Synced into this folder:
   patch_size hint), `datasets` (loader, root, split sizes, class_text_dir), `paths`
   (output_root, lp_head_root). Currently: ViT-B/16, ViT-L/14, ViT-L/14-336px
   (clip_name `ViT-L/14@336px`, 336px input), ViT-B/32, SigLIP-B/16,
-  SigLIP-so400m/14, BLIP-B/16 (blip, `Salesforce/blip-itm-base-coco` — BLIP.md)
+  SigLIP-so400m/14, BLIP-B/16-384px (blip, `Salesforce/blip-itm-base-coco` — BLIP.md)
   × Caltech101, CIFAR10, ImageNet1k (loader `ImageNet`,
   `../data/imagenet`, split val — prepare_imagenet.py).
 - **Registry paths are CWD-independent**: relative paths (`../data/...`,
@@ -312,10 +318,13 @@ modular_new_pipeline/
   (Caltech motorbike + ImageNet lion attribution arms + a seed sweep) and
   **removed again as inefficient** (hinge cut the trigger base ASR
   dramatically on hard targets — e.g. 45.6 → 7.1 on lion — and the LSE term
-  cost extra flips).  The method is the plain **cos** trigger loss (CE was
-  already dropped as threat-model invalid) + the previous poison−clean
+  cost extra flips).  The method is the **InfoNCE** trigger loss (default
+  since 2026-11-22 — R1 of `related_papers/idea_p0_tests.md`: target text
+  positive + attacker-curated confusable **text** negatives, m=0, TDA off;
+  `--p1-loss cos` keeps the old reference loss; CE was already dropped as
+  threat-model invalid) + the previous poison−clean
   ranking.  `aggregate.py`'s `p1_loss`/`p3_alpha_lse` columns stay for
-  labelling historical rows (new runs record `cos`/`0.0`).
+  labelling historical rows (new runs record `infonce` or `cos` / `0.0`).
 - Small, reviewable diffs; verify each step with `python -m py_compile <file>` + symbol greps
   before moving on. Pipeline runs are experiments (fine); scaffolding work is verified
   statically first.

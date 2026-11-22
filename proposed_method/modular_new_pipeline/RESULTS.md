@@ -37,10 +37,13 @@ selected by flags, never by editing code.
     224px models on Caltech101/ImageNet1k, **8** for them on CIFAR10 (a 16px
     trigger is dominant there: small upsampled images + 10-way task),
     **24** for the 336/384px models (same ~7% of input width as 16@224).
-  - Fixed protocol: N_EVAL=1000, P1_EPOCHS=300, N_CALIB=64, plain **cos**
-    trigger loss (CE dropped — threat-model invalid; the cos_astar hinge and
-    the Phase-3 LSE term were tested 2026-11-14/15 and removed as
-    inefficient), the previous poison−clean hybrid ranking, two-phase search
+  - Fixed protocol: N_EVAL=1000, P1_EPOCHS=300, N_CALIB=64, **InfoNCE**
+    trigger loss (target text positive + attacker-curated confusable text
+    negatives — R1 of `related_papers/idea_p0_tests.md`, default since
+    2026-11-22; `--p1-loss cos` keeps the old reference; CE dropped —
+    threat-model invalid; the cos_astar hinge and the Phase-3 LSE term were
+    tested 2026-11-14/15 and removed as inefficient), the previous
+    poison−clean hybrid ranking, two-phase search
     (Normal → fine_patience: handover at 94, target 99, ≤9 fine flips,
     per-flip ≥0.5pp acceptance, 3-flip × 2pp give-up window), best-prefix
     rollback, dead-trigger retries (floor 5%).

@@ -14,8 +14,10 @@ Why a wrapper rather than calling ``experiment.py`` directly:
   * the attacked model must be the VLM's *own* tower (X-Transfer Table 6),
     so ``--model`` is derived from ``--vlm`` and a mismatch is a hard
     error, not a silent wrong experiment.
-  * BLIP-2's tower is EVA-CLIP ViT-G/14 and needs the extra adapter from
-    :mod:`eva_clip_adapter`, registered before the pipeline modules load.
+  * BLIP-2's tower is EVA-CLIP ViT-G/14 — its adapter lives in
+    ``adapters.py`` (``EVACLIPAdapter`` + the ``eva_clip`` backend of
+    ``adapters.load_model``), so this wrapper adds no model support of its
+    own; ``experiment.py --model EVA-CLIP-ViT-G/14`` works on its own.
 
 Everything else is passed straight through to ``experiment.parse_args``,
 so every attack hyperparameter (``--seed``, ``--max-flips``,
@@ -45,16 +47,14 @@ for _p in (_PARENT, _HERE):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
-# Register the EVA-CLIP adapter BEFORE the pipeline modules are imported
-# (eva_clip_adapter.install also rebinds already-imported references, so
-# this is belt-and-braces rather than a hard ordering constraint).
-from eva_clip_adapter import install as _install_eva_clip   # noqa: E402
-
-_install_eva_clip()
-
-# NOTE: ``experiment`` / ``main`` are imported inside main(), not here —
-# installing the adapter must happen first, and keeping the heavy imports
-# lazy lets test_vlm_transfer.py exercise the CLI helpers without loading
+# EVA-CLIP is a first-class adapter in adapters.py (EVACLIPAdapter + the
+# 'eva_clip' backend of adapters.load_model), so nothing needs registering
+# at run time — ``experiment.py --model EVA-CLIP-ViT-G/14`` works directly
+# too.  This wrapper only pins --model to the VLM's tower and forces
+# --save-attacked-model.
+#
+# NOTE: ``experiment`` / ``main`` are imported inside main(), not here, so
+# that test_vlm_transfer.py can exercise the CLI helpers without loading
 # the whole attack pipeline.
 
 META_NAME = "vlm_transfer_meta.json"
@@ -197,7 +197,7 @@ def main(argv=None):
         parse_our_args(["--help"])
 
     # deferred so that importing this module for its CLI helpers does not
-    # drag in the whole attack pipeline (and so install() always precedes it)
+    # drag in the whole attack pipeline
     import experiment
     from main import main as _run_attack
     from vlm_registry import get_spec, resolve_target_terms

@@ -23,7 +23,7 @@ one run each.
 | ViT-B/32 | `openai_clip` (`ViT-B/32`) | 224² | 32 | 16 |
 | ViT-L/14-336px | `openai_clip` (`ViT-L/14@336px`) | 336² | 14 | 24 |
 | SigLIP-so400m/14 | `siglip` (`google/siglip-so400m-patch14-384`) | 384² | 14 | 24 |
-| BLIP-B/16 | `blip` (`Salesforce/blip-itm-base-coco`) | 224² | 16 | 16 |
+| BLIP-B/16-384px | `blip` (`Salesforce/blip-itm-base-coco`) | 384² | 16 | 24 |
 
 ## Notes
 
@@ -35,9 +35,10 @@ one run each.
 - Weight sizes: ViT-L/14-336px ≈ 1.7 GB download; SigLIP-so400m/14 is large
   and may OOM on small GPUs (recorded to `oom_pending.json`, grid continues).
 - SigLIP models need `sentencepiece` + `protobuf` in the environment.
-- **BLIP-B/16** is the VLM-transfer model (BLIP.md): BLIP-1 ViT-B/16 +
+- **BLIP-B/16-384px** is the VLM-transfer model (BLIP.md): BLIP-1 ViT-B/16 +
   BERT-base ITC heads, checkpoint `Salesforce/blip-itm-base-coco`
   (`BlipForImageTextRetrieval`; the raw `blip-vit-base-capfilt` pretrain
-  checkpoint is not on the HF hub).  ITC-space zero-shot readout + `--task
-  lp`; BLIP-2/Q-Former is out of scope.  Trigger size 16 like the other
-  224-input models.
+  checkpoint is not on the HF hub).  **Note: the ITM checkpoints run at
+  384² input** (577 tokens) — trigger size **24** per the hi-res policy,
+  like ViT-L/14-336px / SigLIP-so400m.  ITC-space zero-shot readout +
+  `--task lp`; BLIP-2/Q-Former is out of scope.

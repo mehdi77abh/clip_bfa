@@ -188,19 +188,36 @@ class TriggerGenerator:
         self.cfg = cfg
 
     def generate(self, model, text_emb, t_target, calib_loader,
-                 target_images, cfg):
-        """Phase-1 trigger generation — cos loss (class-list-free):
-        loss = -mean(cos(emb(poisoned), t_target)) / T.
-        (CE was dropped as threat-model invalid; the cos_astar hinge and the
-        Phase-3 LSE term were tested 2026-11-14/15 and removed as inefficient.)
-        Recipe: init × 0.1, Adam + cosine schedule, grad clip, static trigger
-        clamp [-3, 3], best-loss trigger kept (no TV term).
+                 target_images, cfg, neg_text_emb=None):
+        """Phase-1 trigger generation — objective selected by cfg.P1_LOSS
+        (maintainer decision 2026-11-21, related_papers/idea_p0_tests.md R1):
+
+        * "infonce" (default) — pure InfoNCE over the target text (positive)
+          + attacker-curated confusable TEXT negatives (neg_text_emb) as
+          competitors:
+              loss = CE([emb·t̄/T | emb·Cᵀ/T], 0)
+          (margin m = 0, TDA off — margin/TDA/GMAS were shelved as harmful;
+          random 64 carriers, no pool).
+        * "cos" (reference) — loss = -mean(cos(emb(poisoned), t_target)) / T.
+
+        (CE over class labels was dropped as threat-model invalid; the
+        cos_astar hinge and the Phase-3 LSE term were tested 2026-11-14/15
+        and removed as inefficient.)
+        Recipe (both): init × 0.1, Adam + cosine schedule, grad clip,
+        static trigger clamp [-3, 3], best-loss trigger kept (no TV term).
         Returns the best trigger tensor."""
         from adapters import encode_image
 
+        use_nce = getattr(cfg, "P1_LOSS", "cos") == "infonce"
+        if use_nce and (neg_text_emb is None or neg_text_emb.numel() == 0):
+            raise ValueError(
+                "P1_LOSS='infonce' needs confusable-text negatives "
+                "(neg_text_emb) — set --p1-neg-list / --p1-neg-names.")
+
         ap = get_apply_params(cfg, model)
+        loss_name = ("InfoNCE (text negatives)" if use_nce else "cos")
         print("\n" + "=" * 60)
-        print("PHASE 1: TRIGGER GENERATION (cos loss, clamped)")
+        print(f"PHASE 1: TRIGGER GENERATION ({loss_name} loss, clamped)")
         print("=" * 60)
         print(f"  Size: {cfg.TRIG_SZ}×{cfg.TRIG_SZ}  "
               f"Placement: {ap.loc or 'legacy'}  Mode: {ap.mode}")
@@ -212,6 +229,14 @@ class TriggerGenerator:
         model.eval()
         for p in model.parameters():
             p.requires_grad_(False)
+
+        if use_nce:
+            comps = F.normalize(neg_text_emb.to(cfg.DEVICE), dim=-1)
+            t_bar = F.normalize(t_target.detach().to(cfg.DEVICE), dim=0)
+            text_all = F.normalize(text_emb.to(cfg.DEVICE), dim=-1)
+            tc = cfg.TARGET_CLS
+            print(f"  Competitors: {comps.size(0)} curated confusable "
+                  f"text directions  (m=0, TDA off)")
 
         # Init with 0.1 (clamped trigger regime)
         trig = nn.Parameter(
@@ -226,16 +251,33 @@ class TriggerGenerator:
 
         for ep in range(1, cfg.P1_EPOCHS + 1):
             ep_loss = ep_cos = 0.0
+            ep_mp = ep_mc = 0.0
             nb = 0
             for imgs, _ in calib_loader:
                 imgs = imgs.to(cfg.DEVICE)
                 poisoned = apply_trigger(imgs, trig, ap)
                 emb = F.normalize(encode_image(model, poisoned), dim=-1)
 
-                cos_t = F.cosine_similarity(
-                    emb,
-                    t_target.detach().unsqueeze(0).expand_as(emb), dim=-1)
-                loss = -cos_t.mean() / cfg.TEMPERATURE
+                if use_nce:
+                    tl = emb @ t_bar / cfg.TEMPERATURE
+                    logits = torch.cat(
+                        [tl[:, None], emb @ comps.T / cfg.TEMPERATURE], dim=1)
+                    loss = F.cross_entropy(
+                        logits,
+                        torch.zeros(emb.size(0), dtype=torch.long,
+                                    device=cfg.DEVICE))
+                    with torch.no_grad():
+                        cos_t = emb @ t_bar
+                        margin_pseudo = cos_t - \
+                            (emb @ comps.T).max(dim=1).values
+                        sims = emb @ text_all.T
+                        sims[:, tc] = -float("inf")
+                        margin_class = cos_t - sims.max(dim=1).values
+                else:
+                    cos_t = F.cosine_similarity(
+                        emb,
+                        t_target.detach().unsqueeze(0).expand_as(emb), dim=-1)
+                    loss = -cos_t.mean() / cfg.TEMPERATURE
 
                 opt.zero_grad()
                 loss.backward()
@@ -250,6 +292,9 @@ class TriggerGenerator:
 
                 ep_loss += loss.item()
                 ep_cos += cos_t.mean().item()
+                if use_nce:
+                    ep_mp += margin_pseudo.mean().item()
+                    ep_mc += margin_class.mean().item()
                 nb += 1
 
             sched.step()
@@ -257,8 +302,11 @@ class TriggerGenerator:
             if avg_l < best_loss:
                 best_loss, best_trig = avg_l, trig.data.clone()
             if ep % 50 == 0 or ep == 1 or ep == cfg.P1_EPOCHS:
+                extra = (f"  margin_pseudo={ep_mp / max(nb, 1):+.4f}  "
+                         f"margin_class={ep_mc / max(nb, 1):+.4f}"
+                         if use_nce else "")
                 print(f"  ep {ep:>4d}  loss={avg_l:.6f}  "
-                      f"cos_t={ep_cos / max(nb, 1):+.4f}  "
+                      f"cos_t={ep_cos / max(nb, 1):+.4f}{extra}  "
                       f"||trig||={trig.data.norm():.3f}  "
                       f"RMS={trig.data.std():.3f}")
 

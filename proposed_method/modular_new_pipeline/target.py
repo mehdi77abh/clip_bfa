@@ -82,6 +82,32 @@ class TargetEmbedder:
         with torch.no_grad():
             return text_emb[target_cls].detach()
 
+    def build_negative_embeddings(self, model, names, device):
+        """Text embeddings of attacker-curated confusable class names
+        (Phase-1 InfoNCE competitors, R1 of related_papers/idea_p0_tests.md).
+
+        Convention is p0_test.py's competitor text mode (verbatim):
+        per-template embeddings L2-normalised, mean over templates,
+        renormalised.  The names are embedded directly — no class list is
+        consulted (class-list-free threat model)."""
+        from adapters import get_adapter
+
+        prompts = []
+        for c in names:
+            name = c.replace("_", " ").lower()
+            prompts.extend(t.format(name) for t in PROMPT_TEMPLATES)
+
+        emb_parts = []
+        with torch.no_grad():
+            for i in range(0, len(prompts), 256):
+                chunk = prompts[i:i + 256]
+                emb_parts.append(F.normalize(
+                    get_adapter(model).encode_text(model, chunk, device),
+                    dim=-1))
+        emb = torch.cat(emb_parts, dim=0)
+        emb = emb.view(len(names), len(PROMPT_TEMPLATES), -1)
+        return F.normalize(emb.mean(dim=1), dim=-1)
+
     @staticmethod
     def build_target_embedding(model, text_emb, target_cls, target_images, device):
         """

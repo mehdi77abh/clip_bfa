@@ -30,15 +30,15 @@
       "hf_name":    "google/siglip-so400m-patch14-384",
       "patch_size": 14
     },
-    "BLIP-B/16": {
+    "BLIP-B/16-384px": {
       "adapter":    "blip",
       "hf_name":    "Salesforce/blip-itm-base-coco",
       "patch_size": 16
     },
     "EVA-CLIP-ViT-G/14": {
       "adapter":    "eva_clip",
-      "clip_name":  "EVA_CLIP_g_14",
-      "hf_name":    "EVA_CLIP_g_14",
+      "clip_name":  "EVA01-CLIP-g-14",
+      "hf_name":    "EVA01-CLIP-g-14",
       "patch_size": 14
     }
   },

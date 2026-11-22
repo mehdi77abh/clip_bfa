@@ -6,7 +6,7 @@ model), with one explicit readout decision; BLIP-2/Q-Former is out of
 scope for now.**  This document records what the formulation actually
 assumes about the model, how BLIP satisfies each assumption, and what
 must be stated / re-tuned.  The `BlipAdapter` is implemented and
-registered as `BLIP-B/16` (§7, 2026-11-21).
+registered as `BLIP-B/16-384px` (§7, 2026-11-21/22).
 
 ## 1. What the formulation assumes (verified in code)
 
@@ -108,7 +108,7 @@ A BLIP-2 claim would need a separate re-derivation, not a drop-in.
 
 ## 7. Implementation (done 2026-11-21)
 
-`BlipAdapter` in `adapters.py` (registry entry `BLIP-B/16`), verified by
+`BlipAdapter` in `adapters.py` (registry entry `BLIP-B/16-384px`), verified by
 smoke tests on a tiny random `BlipModel` (all adapter contract points) and
 on the real checkpoint (geometry, ITC shapes, convention check, zero-shot
 readout on Caltech images, Phase-0 + Phase-1 gradient).
@@ -119,6 +119,9 @@ readout on Caltech images, Phase-0 + Phase-1 gradient).
   checkpoint is BLIP-1 ViT-B/16 fine-tuned from capfilt and carries the
   ITC heads (`vision_proj`/`text_proj`, `image_text_hidden_size=256`);
   swap `hf_name` for `blip-itm-base-flickr` / `-large` variants if wanted.
+  **The ITM checkpoints run at 384² input** (577 tokens, 24×24 patches) —
+  hence the `-384px` name and the hi-res trigger-size policy (24, like
+  ViT-L/14-336px / SigLIP-so400m).
   `load_model` reads the checkpoint's class from its config (BlipModel vs
   BlipForImageTextRetrieval attribute names) — loading with the wrong class
   would silently randomise the ITC projections.
@@ -137,8 +140,8 @@ readout on Caltech images, Phase-0 + Phase-1 gradient).
 - `replace_sublayer`: timm-style `BlipEncoderLayer` calls `self_attn` /
   `mlp` as modules returning (hidden, weights) 2-tuple / tensor → shared
   `_AttnConst` tuple-wrap + plain module swap (SigLIP pattern).
-- `get_seq_layout`: CLS prefix (`n_prefix=1`), patch 16, 224 input;
-  `get_norm_stats`: CLIP mean/std (identical clamp regime).
+- `get_seq_layout`: CLS prefix (`n_prefix=1`), patch 16, **384** input
+  (ITM checkpoint); `get_norm_stats`: CLIP mean/std (identical clamp regime).
 - Tokeniser: `max_length=35` — BLIP's training truncation length
   (Salesforce `med.py`).
 - Runtime env note: run BLIP configs with the `vlm_attack` conda env

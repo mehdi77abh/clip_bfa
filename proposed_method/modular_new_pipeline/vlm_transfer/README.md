@@ -146,18 +146,27 @@ semantics as the attack itself.
 | `vlm_registry.py` | VLM specs (Table 6 + attack-model mapping), prompts, target-description / mention-term resolution from `class_texts/` |
 | `tower_swap.py` | state-dict renaming (OpenAI/OpenCLIP ViT → HF ViT and → OpenCLIP ViT), fused q/k/v splitting, positional-embedding interpolation, tower discovery, the audited swap |
 | `vlm_adapters.py` | `VLMAdapter` ABC + `OpenFlamingoAdapter` / `LLaVAAdapter` / `BLIP2Adapter`; the single shared image→tensor path |
-| `eva_clip_adapter.py` | `EVACLIPAdapter` (EVA-CLIP ViT-G/14 as a CLIP-BFA attack surface) + `install()` registration |
 | `datasets_vlm.py` | OK-VQA (VQA) and Flickr-30K (captioning) loaders, full-split defaults |
 | `download_vlm_data.py` | OK-VQA + COCO val2014 + Flickr-30K downloaders (stdlib only, `--dry-run`) |
+| `download_vlm_models.py` | VLM checkpoints — HF snapshots, OF-3B's `checkpoint.pt`, the EVA-CLIP source checkout, CLIP attack encoders; `hf auth login` token check, `--check` / `--dry-run` |
 | `metrics.py` | BLEU-4, target-mention rate (self-contained, no `pycocoevalcap`) |
 | `run_attack.py` | run CLIP-BFA on the VLM's own tower, force `--save-attacked-model`, write `vlm_transfer_meta.json` |
 | `evaluate.py` | the 4-cell protocol → `vlm_transfer.json` |
 | `run_vlm_transfer.sh` | orchestrates attacks (deduplicated) → evaluations → summary table |
-| `test_vlm_transfer.py` | 60 mocked tests (no GPU / network / VLM packages needed) |
+| `test_vlm_transfer.py` | mocked tests (no GPU / network / VLM packages needed) |
 
-Nothing outside `vlm_transfer/` was modified except one registry entry in
-`config.json` (`EVA-CLIP-ViT-G/14`), which is the established extension
-point for adding an attack model.
+**Two files outside `vlm_transfer/` were touched**, both the established
+extension points for adding an attack model:
+
+| file | change |
+|---|---|
+| `../config.json` | registry entry `EVA-CLIP-ViT-G/14` (`adapter: "eva_clip"`) |
+| `../adapters.py` | `EVACLIPAdapter` + `load_eva_clip` + the `eva_clip` backend of `load_model`, wired into `get_adapter` / `adapter_for_block` |
+
+The EVA-CLIP adapter lives in `adapters.py`, **not** here, on purpose: it
+is CLIP-BFA infrastructure (it must work from `experiment.py` and
+`run_all.sh`, not only from this folder), and AGENTS.md requires every
+class to exist in exactly one module.
 
 ---
 
@@ -168,11 +177,21 @@ point for adding an attack model.
 additionally needs:
 
 ```bash
-pip install transformers>=4.36 accelerate sentencepiece protobuf
-pip install open_flamingo        # OF-3B only
-pip install eva-clip             # BLIP-2 only (official EVA-CLIP), or:
-pip install open_clip_torch      # alternative EVA-CLIP/OpenCLIP loader
+bash setup_vastai.sh                            # installs all of the below
+# or by hand:
+pip install -r requirements-vlm-transfer.txt    # einops, einops-exts,
+                                                # open-clip-torch, timm
+pip install "transformers>=4.36" accelerate sentencepiece protobuf
+pip install open_flamingo --no-deps             # OF-3B; its metadata
+                                                # hard-pins torch==2.0.1
 ```
+
+**EVA-CLIP is not pip-installable.** `eva-clip` is not on PyPI and the
+upstream repo ships no `setup.py`, so `pip install eva-clip` does not
+work. `setup_vastai.sh` clones `baaivision/EVA` and puts `EVA-CLIP/rei` on
+`sys.path` via a site-packages `.pth` file — that is what makes
+`import eva_clip` work for BLIP-2. Skip with `--no-eva-clip`; the
+`open_clip` fallback then takes over.
 
 **Datasets.**
 
@@ -196,7 +215,10 @@ network.
   `--vlm-checkpoint PATH/checkpoint.pt` (or `VLM_CHECKPOINT=…` to the
   shell script).
 - BLIP-2: the **attack** needs a full EVA-CLIP ViT-G/14 (vision *and*
-  text towers) — `eva_clip`'s `EVA_CLIP_g_14`. The **swap target** is HF
+  text towers) — the official `eva_clip` package names it
+  **`EVA01-CLIP-g-14`** (that is the registry default for
+  `EVA-CLIP-ViT-G/14`; override with `--eva-clip-name` /
+  `--eva-clip-pretrained`). The **swap target** is HF
   `Blip2VisionModel`, available from `Salesforce/blip2-opt-6.7b`
   regardless. If EVA-CLIP ViT-G/14 cannot be loaded, `--swap-mode none`
   still runs the trigger-only transfer row.
@@ -208,6 +230,113 @@ parameters. These need a real GPU (≥ 24 GB for comfortable inference;
 ---
 
 ## 7. Running
+
+### 7.0 The run order (quickstart)
+
+Each step is a separate thing to run; later steps depend on earlier ones.
+Steps 1–4 are **once per machine**.
+
+```bash
+cd proposed_method/modular_new_pipeline     # all commands below run from here
+```
+
+**Step 1 — environment (once).**
+```bash
+bash setup_vastai.sh          # torch + VLM extras + the EVA-CLIP source
+                              # checkout that pip cannot provide
+python verify_env.py          # GATE: fails loudly if a dep / module /
+                              # dataset is missing.  Do not start step 5
+                              # until this is clean.
+```
+
+**Step 2 — attack data: ImageNet-1k val (once).**
+The attack runs on `ImageNet1k`, whose registry root is `../data/imagenet`
+and whose loader is `torchvision.datasets.ImageNet` — it needs **both**
+`val/<wnid>/` **and** `meta.bin`.
+```bash
+cd ../..                       # clip_bfa/
+python data/prepare_imagenet.py --splits val     # ~6.3 GB + 2.5 MB devkit
+cd proposed_method/modular_new_pipeline
+```
+`--splits val` is enough (the 138 GB train set is only for the linear
+probe). If `data/ImageNet/val` is already populated, symlink
+`data/imagenet/val -> ../ImageNet/val` to skip the re-download — but
+`meta.bin` is still required and only `prepare_imagenet.py` writes it.
+
+**Step 3 — evaluation data: OK-VQA + Flickr-30K (once).**
+```bash
+python vlm_transfer/download_vlm_data.py --dry-run            # what is missing
+python vlm_transfer/download_vlm_data.py --dataset ok-vqa     # + COCO val2014 (~13 GB)
+python vlm_transfer/download_vlm_data.py --dataset flickr30k
+```
+Lands in `clip_bfa/data/vlm/{ok-vqa,flickr30k}`.
+
+**Step 4 — VLM checkpoints (once).**
+
+Authenticate first (the script never prompts for credentials):
+```bash
+hf auth login                       # or: export HF_TOKEN=hf_xxx
+```
+Then fetch everything:
+```bash
+python vlm_transfer/download_vlm_models.py --check     # auth + what is present
+python vlm_transfer/download_vlm_models.py --dry-run   # plan + disk sizes
+python vlm_transfer/download_vlm_models.py             # all five
+```
+It pulls `llava` (`liuhaotian/llava-v1.5-7b`), `blip2`
+(`Salesforce/blip2-opt-6.7b`), `of3b` (the trained `checkpoint.pt` **and**
+its MPT-1B language model — `open_flamingo` ships the architecture only),
+`eva-clip` (the EVA-CLIP source checkout for BLIP-2's attack tower) and
+`clip` (the two OpenAI CLIP attack encoders). Budget ~35 GB of cache.
+
+Select subsets with `--models llava blip2`; `--write-pth` also puts
+`eva_clip` on `sys.path` (otherwise run `setup_vastai.sh`, which does the
+same thing). OF-3B's checkpoint lands in
+`vlm_transfer/checkpoints/` — `export VLM_CHECKPOINT=…/checkpoint.pt` when
+evaluating.
+
+> **Proxy gotcha (AGENTS.md):** this env sets `ALL_PROXY=socks://…`, which
+> crashes its `httpx` and aborts every hub download. The script and
+> `vlm_adapters.py` clear those SOCKS vars automatically and leave
+> `http(s)` proxies alone.
+
+**Step 5 — see the plan without executing.**
+```bash
+DRY_RUN=1 bash vlm_transfer/run_vlm_transfer.sh
+```
+Expect **3 attack runs** (OF-3B and LLaVA-7B share `ViT-L/14`, so it is
+attacked once) and **8 evaluations** (4 VLM configs × 2 datasets).
+
+**Step 6 — smoke test (do this before spending GPU hours).**
+```bash
+MAX_SAMPLES=50 bash vlm_transfer/run_vlm_transfer.sh
+```
+Identical chain, 50 samples per dataset. Check the `swap` block in each
+`vlm_transfer_*.json` reports `missing_n: 0` and `unexpected_n: 0` — a
+partial swap silently invalidates the result.
+
+**Step 7 — the real run.**
+```bash
+bash vlm_transfer/run_vlm_transfer.sh
+```
+`RESUME=1` (default) skips anything already done, so re-running after an
+interruption is safe.
+
+**Step 8 — read the results** — a summary table prints at the end and
+`vlm_transfer_{dataset}.json` lands in each run dir (§8).
+
+Useful variants:
+
+```bash
+RUN_ATTACK=0 …                          # evaluations only (attacks done)
+RUN_EVAL=0   …                          # attacks only
+VLMS="LLaVA-7B" EVAL_DATASETS="flickr30k" …   # one cell of the matrix
+SEEDS="42 43 44" …                      # multi-seed
+P1_LOSS=cos …                           # the old reference trigger loss
+EVA_CLIP_NAME=EVA01-CLIP-g-14 …         # override the BLIP-2 tower id
+```
+
+### 7.1 The commands individually
 
 ```bash
 # everything: attacks (deduplicated by tower) + evaluations + summary
@@ -236,6 +365,94 @@ python vlm_transfer/evaluate.py \
 `RESUME=1` (default) skips stages whose artefacts already exist. The
 attack matrix is deduplicated: OF-3B and LLaVA-7B share `ViT-L/14`, so
 three attack runs cover all four VLM configurations.
+
+### 7.2 Running CLIP-BFA on EVA-CLIP ViT-G/14 (BLIP-2's tower)
+
+`EVA-CLIP-ViT-G/14` is a **first-class attack model** — it is registered
+in `config.json` and backed by `EVACLIPAdapter` in `adapters.py`, so it
+goes through the normal entry points like any other model. Nothing has to
+be installed or registered at run time.
+
+**Prerequisite** — the attack needs a full EVA-CLIP ViT-G/14 (vision
+*and* text towers; the Phase-1 trigger loss and the Phase-4 readout live
+in the joint image–text space):
+
+```bash
+bash setup_vastai.sh          # clones baaivision/EVA and puts EVA-CLIP/rei
+                              # on sys.path — that is what makes
+                              # `import eva_clip` work (eva-clip is not on
+                              # PyPI; `pip install eva-clip` does NOT work)
+pip install open_clip_torch   # the OpenCLIP fallback loader
+```
+
+`adapters.load_eva_clip` tries `eva_clip` first, then `open_clip`, and
+raises a message naming both if neither is importable. The model id is
+**`EVA01-CLIP-g-14`** (the official `eva_clip` name for BLIP-2's tower —
+*not* `EVA_CLIP_g_14`); it is the registry default for
+`EVA-CLIP-ViT-G/14` and can be overridden per run with
+`--eva-clip-name` / `--eva-clip-pretrained` (or `EVA_CLIP_NAME` /
+`EVA_CLIP_PRETRAINED` for the shell script), or permanently in
+`config.json` (`clip_name` / `hf_name`).
+
+**Option A — the plain single-run CLI** (identical to every other model):
+
+```bash
+python experiment.py --model EVA-CLIP-ViT-G/14 \
+    --dataset ImageNet1k --target-cls 291 \
+    --seed 42 --rep 1 --section validation \
+    --trigger-size 16 --n-eval 1000 --n-calib 64 \
+    --p1-loss infonce --p1-neg-list lion_v1 \
+    --save-attacked-model
+```
+
+Run dir:
+`grid_results/validation/EVA-CLIP-ViT-G14/ImageNet1k/zs_c291_s42_r1_full_t16`.
+
+**Option B — via the VLM driver** (same thing, but pins `--model` to the
+VLM's tower, forces `--save-attacked-model`, and writes
+`vlm_transfer_meta.json` so `evaluate.py` needs no arguments beyond
+`--run-dir`):
+
+```bash
+python vlm_transfer/run_attack.py --vlm BLIP-2 \
+    --dataset ImageNet1k --target-cls 291 --seed 42 --rep 1
+```
+
+`--model` is derived from `--vlm`; passing a *different* `--model` is a
+hard error (the tower swap would not be 1:1) unless you pass
+`--force-model`. `--eva-clip-name` / `--eva-clip-pretrained` override the
+EVA-CLIP identifiers without editing the registry.
+
+**Option C — inside the grid:**
+
+```bash
+MODELS="EVA-CLIP-ViT-G/14" DATASETS="ImageNet1k" \
+    RUN_VALIDATION=1 RUN_ABLATION=0 bash run_all.sh
+```
+
+The other three configurations are plain OpenAI CLIP and need nothing
+special:
+
+```bash
+python experiment.py --model ViT-L/14       --dataset ImageNet1k --target-cls 291 --save-attacked-model ...
+python experiment.py --model ViT-L/14-336px --dataset ImageNet1k --target-cls 291 --save-attacked-model ...
+```
+
+### 7.3 Trigger loss used for these runs
+
+`run_vlm_transfer.sh` pins the **Phase-1 InfoNCE** recipe (CHECKLIST.md §0,
+2026-11-22): `--p1-loss infonce --p1-neg-list lion_v1` — pure InfoNCE over
+the target text plus attacker-curated confusable *text* negatives (m=0,
+TDA off). `lion_v1` is the negative list for the attack target `lion`
+(ImageNet1k class 291). Both are env-overridable:
+
+```bash
+P1_LOSS=cos bash vlm_transfer/run_vlm_transfer.sh          # old reference loss
+P1_NEG_LIST=tabby_v1 bash vlm_transfer/run_vlm_transfer.sh # if the target changes
+```
+
+If you change `TARGET_CLS`, `P1_NEG_LIST` must change with it — the lists
+are per-target and `build_config` fails fast if InfoNCE has no negatives.
 
 ---
 

@@ -50,8 +50,23 @@ def _run_identity(cfg):
 def _append(entry, path):
     pending = []
     if os.path.exists(path):
-        with open(path) as f:
-            pending = json.load(f)
+        try:
+            with open(path) as f:
+                pending = json.load(f)
+            if not isinstance(pending, list):
+                raise ValueError(f"expected a JSON list, got "
+                                 f"{type(pending).__name__}")
+        except (ValueError, OSError) as e:
+            # A corrupt/empty recorder file must never crash the recorder —
+            # it would mask the run's own error.  Keep any bytes for
+            # inspection, then start a fresh list.
+            if os.path.getsize(path) > 0:
+                backup = f"{path}.corrupt-{time.strftime('%Y%m%d-%H%M%S')}"
+                os.replace(path, backup)
+                print(f"  WARNING: {path} unreadable ({e}); kept as {backup}")
+            else:
+                print(f"  WARNING: {path} was empty; starting fresh")
+            pending = []
     pending.append(entry)
     with open(path, "w") as f:
         json.dump(pending, f, indent=2, default=str)
@@ -88,12 +103,23 @@ def main(cfg):
     except Exception as e:
         cleanup_gpu()
         if is_oom(e):
-            record_oom(cfg)
-            print(f"\n  OOM — run skipped.  Config saved → {OOM_FILE}")
-            print(f"  Re-run later on a bigger GPU from the saved argv.")
+            try:
+                record_oom(cfg)
+                print(f"\n  OOM — run skipped.  Config saved → {OOM_FILE}")
+                print(f"  Re-run later on a bigger GPU from the saved argv.")
+            except Exception:
+                traceback.print_exc()
+                print(f"\n  OOM — run skipped, but {OOM_FILE} could not be "
+                      f"written; argv: {sys.argv}")
             return None
-        record_error(cfg, e)
+        # The run's own error is ALWAYS printed first — a recorder failure
+        # must never mask it.
         print(f"\n  ERROR — run skipped and recorded → {ERROR_FILE}")
         print(f"  {type(e).__name__}: {e}")
         traceback.print_exc()
+        try:
+            record_error(cfg, e)
+        except Exception:
+            traceback.print_exc()
+            print(f"  (WARNING: could not write {ERROR_FILE})")
         return None

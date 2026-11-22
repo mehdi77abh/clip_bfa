@@ -12,6 +12,10 @@ Three implementations:
   * BlipAdapter      — HuggingFace ``transformers`` BLIP-1
     (Salesforce/blip-itm-base-coco, ``BlipForImageTextRetrieval``;
     BLIP-2/Q-Former is out of scope — BLIP.md §4)
+plus a fourth that reuses the OpenAI block layout:
+  * EVACLIPAdapter   — EVA-CLIP / OpenCLIP ViT (``EVA_CLIP_g_14``);
+    BLIP-2's actual vision tower, so attacking it is what makes the
+    ``vlm_transfer`` tower swap a 1:1 replacement
 
 Design notes:
   * ``encode_image`` / ``encode_text`` return RAW (un-normalised) features —
@@ -690,6 +694,176 @@ class BlipAdapter(ModelAdapter):
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  EVA-CLIP / OpenCLIP ViT (BLIP-2's vision tower)
+# ══════════════════════════════════════════════════════════════════════
+class EVACLIPAdapter(OpenAICLIPAdapter):
+    """Adapter for EVA-CLIP / OpenCLIP ViTs (``EVA_CLIP_g_14``, …).
+
+    BLIP-2's vision tower is **EVA-CLIP ViT-G/14** (X-Transfer Table 6), so
+    attacking it is what makes the ``vlm_transfer`` tower swap a true 1:1
+    replacement.  The vision side is structurally identical to OpenAI CLIP
+    (``model.visual.transformer.resblocks``, fused ``attn.in_proj_weight``,
+    ``mlp.c_fc``/``c_proj``, ``ln_1``/``ln_2``) — hence the inheritance —
+    so Phase-0 int8 grids, Phase-2B component slices and Phase-3 ranking
+    need no changes and ``sub_quant`` keys stay comparable across models.
+
+    Only the two things OpenCLIP does *not* share with the ``clip``
+    package are overridden: the text tokenizer and the preprocessing.
+    EVA-02 LayerScale parameters (``ls_1``/``ls_2``) exist on some releases
+    and are simply not quantised — the canonical block list is
+    ``OpenAICLIPAdapter``'s exactly, so nothing downstream sees a
+    difference.
+
+    Model identifier comes from ``cfg.MODEL`` (``EVA_CLIP_g_14``) with the
+    pretrained tag from ``cfg.HF_NAME``; see :func:`load_eva_clip`."""
+
+    # ── structure (attribute names vary across CLIP flavours) ──
+    def get_vision_module(self, model):
+        return getattr(model, "visual", None) or getattr(model, "vision_model")
+
+    def get_hidden_dim(self, model):
+        vis = self.get_vision_module(model)
+        if hasattr(vis, "transformer") and hasattr(vis.transformer, "width"):
+            return vis.transformer.width
+        return vis.positional_embedding.shape[1]
+
+    def get_num_heads(self, block):
+        attn = getattr(block, "attn", None)
+        if attn is not None and hasattr(attn, "num_heads"):
+            return int(attn.num_heads)
+        return int(getattr(block, "num_heads",
+                           self.get_hidden_dim_from_block(block) // 64))
+
+    def get_seq_layout(self, model):
+        vis = self.get_vision_module(model)
+        pos = vis.positional_embedding          # [seq_len, width]
+        seq_len, width = int(pos.shape[0]), int(pos.shape[1])
+        n_prefix = 1                            # CLS token
+        n_patches = seq_len - n_prefix
+        patch_size = int(vis.conv1.kernel_size[0])
+        patches_per_side = int(round(n_patches ** 0.5))
+        blocks = list(self.get_vision_transformer_blocks(model))
+
+        # the input resolution is named differently across releases
+        # (input_resolution / image_size / absent) — derive it instead of
+        # trusting any one of them
+        img_size = getattr(vis, "input_resolution", None) \
+            or getattr(vis, "image_size", None)
+        if isinstance(img_size, (tuple, list)):
+            img_size = img_size[0]
+        if img_size is None:
+            img_size = patches_per_side * patch_size
+
+        return dict(
+            seq_len=seq_len, width=width,
+            n_patches=n_patches, n_prefix=n_prefix,
+            patch_size=patch_size, patches_per_side=patches_per_side,
+            img_size=int(img_size),
+            n_layers=len(blocks), n_heads=self.get_num_heads(blocks[0]))
+
+    # ── forward ──
+    def encode_text(self, model, texts, device):
+        tok = getattr(model, "_adapter_tokenizer", None)
+        if tok is None:
+            raise RuntimeError(
+                "EVACLIPAdapter.encode_text needs a tokenizer — load the "
+                "model through adapters.load_model (backend 'eva_clip') so "
+                "model._adapter_tokenizer is set.")
+        return model.encode_text(tok(list(texts)).to(device))
+
+    def get_preprocess(self, model):
+        pre = getattr(model, "_adapter_preprocess", None)
+        if pre is not None:
+            return pre
+        # CLIP-stats fallback: resize + centre crop + normalise
+        size = self.get_seq_layout(model)["img_size"]
+
+        def _pre(pil_img):
+            import numpy as np
+            from PIL import Image
+            img = pil_img.convert("RGB")
+            w, h = img.size
+            scale = size / min(w, h)
+            img = img.resize((max(size, int(w * scale + 0.5)),
+                              max(size, int(h * scale + 0.5))), Image.BICUBIC)
+            w, h = img.size
+            left, top = (w - size) // 2, (h - size) // 2
+            img = img.crop((left, top, left + size, top + size))
+            arr = np.asarray(img).astype("float32") / 255.0
+            t = torch.from_numpy(arr).permute(2, 0, 1)
+            mean = torch.tensor(CLIP_MEAN).view(3, 1, 1)
+            std = torch.tensor(CLIP_STD).view(3, 1, 1)
+            return (t - mean) / std
+        return _pre
+
+
+def load_eva_clip(cfg, device):
+    """Load a full EVA-CLIP / OpenCLIP model (vision **and** text towers).
+
+    The text tower is required: CLIP-BFA's Phase-1 trigger loss and the
+    Phase-4 ASR readout both live in the joint image–text space.
+
+    ``cfg.MODEL`` is the model id (``EVA_CLIP_g_14``) and ``cfg.HF_NAME``
+    the pretrained tag when it differs.  Tries the official ``eva_clip``
+    package first, then ``open_clip``."""
+    name = cfg.MODEL
+    pretrained = getattr(cfg, "HF_NAME", None) or name
+
+    model = tokenizer = preprocess = None
+
+    try:                                    # 1) official EVA-CLIP release
+        import eva_clip
+        model, _pre_train, preprocess = eva_clip.create_model_and_transforms(
+            name, pretrained=pretrained, force_custom_clip=True)
+        tokenizer = eva_clip.get_tokenizer(name)
+    except ImportError:
+        pass
+    except Exception as e:                  # noqa: BLE001 — try the next one
+        print(f"  [eva_clip] {type(e).__name__}: {e} — trying open_clip")
+
+    if model is None:                       # 2) open_clip fallback
+        try:
+            import open_clip
+            model, _pre_train, preprocess = \
+                open_clip.create_model_and_transforms(name,
+                                                      pretrained=pretrained)
+            tokenizer = open_clip.get_tokenizer(name)
+        except ImportError as e:
+            raise ImportError(
+                "EVA-CLIP / OpenCLIP models need one of:\n"
+                "    pip install eva-clip           # official EVA-CLIP\n"
+                "    pip install open_clip_torch\n"
+                "Neither package is importable here.  See "
+                "vlm_transfer/README.md §6.\n"
+                f"  (Original error: {e})")
+        except Exception as e:              # noqa: BLE001
+            raise RuntimeError(
+                f"Could not load EVA-CLIP model {name!r} / {pretrained!r}: "
+                f"{type(e).__name__}: {e}\n"
+                f"  Override with the registry entry's clip_name/hf_name.")
+
+    model = model.float()
+    model.to(device)
+    model._is_eva_clip = True
+    model._adapter_tokenizer = tokenizer
+    model._adapter_preprocess = preprocess
+    return model, preprocess
+
+
+def _is_openclip_layout(model) -> bool:
+    """open_clip / eva_clip models, as opposed to the ``clip`` package.
+
+    Both expose ``.visual``, so this MUST be consulted before
+    ``get_adapter``'s OpenAI branch."""
+    cls = type(model)
+    mod = getattr(cls, "__module__", "").lower()
+    name = cls.__name__.lower()
+    return bool(getattr(model, "_is_eva_clip", False)
+                or "open_clip" in mod or "eva_clip" in mod
+                or "evavisiontransformer" in name)
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  FACTORY + MODEL LOADING
 # ══════════════════════════════════════════════════════════════════════
 _ADAPTER_CACHE = {}
@@ -703,7 +877,11 @@ def get_adapter(model):
         return ad
     cls = type(model)
     mod = getattr(cls, "__module__", "")
-    if mod.startswith("clip") or hasattr(model, "visual"):
+    # open_clip / eva_clip FIRST — they also expose ``.visual``, which the
+    # OpenAI branch below would otherwise claim
+    if _is_openclip_layout(model):
+        ad = EVACLIPAdapter()
+    elif mod.startswith("clip") or hasattr(model, "visual"):
         ad = OpenAICLIPAdapter()
     elif "blip" in mod.lower() or cls.__name__.startswith("Blip") \
             or hasattr(model, "visual_projection"):
@@ -727,6 +905,8 @@ def adapter_for_block(block):
     but their class identifies the architecture)."""
     cls = type(block)
     mod = getattr(cls, "__module__", "")
+    if _is_openclip_layout(block):
+        return EVACLIPAdapter()
     if "blip" in mod.lower() or cls.__name__.startswith("Blip") \
             or (hasattr(block, "self_attn") and hasattr(block.self_attn, "qkv")):
         return BlipAdapter()
@@ -740,13 +920,19 @@ def load_model(cfg):
     """Load (model, preprocess) for the registry entry behind cfg.
 
     cfg.MODEL_ADAPTER selects the backend ('openai_clip' | 'siglip' |
-    'blip'); cfg.MODEL is the OpenAI clip name, cfg.HF_NAME the HF hub id.
+    'blip' | 'eva_clip'); cfg.MODEL is the OpenAI clip / EVA-CLIP model
+    name, cfg.HF_NAME the HF hub id or pretrained tag.
     """
     backend = getattr(cfg, "MODEL_ADAPTER", "openai_clip")
     if backend == "openai_clip":
         import clip
         model, preprocess = clip.load(cfg.MODEL, device=cfg.DEVICE)
         model = model.float()
+    elif backend == "eva_clip":
+        # EVA-CLIP ViT-G/14 — BLIP-2's tower (vlm_transfer/README.md §6).
+        # Needs the vision AND text towers: the attack's t_target and the
+        # Phase-4 readout live in the joint space.
+        model, preprocess = load_eva_clip(cfg, cfg.DEVICE)
     elif backend == "siglip":
         from transformers import AutoProcessor, SiglipModel
         model = SiglipModel.from_pretrained(cfg.HF_NAME)

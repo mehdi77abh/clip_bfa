@@ -53,6 +53,12 @@ SEEDS="${SEEDS:-42}"
 REPS="${REPS:-1}"
 SECTION="${SECTION:-validation}"
 TRIG_SIZE="${TRIG_SIZE:-16}"
+# Phase-1 trigger loss (CHECKLIST.md §0, 2026-11-22): pure InfoNCE over the
+# target text + attacker-curated confusable TEXT negatives — the winning R1
+# recipe (m=0, TDA off).  --p1-neg-list must match the attack target:
+# lion_v1 is the T3='lion' (cls 291) list.
+P1_LOSS="${P1_LOSS:-infonce}"
+P1_NEG_LIST="${P1_NEG_LIST:-lion_v1}"
 P1_EPOCHS="${P1_EPOCHS:-300}"
 N_CALIB="${N_CALIB:-64}"
 N_EVAL="${N_EVAL:-1000}"
@@ -87,6 +93,7 @@ exec > >(tee -a "$GRID_LOG") 2>&1
 echo "vlm-transfer start $(date '+%F %T')  PY=$PY"
 echo "  VLMS=[$VLMS]  EVAL_DATASETS=[$EVAL_DATASETS]  "
 echo "  ATTACK: $ATTACK_DATASET c$TARGET_CLS  SEEDS=[$SEEDS]  TRIG_SIZE=$TRIG_SIZE"
+echo "  P1: loss=$P1_LOSS neg_list=$P1_NEG_LIST  epochs=$P1_EPOCHS"
 
 # ── VLM → attack model (the tower must be replaced 1:1) ─────────────
 attack_model_for() {
@@ -134,6 +141,7 @@ run_attack_one() {
         --seed "$seed" --rep "$rep" --section "$SECTION" \
         --trigger-size "$tsz" --n-eval "$N_EVAL" \
         --n-calib "$N_CALIB" --p1-epochs "$P1_EPOCHS" \
+        --p1-loss "$P1_LOSS" --p1-neg-list "$P1_NEG_LIST" \
         --p1-grad-clip "$P1_GRAD_CLIP" \
         --max-flips "$MAX_FLIPS" --normal-stop "$NORMAL_STOP" \
         --fine-target "$FINE_TARGET" --fine-max-flips "$FINE_MAX_FLIPS" \

@@ -14,8 +14,10 @@
 #   4. runs a real CUDA matmul smoke test; on failure uninstalls the stack and
 #      retries the next channel (older CUDA)
 #   5. installs requirements-vastai.txt + OpenAI CLIP (pinned commit)
-#   6. optionally installs requirements-vastai-optional.txt
-#   7. runs verify_env.py
+#   6. installs the VLM-transfer extras (open_flamingo, open_clip, EVA-CLIP
+#      source on sys.path) unless --no-vlm is given
+#   7. optionally installs requirements-vastai-optional.txt
+#   8. runs verify_env.py
 #
 # CUDA decision (CUDA_CHANNEL=auto)
 #   sm_120 / RTX 50xx / B100-B300  -> cu128 (torch>=2.7, 2.6 has no kernels)
@@ -38,6 +40,7 @@
 #   ./setup_vastai.sh --cuda cu126        # force a channel (no fallback)
 #   ./setup_vastai.sh --fresh             # delete + recreate the env
 #   ./setup_vastai.sh --with-optional     # also install optional extras
+#   ./setup_vastai.sh --no-vlm            # skip the VLM-transfer extras
 #   ./setup_vastai.sh --smoke             # download ViT-B/32 and encode a batch
 #
 # All flags also work as environment variables, e.g.
@@ -59,6 +62,9 @@ CONDA_DIR="${CONDA_DIR:-$HOME/miniforge3}"    # only used if conda is missing
 CONDA_CHANNEL_NAME="${CONDA_CHANNEL_NAME:-conda-forge}"
 CLIP_COMMIT="${CLIP_COMMIT:-d05afc436d78f1c48dc0dbf8e5980a9d471f35f6}"
 WITH_OPTIONAL="${WITH_OPTIONAL:-0}"
+VLM_TRANSFER="${VLM_TRANSFER:-1}"
+EVA_CLIP="${EVA_CLIP:-1}"
+EVA_CLIP_REPO="${EVA_CLIP_REPO:-https://github.com/baaivision/EVA.git}"
 FRESH="${FRESH:-0}"
 SMOKE="${SMOKE:-0}"
 DRY_RUN="${DRY_RUN:-0}"
@@ -96,6 +102,8 @@ Flags (env var in parentheses):
   --conda-dir PATH       where to install Miniforge if missing (CONDA_DIR)
   --fresh                delete and recreate the env            (FRESH=1)
   --with-optional        install optional extras                (WITH_OPTIONAL=1)
+  --no-vlm               skip the VLM-transfer extras           (VLM_TRANSFER=0)
+  --no-eva-clip          skip the EVA-CLIP source checkout      (EVA_CLIP=0)
   --smoke                run the CLIP ViT-B/32 GPU smoke test   (SMOKE=1)
   --no-pip-cache         pass --no-cache-dir to pip             (PIP_NO_CACHE=1)
   --dry-run              print the plan, install nothing        (DRY_RUN=1)
@@ -114,6 +122,8 @@ while [ $# -gt 0 ]; do
         --clip-commit)   CLIP_COMMIT="$2"; shift 2 ;;
         --fresh)         FRESH=1; shift ;;
         --with-optional) WITH_OPTIONAL=1; shift ;;
+        --no-vlm|--without-vlm) VLM_TRANSFER=0; shift ;;
+        --no-eva-clip)   EVA_CLIP=0; shift ;;
         --smoke)         SMOKE=1; shift ;;
         --no-pip-cache)  PIP_NO_CACHE=1; shift ;;
         --dry-run)       DRY_RUN=1; shift ;;
@@ -336,6 +346,11 @@ printf '\n'
 log "Environment : ${C_BOLD}${ENV_PREFIX}${C_RESET}  (python ${PY_VER})"
 log "Torch       : ${TORCH_SPEC_LABEL}"
 log "CUDA plan   : ${CHANNELS[*]}"
+if [ "$VLM_TRANSFER" = "1" ]; then
+    log "VLM extras  : on (open_flamingo, open_clip, EVA-CLIP)"
+else
+    log "VLM extras  : off (--no-vlm)"
+fi
 log "Project dir : ${SCRIPT_DIR}"
 
 if [ "$DRY_RUN" = "1" ]; then
@@ -531,6 +546,63 @@ log "installing OpenAI CLIP @ ${CLIP_COMMIT:0:12}"
 pip_install "git+https://github.com/openai/CLIP.git@${CLIP_COMMIT}"
 ok "openai-clip installed"
 
+# ----------------------------------------------------------------------------
+# [6] VLM-transfer extras (vlm_transfer/)
+# ----------------------------------------------------------------------------
+install_eva_clip_source() {
+    if env_python -c "import eva_clip" >/dev/null 2>&1; then
+        ok "eva_clip already importable — skipping the source checkout"
+        return
+    fi
+
+    local src="${EVA_CLIP_DIR:-$ENV_PREFIX/eva-clip-src}"
+    if [ -d "$src" ] && [ ! -d "$src/.git" ] && [ -n "$(ls -A "$src" 2>/dev/null)" ]; then
+        warn "$src exists but is not an EVA checkout — skipping eva_clip"
+        return
+    fi
+    if [ ! -d "$src/.git" ]; then
+        log "cloning EVA-CLIP source into $src (~45 MB)"
+        if ! git clone --depth 1 "$EVA_CLIP_REPO" "$src"; then
+            warn "git clone failed — BLIP-2 will use the open_clip fallback"
+            return
+        fi
+    fi
+
+    local pkg="$src/EVA-CLIP/rei"
+    if [ ! -d "$pkg/eva_clip" ]; then
+        warn "unexpected EVA layout (expected EVA-CLIP/rei/eva_clip) — skipping"
+        return
+    fi
+
+    # The upstream repo has no setup.py, so register it with a .pth entry
+    # instead of pip.  Removing the env removes the checkout too.
+    local site
+    site="$(env_python -c 'import sysconfig; print(sysconfig.get_paths()["purelib"])')"
+    printf '%s\n' "$pkg" > "$site/eva_clip.pth"
+    if env_python -c "import eva_clip" >/dev/null 2>&1; then
+        ok "eva_clip importable (sys.path entry: $site/eva_clip.pth)"
+    else
+        rm -f "$site/eva_clip.pth"
+        warn "eva_clip import failed — BLIP-2 will use the open_clip fallback"
+    fi
+}
+
+if [ "$VLM_TRANSFER" = "1" ]; then
+    step "Installing VLM-transfer extras"
+
+    pip_install -r "$SCRIPT_DIR/requirements-vlm-transfer.txt"
+    ok "requirements-vlm-transfer.txt installed"
+
+    # open-flamingo 2.0.1 hard-pins torch==2.0.1 + sentencepiece==0.1.98 in
+    # its metadata; --no-deps keeps the CUDA build installed above.
+    pip_install --no-deps "open-flamingo==2.0.1"
+    ok "open-flamingo installed (torch untouched)"
+
+    if [ "$EVA_CLIP" = "1" ]; then
+        install_eva_clip_source
+    fi
+fi
+
 if [ "$WITH_OPTIONAL" = "1" ]; then
     step "Installing optional extras"
     pip_install -r "$SCRIPT_DIR/requirements-vastai-optional.txt"
@@ -538,22 +610,33 @@ if [ "$WITH_OPTIONAL" = "1" ]; then
 fi
 
 # ----------------------------------------------------------------------------
-# [6] Verification
+# [7] Verification
 # ----------------------------------------------------------------------------
 step "Verifying the environment"
 
-if env_python -m pip check; then
+PIP_CHECK_LOG="$(mktemp -t pipcheck.XXXXXX.log 2>/dev/null || echo /tmp/pipcheck.log)"
+if env_python -m pip check >"$PIP_CHECK_LOG" 2>&1; then
     ok "pip dependency check clean"
 else
-    warn "pip check reported conflicts (see above; usually harmless)"
+    # open-flamingo pins torch==2.0.1 / sentencepiece==0.1.98 in its
+    # metadata; it is installed with --no-deps on purpose, so those lines
+    # are expected.  Show every other conflict.
+    grep -v '^open-flamingo ' "$PIP_CHECK_LOG" || true
+    if grep -qv '^open-flamingo ' "$PIP_CHECK_LOG"; then
+        warn "pip check reported conflicts (see above)"
+    else
+        ok "only open-flamingo's ignored torch/sentencepiece pins differ"
+    fi
 fi
 
 SMOKE_FLAG=""
 if [ "$SMOKE" = "1" ]; then SMOKE_FLAG="--smoke"; fi
+VLM_FLAG=""
+if [ "$VLM_TRANSFER" = "1" ]; then VLM_FLAG="--require-vlm"; fi
 
 if [ -f "$SCRIPT_DIR/verify_env.py" ]; then
     # shellcheck disable=SC2086
-    env_python "$SCRIPT_DIR/verify_env.py" $SMOKE_FLAG || die "verify_env.py failed"
+    env_python "$SCRIPT_DIR/verify_env.py" $SMOKE_FLAG $VLM_FLAG || die "verify_env.py failed"
 else
     warn "verify_env.py not found — skipping deep verification"
     env_python - <<'PY'
@@ -583,6 +666,13 @@ Then, from ${SCRIPT_DIR}:
     python verify_env.py --smoke              # optional GPU CLIP round-trip
     python experiment.py --help
 
+VLM transfer (vlm_transfer/, needs the extra libs installed above):
+
+    python vlm_transfer/download_vlm_data.py --dry-run
+    python vlm_transfer/run_attack.py --vlm LLaVA-7B \\
+        --dataset ImageNet1k --target-cls 291 --seed 42 --rep 1
+    bash vlm_transfer/run_vlm_transfer.sh     # full 4-cell matrix
+
 First experiment:
 
     python experiment.py --model ViT-B/16 --dataset Caltech101 --seed 42
@@ -591,7 +681,13 @@ Notes
   • Data must exist at the registry paths (../data by default, i.e.
     $(cd "$SCRIPT_DIR/.." && pwd)/data). Use download_datasets.py, or upload
     the datasets into that tree.
-  • Hugging Face downloads (SigLIP, CC3M) honour HF_HOME / HF_TOKEN.
+  • VLM data lands in ../data/vlm/{ok-vqa,flickr30k} (download_vlm_data.py).
+  • Hugging Face downloads (SigLIP, LLaVA, BLIP-2, OF-3B) honour HF_HOME /
+    HF_TOKEN; the 3-8B checkpoints need ~10-15 GB each of HF cache.
+  • BLIP-2's attack tower: the official eva_clip package names it
+    EVA01-CLIP-g-14, not EVA_CLIP_g_14 — run with
+    EVA_CLIP_NAME=EVA01-CLIP-g-14 (and optionally
+    EVA_CLIP_PRETRAINED=EVA01-CLIP-g-14).
   • Re-running this script is safe: an existing env is reused, torch is
     reinstalled only when its CUDA test fails.
 EOF

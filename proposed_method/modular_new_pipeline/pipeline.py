@@ -75,13 +75,20 @@ class AttackPipeline:
         (e.g. Caltech s42 → 0% trigger ASR → dead plateau) from killing a run.
 
         Returns (trigger, asr_pre, cacc_pre, attempts)."""
+        # InfoNCE competitors (attacker-curated confusable text directions)
+        # are target-side and attempt-invariant — build once.
+        neg_text_emb = None
+        if getattr(cfg, "P1_LOSS", "cos") == "infonce":
+            neg_text_emb = self.target.build_negative_embeddings(
+                model, cfg.P1_NEG_NAMES, cfg.DEVICE)
         trigger = None
         asr_pre = cacc_pre = 0.0
         attempts = 0
         for attempt in range(cfg.TRIGGER_RETRIES + 1):
             attempts = attempt + 1
             trigger = self.trigger_gen.generate(
-                model, text_emb, t_target, calib_loader, target_images, cfg)
+                model, text_emb, t_target, calib_loader, target_images, cfg,
+                neg_text_emb=neg_text_emb)
             asr_pre, cacc_pre = self.evaluator.quick_evaluate(
                 model, text_emb, trigger, eval_imgs, eval_labels,
                 cfg.TARGET_CLS, ap, cfg.MINI_BS)
