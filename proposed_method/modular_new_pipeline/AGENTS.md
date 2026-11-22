@@ -31,9 +31,11 @@ gradient fallback.
   Output layout (flattened 2026-11-19): `{out_root}/{section}/{model}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{sz}[_{loc}]`
   with `--section {validation,baselines,ablation}` as the top-level results group.
 - **Adapter layer (2026-11-10):** `adapters.py` (`ModelAdapter` ABC + `OpenAICLIPAdapter` +
-  `SigLIPAdapter` + `get_adapter`/`load_model` factories) — every architecture access goes
+  `SigLIPAdapter` + `BlipAdapter` (BLIP-1, 2026-11-21 — BLIP.md) +
+  `get_adapter`/`load_model` factories) — every architecture access goes
   through it; SigLIP-B/16 and SigLIP-so400m/14 are registry models (HF `transformers`;
-  needs `sentencepiece` + `protobuf`). Phase-4 metrics (ASR@10/@20, Flips→95%)
+  needs `sentencepiece` + `protobuf`); BLIP-B/16 (`Salesforce/blip-itm-base-coco`)
+  likewise — run with the `vlm_attack` env (transformers ≥ 5). Phase-4 metrics (ASR@10/@20, Flips→95%)
   and the **two-phase search** (2026-11-13): Normal search until ASR ≥
   `NORMAL_STOP`=94 (nominal 95, 1% tol.; `MAX_FLIPS`=80 accepted-flip budget),
   then fine_patience search — one-by-one failure-set mining toward
@@ -101,7 +103,8 @@ Synced into this folder:
   patch_size hint), `datasets` (loader, root, split sizes, class_text_dir), `paths`
   (output_root, lp_head_root). Currently: ViT-B/16, ViT-L/14, ViT-L/14-336px
   (clip_name `ViT-L/14@336px`, 336px input), ViT-B/32, SigLIP-B/16,
-  SigLIP-so400m/14 × Caltech101, CIFAR10, ImageNet1k (loader `ImageNet`,
+  SigLIP-so400m/14, BLIP-B/16 (blip, `Salesforce/blip-itm-base-coco` — BLIP.md)
+  × Caltech101, CIFAR10, ImageNet1k (loader `ImageNet`,
   `../data/imagenet`, split val — prepare_imagenet.py).
 - **Registry paths are CWD-independent**: relative paths (`../data/...`,
   `./grid_results`, `class_texts/...`) resolve via `config.resolve_path` against
@@ -179,7 +182,8 @@ modular_new_pipeline/
                        #   2026-11-20; FaR future)
   config.json          # registry ONLY: models (incl. SigLIP), datasets, paths
   config.py            # registry loader (load_registry, resolve_path) + CFG bag
-  adapters.py          # ModelAdapter ABC + OpenAICLIPAdapter + SigLIPAdapter,
+  adapters.py          # ModelAdapter ABC + OpenAICLIPAdapter + SigLIPAdapter +
+                       #   BlipAdapter (BLIP-1),
                        #   get_adapter / adapter_for_block / encode_image / load_model
   class_texts/         # {caltech101,cifar10,dtd,flowers102,food101,imagenet1k}/classes.txt
   make_class_texts.py  # regenerates class_texts/ (Caltech from disk; CIFAR10/ImageNet1k

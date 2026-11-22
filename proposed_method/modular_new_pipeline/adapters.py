@@ -5,10 +5,13 @@ Every place that used to reach into OpenAI-CLIP internals
 (``model.visual.transformer.resblocks`` …) goes through a ModelAdapter
 instead, so a new architecture = one new adapter class.
 
-Two implementations:
+Three implementations:
   * OpenAICLIPAdapter — OpenAI ``clip`` package (ViT-B/16, ViT-L/14, …)
   * SigLIPAdapter    — HuggingFace ``transformers`` SigLIP
     (google/siglip-base-patch16-224, google/siglip-so400m-patch14-384)
+  * BlipAdapter      — HuggingFace ``transformers`` BLIP-1
+    (Salesforce/blip-itm-base-coco, ``BlipForImageTextRetrieval``;
+    BLIP-2/Q-Former is out of scope — BLIP.md §4)
 
 Design notes:
   * ``encode_image`` / ``encode_text`` return RAW (un-normalised) features —
@@ -21,7 +24,7 @@ Design notes:
     SigLIP's separate ``v_proj`` it is ``[lo, hie)`` — callers never see the
     difference.
   * ``get_seq_layout`` reports the TRUE input resolution and the number of
-    prefix tokens (OpenAI CLIP: 1 CLS; SigLIP: 0, mean-pooled patches).
+    prefix tokens (OpenAI CLIP/BLIP: 1 CLS; SigLIP: 0, mean-pooled patches).
   * ``replace_sublayer`` supports Phase-2A mean ablation: OpenAI CLIP calls
     attention via the ``attention`` *method* (instance-attribute binding
     trick), SigLIP calls the ``self_attn`` *module* (plain module swap).
@@ -286,10 +289,10 @@ class OpenAICLIPAdapter(ModelAdapter):
 # ══════════════════════════════════════════════════════════════════════
 #  SIGLIP (HuggingFace transformers)
 # ══════════════════════════════════════════════════════════════════════
-class _SiglipAttnConst(nn.Module):
-    """Wraps a constant-output module for SigLIP attention replacement:
-    accepts ``hidden_states=``/``attention_mask=`` kwargs and returns the
-    (hidden, weights) 2-tuple the encoder unpacks."""
+class _AttnConst(nn.Module):
+    """Wraps a constant-output module for transformers-style attention
+    replacement (SigLIP, BLIP): accepts ``hidden_states=``/``attention_mask=``
+    kwargs and returns the (hidden, weights) 2-tuple the encoder unpacks."""
 
     def __init__(self, const_out):
         super().__init__()
@@ -466,11 +469,224 @@ class SigLIPAdapter(ModelAdapter):
                 block.mlp = orig
         else:
             orig = block.self_attn
-            block.self_attn = _SiglipAttnConst(const_out)
+            block.self_attn = _AttnConst(const_out)
             try:
                 yield
             finally:
                 block.self_attn = orig
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  BLIP-1 (HuggingFace transformers)
+# ══════════════════════════════════════════════════════════════════════
+class BlipAdapter(ModelAdapter):
+    """Adapter for HuggingFace BLIP-1 (``BlipModel`` or
+    ``BlipForImageTextRetrieval``, e.g. ``Salesforce/blip-itm-base-coco``).
+    BLIP-2/Q-Former models are out of scope (BLIP.md §4).
+
+    ITC feature convention (BLIP.md §2/§7): ``encode_image``/``encode_text``
+    return the projected joint-space features ``vision_proj(vision CLS)`` /
+    ``text_proj(text [CLS])`` — the RAW ``[CLS]`` of ``last_hidden_state``
+    (vision: after one ``post_layernorm``), exactly the convention of
+    ``BlipForImageTextRetrieval`` and the Salesforce reference.  The
+    convenience ``BlipModel.get_image_features``/``get_text_features`` are
+    deliberately NOT used: the text one routes through the BERT tanh pooler
+    and the image one applies ``post_layernorm`` twice — neither matches the
+    trained ITC projections.
+
+    Vision tower: timm-style ViT with a fused ``qkv`` Linear ([3D, D] rows
+    Q, K, V stacked — same V-slice convention as OpenAI CLIP's
+    ``in_proj_weight``), out-projection named ``projection``, pre-LN
+    ``BlipEncoderLayer`` (``self_attn``/``layer_norm1``/``mlp``/``layer_norm2``).
+    The attention module returns a ``(hidden, weights)`` 2-tuple like SigLIP,
+    so the shared ``_AttnConst`` stands in for it in Phase-2A ablation.
+
+    Also accepts ``BlipForImageTextRetrieval`` checkpoints (attribute names
+    ``vision_proj``/``text_proj``/``text_encoder``)."""
+
+    _PROCESSOR_CACHE = {}
+
+    # ── processor (tokenizer + image processor) ──
+    def _processor(self, model):
+        cached = getattr(model, "_adapter_processor", None)
+        if cached is not None:
+            return cached
+        name = model.config._name_or_path
+        if name not in self._PROCESSOR_CACHE:
+            from transformers import AutoProcessor
+            self._PROCESSOR_CACHE[name] = AutoProcessor.from_pretrained(name)
+        proc = self._PROCESSOR_CACHE[name]
+        try:
+            model._adapter_processor = proc
+        except Exception:
+            pass
+        return proc
+
+    # ── ITC heads (BlipModel / BlipForImageTextRetrieval name fallbacks) ──
+    @staticmethod
+    def _itc_heads(model):
+        """(vision_proj, text_model, text_proj) — the joint-space projections
+        and the (unimodal) text encoder, whichever name this checkpoint uses."""
+        vis_proj = getattr(model, "visual_projection", None) \
+            or getattr(model, "vision_proj", None)
+        txt_model = getattr(model, "text_model", None) \
+            or getattr(model, "text_encoder", None)
+        txt_proj = getattr(model, "text_projection", None) \
+            or getattr(model, "text_proj", None)
+        if vis_proj is None or txt_model is None or txt_proj is None:
+            raise ValueError(
+                "BlipAdapter needs BlipModel (visual_projection/text_model/"
+                f"text_projection); got {type(model).__name__} — BLIP-2/"
+                "Q-Former models are out of scope (BLIP.md §4)")
+        return vis_proj, txt_model, txt_proj
+
+    @staticmethod
+    def _cls(out):
+        """Raw [CLS] of the encoder output (tuple- or ModelOutput-style)."""
+        hs = out.last_hidden_state if hasattr(out, "last_hidden_state") else out[0]
+        return hs[:, 0, :]
+
+    # ── structure ──
+    def get_vision_transformer_blocks(self, model):
+        return model.vision_model.encoder.layers
+
+    def get_vision_module(self, model):
+        return model.vision_model
+
+    def get_num_heads(self, block):
+        return block.self_attn.num_heads
+
+    def get_hidden_dim(self, model):
+        return model.vision_model.config.hidden_size
+
+    def get_patch_embedding(self, model):
+        return model.vision_model.embeddings.patch_embedding
+
+    def get_seq_layout(self, model):
+        vis = model.vision_model
+        emb = vis.embeddings
+        n_prefix = 1                          # class_embedding (CLS token)
+        n_patches = emb.num_patches
+        seq_len = n_patches + n_prefix
+        patch_size = emb.patch_size
+        patches_per_side = int(round(n_patches ** 0.5))
+        blocks = list(vis.encoder.layers)
+        return dict(
+            seq_len=seq_len, width=vis.config.hidden_size,
+            n_patches=n_patches, n_prefix=n_prefix,
+            patch_size=patch_size, patches_per_side=patches_per_side,
+            img_size=emb.image_size,
+            n_layers=len(blocks), n_heads=blocks[0].self_attn.num_heads)
+
+    # ── weights ──
+    def get_attention_weights(self, block):
+        # fused qkv for Q, K, V (rows [3D, D]: Q, K, V stacked)
+        w = block.self_attn.qkv.weight
+        d = w.shape[0] // 3
+        return {
+            'q': w[0:d], 'k': w[d:2 * d], 'v': w[2 * d:],
+            'out': block.self_attn.projection.weight,
+        }
+
+    def get_mlp_weights(self, block):
+        return {'fc1': block.mlp.fc1.weight, 'fc2': block.mlp.fc2.weight}
+
+    def get_block_quant_params(self, block):
+        # Canonical names = OpenAICLIPAdapter's (fused qkv ↔ in_proj,
+        # projection ↔ out_proj) so sub_quant keys line up across models.
+        a, m = block.self_attn, block.mlp
+        return [
+            ("attn_ip_w", a.qkv.weight), ("attn_ip_b", a.qkv.bias),
+            ("attn_op_w", a.projection.weight), ("attn_op_b", a.projection.bias),
+            ("ln1_w", block.layer_norm1.weight), ("ln1_b", block.layer_norm1.bias),
+            ("ln2_w", block.layer_norm2.weight), ("ln2_b", block.layer_norm2.bias),
+            ("fc1_w", m.fc1.weight), ("fc1_b", m.fc1.bias),
+            ("fc2_w", m.fc2.weight), ("fc2_b", m.fc2.bias),
+        ]
+
+    def get_component_refs(self, block, comp):
+        D = self.get_hidden_dim_from_block(block)
+        n_heads = self.get_num_heads(block)
+        dk = D // n_heads
+        if comp["type"] == "attn":
+            hi = comp["head"]
+            lo, hie = hi * dk, (hi + 1) * dk
+            return [
+                ("V", block.self_attn.qkv.weight, "attn_ip_w",
+                 slice(2 * D + lo, 2 * D + hie), slice(None)),
+                ("O", block.self_attn.projection.weight, "attn_op_w",
+                 slice(None), slice(lo, hie)),
+            ]
+        return [
+            ("fc", block.mlp.fc1.weight, "fc1_w",
+             slice(None), slice(None)),
+            ("proj", block.mlp.fc2.weight, "fc2_w",
+             slice(None), slice(None)),
+        ]
+
+    # ── forward ──
+    def encode_image(self, model, images):
+        vis_proj, _, _ = self._itc_heads(model)
+        return vis_proj(self._cls(model.vision_model(pixel_values=images)))
+
+    def encode_text(self, model, texts, device):
+        _, txt_model, txt_proj = self._itc_heads(model)
+        proc = self._processor(model)
+        # max_length=35 — BLIP's training truncation length (Salesforce med.py)
+        tok = proc.tokenizer(list(texts), padding="max_length",
+                             truncation=True, max_length=35,
+                             return_tensors="pt")
+        input_ids = tok["input_ids"].to(device)
+        attention_mask = tok.get("attention_mask")
+        if attention_mask is not None:
+            attention_mask = attention_mask.to(device)
+        out = txt_model(input_ids=input_ids, attention_mask=attention_mask)
+        return txt_proj(self._cls(out))
+
+    def get_preprocess(self, model):
+        image_processor = self._processor(model).image_processor
+
+        def preprocess(pil_img):
+            out = image_processor(images=pil_img, return_tensors="pt")
+            return out["pixel_values"][0]
+        return preprocess
+
+    def get_norm_stats(self, model):
+        try:
+            ip = self._processor(model).image_processor
+            return list(ip.image_mean), list(ip.image_std)
+        except Exception:
+            return CLIP_MEAN, CLIP_STD
+
+    # ── sub-layer surgery ──
+    def get_sublayer_modules(self, block):
+        return {"attn": block.self_attn, "mlp": block.mlp}
+
+    @contextmanager
+    def replace_sublayer(self, block, kind, const_out):
+        # BlipEncoderLayer calls self_attn/mlp as *modules*; attention returns
+        # a (hidden, weights) 2-tuple that the layer unpacks
+        # (``hidden_states, _ = self.self_attn(...)``), so the attn
+        # replacement is the tuple-returning _AttnConst wrapper.
+        if kind == "mlp":
+            orig = block.mlp
+            block.mlp = const_out
+            try:
+                yield
+            finally:
+                block.mlp = orig
+        else:
+            orig = block.self_attn
+            block.self_attn = _AttnConst(const_out)
+            try:
+                yield
+            finally:
+                block.self_attn = orig
+
+    # ── helper: hidden dim of the block's own projections (D) ──
+    def get_hidden_dim_from_block(self, block):
+        # fused qkv weight is [3D, D]
+        return block.self_attn.qkv.weight.shape[1]
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -489,6 +705,9 @@ def get_adapter(model):
     mod = getattr(cls, "__module__", "")
     if mod.startswith("clip") or hasattr(model, "visual"):
         ad = OpenAICLIPAdapter()
+    elif "blip" in mod.lower() or cls.__name__.startswith("Blip") \
+            or hasattr(model, "visual_projection"):
+        ad = BlipAdapter()
     elif "siglip" in mod.lower() or cls.__name__.startswith("Siglip") \
             or hasattr(model, "vision_model"):
         ad = SigLIPAdapter()
@@ -508,6 +727,9 @@ def adapter_for_block(block):
     but their class identifies the architecture)."""
     cls = type(block)
     mod = getattr(cls, "__module__", "")
+    if "blip" in mod.lower() or cls.__name__.startswith("Blip") \
+            or (hasattr(block, "self_attn") and hasattr(block.self_attn, "qkv")):
+        return BlipAdapter()
     if "siglip" in mod.lower() or cls.__name__.startswith("Siglip") \
             or hasattr(block, "self_attn"):
         return SigLIPAdapter()
@@ -517,8 +739,8 @@ def adapter_for_block(block):
 def load_model(cfg):
     """Load (model, preprocess) for the registry entry behind cfg.
 
-    cfg.MODEL_ADAPTER selects the backend ('openai_clip' | 'siglip');
-    cfg.MODEL is the OpenAI clip name, cfg.HF_NAME the HF hub id.
+    cfg.MODEL_ADAPTER selects the backend ('openai_clip' | 'siglip' |
+    'blip'); cfg.MODEL is the OpenAI clip name, cfg.HF_NAME the HF hub id.
     """
     backend = getattr(cfg, "MODEL_ADAPTER", "openai_clip")
     if backend == "openai_clip":
@@ -528,6 +750,28 @@ def load_model(cfg):
     elif backend == "siglip":
         from transformers import AutoProcessor, SiglipModel
         model = SiglipModel.from_pretrained(cfg.HF_NAME)
+        model = model.float().to(cfg.DEVICE)
+        proc = AutoProcessor.from_pretrained(cfg.HF_NAME)
+        model._adapter_processor = proc
+        preprocess = get_adapter(model).get_preprocess(model)
+    elif backend == "blip":
+        from transformers import AutoConfig, AutoProcessor
+        import transformers as tmod
+        # The checkpoint's own class decides the attribute names (BlipModel:
+        # visual_projection/text_model; BlipForImageTextRetrieval:
+        # vision_proj/text_encoder).  Loading with the wrong class would
+        # silently leave the ITC projections randomly initialised, so the
+        # class is read from the checkpoint config.  (The raw capfilt
+        # pretrain checkpoint is not on the hub — BLIP.md §7.)
+        arch = (getattr(AutoConfig.from_pretrained(cfg.HF_NAME),
+                        "architectures", None) or ["BlipModel"])[0]
+        cls_map = {"BlipModel", "BlipForImageTextRetrieval"}
+        if arch not in cls_map:
+            raise ValueError(
+                f"BLIP checkpoint {cfg.HF_NAME!r} is a {arch} — it has no "
+                "ITC projection heads; use a BlipModel / "
+                "BlipForImageTextRetrieval checkpoint (BLIP.md §4/§7).")
+        model = getattr(tmod, arch).from_pretrained(cfg.HF_NAME)
         model = model.float().to(cfg.DEVICE)
         proc = AutoProcessor.from_pretrained(cfg.HF_NAME)
         model._adapter_processor = proc

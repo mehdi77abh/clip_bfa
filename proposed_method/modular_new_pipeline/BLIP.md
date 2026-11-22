@@ -5,8 +5,8 @@ pipeline) be applied to BLIP?  **Short answer: yes for BLIP-1 (the ITC
 model), with one explicit readout decision; BLIP-2/Q-Former is out of
 scope for now.**  This document records what the formulation actually
 assumes about the model, how BLIP satisfies each assumption, and what
-must be stated / re-tuned.  No code exists yet — see "Implementation
-notes" for the adapter work when it happens.
+must be stated / re-tuned.  The `BlipAdapter` is implemented and
+registered as `BLIP-B/16` (§7, 2026-11-21).
 
 ## 1. What the formulation assumes (verified in code)
 
@@ -106,26 +106,41 @@ A BLIP-2 claim would need a separate re-derivation, not a drop-in.
 > it with an ITC-space readout and additionally report linear-probe
 > results.
 
-## 7. Implementation notes (when the adapter is written)
+## 7. Implementation (done 2026-11-21)
 
-- `BlipAdapter` on HF `transformers` `BlipModel`: `encode_image` =
-  `get_image_features` **after** `visual_projection`; `encode_text` must
-  return the **projected** text `[CLS]` (`text_proj` applied) — HF's
-  `get_text_features` output shape/normalisation needs checking against
-  the Salesforce reference; this is the pre/post-projection pitfall of
-  §2 Phase 1.
-- `get_block_quant_params`: fused `qkv` + `attn.proj`, `norm1/norm2`,
-  `mlp.fc1/fc2` (+ biases) — same canonical names as
-  `OpenAICLIPAdapter` where possible so `sub_quant` keys line up.
+`BlipAdapter` in `adapters.py` (registry entry `BLIP-B/16`), verified by
+smoke tests on a tiny random `BlipModel` (all adapter contract points) and
+on the real checkpoint (geometry, ITC shapes, convention check, zero-shot
+readout on Caltech images, Phase-0 + Phase-1 gradient).
+
+- **Checkpoint:** `Salesforce/blip-itm-base-coco` (`BlipForImageTextRetrieval`)
+  — the raw `blip-vit-base-capfilt` pretrain checkpoint is **not on the HF
+  hub** (Salesforce distributes it outside the hub).  The ITM-coco
+  checkpoint is BLIP-1 ViT-B/16 fine-tuned from capfilt and carries the
+  ITC heads (`vision_proj`/`text_proj`, `image_text_hidden_size=256`);
+  swap `hf_name` for `blip-itm-base-flickr` / `-large` variants if wanted.
+  `load_model` reads the checkpoint's class from its config (BlipModel vs
+  BlipForImageTextRetrieval attribute names) — loading with the wrong class
+  would silently randomise the ITC projections.
+- **ITC convention (verified against transformers 5.x source):** the adapter
+  returns `vision_proj(vision last_hidden_state[:, 0, :])` /
+  `text_proj(text last_hidden_state[:, 0, :])` — raw `[CLS]`, exactly
+  `BlipForImageTextRetrieval`'s `use_itm_head=False` path.  Deliberately
+  NOT `BlipModel.get_image_features` (applies `post_layernorm` twice) or
+  `get_text_features` (routes through the BERT tanh pooler; the ITC text
+  encoder has no pooler at all).  Pitfall check is part of the smoke.
+- `get_block_quant_params`: fused `qkv` (= `attn_ip_w/b`) + `attn.proj`
+  (`attn_op_w/b`), `ln1/ln2`, `mlp.fc1/fc2` — canonical names identical
+  to `OpenAICLIPAdapter` so `sub_quant` keys line up across models.
 - `get_component_refs`: V slice on fused `qkv` rows `[2D+lo, 2D+hie)` —
-  copy the `OpenAICLIPAdapter` math.
-- `replace_sublayer`: timm-style block calls `self.attn` / `self.mlp`
-  as modules returning plain tensors → plain module swap for both kinds.
-- `get_seq_layout`: CLS prefix (`n_prefix=1`), patch 16, 224 input
-  (ViT-B/16); registry `adapter: "blip"`, `hf_name:
-  "Salesforce/blip-vit-base-capfilt"`.
-- BLIP checkpoints may load fp16 → keep `model.float()` (existing
-  convention).  Preprocessing/normalisation = CLIP stats (adapter
-  returns them; no special case needed).
-- Register in `config.json`, extend `load_model` + `get_adapter`
-  dispatch, add `class_texts/` per dataset as usual (names unchanged).
+  the `OpenAICLIPAdapter` math verbatim.
+- `replace_sublayer`: timm-style `BlipEncoderLayer` calls `self_attn` /
+  `mlp` as modules returning (hidden, weights) 2-tuple / tensor → shared
+  `_AttnConst` tuple-wrap + plain module swap (SigLIP pattern).
+- `get_seq_layout`: CLS prefix (`n_prefix=1`), patch 16, 224 input;
+  `get_norm_stats`: CLIP mean/std (identical clamp regime).
+- Tokeniser: `max_length=35` — BLIP's training truncation length
+  (Salesforce `med.py`).
+- Runtime env note: run BLIP configs with the `vlm_attack` conda env
+  (transformers ≥ 5; the ITC convention differs in 4.x — see §2).
+  `class_texts/` per dataset are unchanged (names identical across models).
