@@ -1,7 +1,7 @@
 # =============================================================================
 # requirements-vlm-transfer.txt — extras for vlm_transfer/ (README.md §6)
 # =============================================================================
-# Installed by setup_vastai.sh by default (skip with --no-vlm).
+# Installed by setup_env.sh by default (skip with --no-vlm).
 # torch / torchvision / transformers / sentencepiece / protobuf / numpy /
 # Pillow come from the core env (requirements-vastai.txt).
 #
@@ -10,13 +10,13 @@
 #  * open-flamingo==2.0.1
 #      Its PyPI metadata hard-pins torch==2.0.1 and sentencepiece==0.1.98 —
 #      a plain `pip install open_flamingo` would DOWNGRADE the CUDA torch
-#      build.  setup_vastai.sh installs it with `--no-deps`; its actual
+#      build.  setup_env.sh installs it with `--no-deps`; its actual
 #      runtime imports only need torch, transformers, open_clip, einops and
 #      einops-exts, all present here.
 #
 #  * eva-clip
 #      Not on PyPI and the upstream EVA-CLIP repo ships no setup.py, so it
-#      cannot be pip-installed.  setup_vastai.sh clones baaivision/EVA and
+#      cannot be pip-installed.  setup_env.sh clones baaivision/EVA and
 #      puts EVA-CLIP/rei on sys.path via a site-packages .pth file (this is
 #      what makes `import eva_clip` work for BLIP-2).
 # =============================================================================

@@ -147,8 +147,8 @@ semantics as the attack itself.
 | `tower_swap.py` | state-dict renaming (OpenAI/OpenCLIP ViT → HF ViT and → OpenCLIP ViT), fused q/k/v splitting, positional-embedding interpolation, tower discovery, the audited swap |
 | `vlm_adapters.py` | `VLMAdapter` ABC + `OpenFlamingoAdapter` / `LLaVAAdapter` / `BLIP2Adapter`; the single shared image→tensor path |
 | `datasets_vlm.py` | OK-VQA (VQA) and Flickr-30K (captioning) loaders, full-split defaults |
-| `download_vlm_data.py` | OK-VQA + COCO val2014 + Flickr-30K downloaders (stdlib only, `--dry-run`) |
-| `download_vlm_models.py` | VLM checkpoints — HF snapshots, OF-3B's `checkpoint.pt`, the EVA-CLIP source checkout, CLIP attack encoders; `hf auth login` token check, `--check` / `--dry-run` |
+| `../download_manager/download_datasets.py` | OK-VQA + COCO val2014 + Flickr-30K downloaders (plus every registry dataset) — `--dataset ok-vqa flickr30k`, `--check`, `--dry-run` |
+| `../download_manager/download_vlm_models.py` | VLM checkpoints — HF snapshots, OF-3B's `checkpoint.pt`, the EVA-CLIP source checkout, CLIP attack encoders; `.env`/`hf auth login` token check, `--list` / `--check` / `--dry-run` |
 | `metrics.py` | BLEU-4, target-mention rate (self-contained, no `pycocoevalcap`) |
 | `run_attack.py` | run CLIP-BFA on the VLM's own tower, force `--save-attacked-model`, write `vlm_transfer_meta.json` |
 | `evaluate.py` | the 4-cell protocol → `vlm_transfer.json` |
@@ -177,9 +177,10 @@ class to exist in exactly one module.
 additionally needs:
 
 ```bash
-bash setup_vastai.sh                            # installs all of the below
-# or by hand:
-pip install -r requirements-vlm-transfer.txt    # einops, einops-exts,
+bash download_manager/setup_env.sh                  # installs all of the below
+# or by hand (same directory):
+pip install -r download_manager/requirements-vlm-transfer.txt
+                                                # einops, einops-exts,
                                                 # open-clip-torch, timm
 pip install "transformers>=4.36" accelerate sentencepiece protobuf
 pip install open_flamingo --no-deps             # OF-3B; its metadata
@@ -188,7 +189,8 @@ pip install open_flamingo --no-deps             # OF-3B; its metadata
 
 **EVA-CLIP is not pip-installable.** `eva-clip` is not on PyPI and the
 upstream repo ships no `setup.py`, so `pip install eva-clip` does not
-work. `setup_vastai.sh` clones `baaivision/EVA` and puts `EVA-CLIP/rei` on
+work. `download_manager/setup_env.sh` clones `baaivision/EVA` and puts
+`EVA-CLIP/rei` on
 `sys.path` via a site-packages `.pth` file — that is what makes
 `import eva_clip` work for BLIP-2. Skip with `--no-eva-clip`; the
 `open_clip` fallback then takes over.
@@ -196,10 +198,10 @@ work. `setup_vastai.sh` clones `baaivision/EVA` and puts `EVA-CLIP/rei` on
 **Datasets.**
 
 ```bash
-python vlm_transfer/download_vlm_data.py --dry-run     # what is missing
-python vlm_transfer/download_vlm_data.py --dataset ok-vqa --no-images   # JSONs only
-python vlm_transfer/download_vlm_data.py --dataset ok-vqa               # + COCO val2014 (~13 GB)
-python vlm_transfer/download_vlm_data.py --dataset flickr30k
+python download_manager/download_datasets.py --dataset ok-vqa --dry-run   # plan + what is missing
+python download_manager/download_datasets.py --dataset ok-vqa --no-images # JSONs only
+python download_manager/download_datasets.py --dataset ok-vqa             # + COCO val2014 (~13 GB)
+python download_manager/download_datasets.py --dataset flickr30k
 ```
 
 Landing place: `proposed_method/../data/vlm/{ok-vqa,flickr30k}` (the
@@ -242,9 +244,10 @@ cd proposed_method/modular_new_pipeline     # all commands below run from here
 
 **Step 1 — environment (once).**
 ```bash
-bash setup_vastai.sh          # torch + VLM extras + the EVA-CLIP source
+bash download_manager/setup_env.sh   # torch + VLM extras + the EVA-CLIP source
                               # checkout that pip cannot provide
-python verify_env.py          # GATE: fails loudly if a dep / module /
+bash download_manager/setup_env.sh --verify
+                              # GATE: fails loudly if a dep / module /
                               # dataset is missing.  Do not start step 5
                               # until this is clean.
 ```
@@ -265,32 +268,34 @@ probe). If `data/ImageNet/val` is already populated, symlink
 
 **Step 3 — evaluation data: OK-VQA + Flickr-30K (once).**
 ```bash
-python vlm_transfer/download_vlm_data.py --dry-run            # what is missing
-python vlm_transfer/download_vlm_data.py --dataset ok-vqa     # + COCO val2014 (~13 GB)
-python vlm_transfer/download_vlm_data.py --dataset flickr30k
+python download_manager/download_datasets.py --check --dataset ok-vqa flickr30k
+python download_manager/download_datasets.py --dataset ok-vqa     # + COCO val2014 (~13 GB)
+python download_manager/download_datasets.py --dataset flickr30k
 ```
 Lands in `clip_bfa/data/vlm/{ok-vqa,flickr30k}`.
 
 **Step 4 — VLM checkpoints (once).**
 
-Authenticate first (the script never prompts for credentials):
+Authenticate first (put `HF_TOKEN=hf_xxx` in `download_manager/.env`, or
+run the login once — the script never prompts for credentials):
 ```bash
 hf auth login                       # or: export HF_TOKEN=hf_xxx
 ```
 Then fetch everything:
 ```bash
-python vlm_transfer/download_vlm_models.py --check     # auth + what is present
-python vlm_transfer/download_vlm_models.py --dry-run   # plan + disk sizes
-python vlm_transfer/download_vlm_models.py             # all five
+python download_manager/download_vlm_models.py --check     # auth + what is present
+python download_manager/download_vlm_models.py --dry-run   # plan + disk sizes
+python download_manager/download_vlm_models.py             # everything
 ```
 It pulls `llava` (`liuhaotian/llava-v1.5-7b`), `blip2`
 (`Salesforce/blip2-opt-6.7b`), `of3b` (the trained `checkpoint.pt` **and**
 its MPT-1B language model — `open_flamingo` ships the architecture only),
 `eva-clip` (the EVA-CLIP source checkout for BLIP-2's attack tower) and
-`clip` (the two OpenAI CLIP attack encoders). Budget ~35 GB of cache.
+the OpenAI CLIP attack encoders. Budget ~35 GB of cache.
 
 Select subsets with `--models llava blip2`; `--write-pth` also puts
-`eva_clip` on `sys.path` (otherwise run `setup_vastai.sh`, which does the
+`eva_clip` on `sys.path` (otherwise run `download_manager/setup_env.sh`,
+which does the
 same thing). OF-3B's checkpoint lands in
 `vlm_transfer/checkpoints/` — `export VLM_CHECKPOINT=…/checkpoint.pt` when
 evaluating.
@@ -378,7 +383,7 @@ be installed or registered at run time.
 in the joint image–text space):
 
 ```bash
-bash setup_vastai.sh          # clones baaivision/EVA and puts EVA-CLIP/rei
+bash download_manager/setup_env.sh   # clones baaivision/EVA and puts EVA-CLIP/rei
                               # on sys.path — that is what makes
                               # `import eva_clip` work (eva-clip is not on
                               # PyPI; `pip install eva-clip` does NOT work)
@@ -487,7 +492,8 @@ did **not** fully reach the tower.
 - **BLIP-2 row is gated on the EVA-CLIP ViT-G/14 checkpoint.** The
   adapter and registry entry exist and are tested against mock towers; the
   real checkpoint has not been loaded here (see §6).
-- **FLICKR-30K image mirror.** `download_vlm_data.py`'s default
+- **FLICKR-30K image mirror.** `download_manager/download_datasets.py`'s
+  default
   `flickr30k_images` URL is a mirror and may move — `--url` overrides it.
   If the mirror is dead, place `flickr30k-images/*.jpg` under
   `data/vlm/flickr30k/images/` manually.

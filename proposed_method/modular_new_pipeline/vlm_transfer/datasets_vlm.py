@@ -78,7 +78,7 @@ def _load_json(path: str):
 class OKVQADataset:
     """OK-VQA questions + reference answers + COCO val2014 images.
 
-    ``root`` layout (see download_vlm_data.py)::
+    ``root`` layout (see download_manager/download_datasets.py)::
 
         root/
           questions/OpenEnded_mscoco_val2014_questions.json
@@ -127,7 +127,7 @@ class OKVQADataset:
         if not os.path.isdir(self.images_dir):
             raise FileNotFoundError(
                 f"OK-VQA images not found: {self.images_dir}\n"
-                f"  Run: python download_vlm_data.py --dataset ok-vqa")
+                f"  Run: python download_manager/download_datasets.py --dataset ok-vqa")
 
     def __len__(self):
         return len(self.items)
@@ -157,7 +157,7 @@ class OKVQADataset:
 class Flickr30KCaptions:
     """Flickr-30K images + 5 reference captions each.
 
-    ``root`` layout (see download_vlm_data.py)::
+    ``root`` layout (see download_manager/download_datasets.py)::
 
         root/
           images/flickr30k-images/<image_name>.jpg
@@ -183,7 +183,7 @@ class Flickr30KCaptions:
         else:
             raise FileNotFoundError(
                 f"Flickr-30K annotations not found (looked for {karpathy} "
-                f"and {flat}).\n  Run: python download_vlm_data.py "
+                f"and {flat}).\n  Run: python download_manager/download_datasets.py "
                 f"--dataset flickr30k")
 
         expected = FLICKR_SPLITS.get(split)
@@ -197,7 +197,7 @@ class Flickr30KCaptions:
         if not os.path.isdir(self.images_dir):
             raise FileNotFoundError(
                 f"Flickr-30K images not found: {self.images_dir}\n"
-                f"  Run: python download_vlm_data.py --dataset flickr30k")
+                f"  Run: python download_manager/download_datasets.py --dataset flickr30k")
 
     def _from_karpathy(self, path: str) -> list:
         data = _load_json(path)

@@ -52,9 +52,13 @@ def load_env(path: str = None) -> dict:
     single quotes around the value are stripped.  Variables already present
     in os.environ are NEVER overridden (the real environment wins).
 
+    The file is ``download_manager/.env`` unless `path` or the
+    DOWNLOAD_MANAGER_ENV variable points elsewhere (the tests use that to
+    run with an empty environment).
+
     Returns the dict of variables found in the file.
     """
-    path = path or ENV_FILE
+    path = path or os.environ.get("DOWNLOAD_MANAGER_ENV") or ENV_FILE
     found = {}
     if not os.path.isfile(path):
         return found

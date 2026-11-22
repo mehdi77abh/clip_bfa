@@ -2,7 +2,7 @@
 # requirements-vastai-optional.txt — extras from the dev `vlm_attack` env
 # =============================================================================
 # Not imported by the proposed method (modular_new_pipeline). Install with
-#     ./setup_vastai.sh --with-optional
+#     ./setup_env.sh --with-optional
 # or manually:
 #     pip install -r requirements-vastai-optional.txt
 # =============================================================================

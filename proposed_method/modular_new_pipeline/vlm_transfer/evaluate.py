@@ -260,7 +260,7 @@ def parse_args(argv=None):
     ev.add_argument("--split", default="test")
     ev.add_argument("--data-root", default=None,
                     help="datasets root (default: proposed_method/../data/vlm, "
-                         "where download_vlm_data.py puts them)")
+                         "where download_manager/download_datasets.py puts them)")
     ev.add_argument("--max-samples", type=int, default=0,
                     help="0 = the full evaluation split (X-Transfer applies "
                          "the attack to each image in the eval dataset)")

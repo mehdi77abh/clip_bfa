@@ -26,7 +26,7 @@ Evaluation follows the run's own task (TASKS.md):
     fixed head is part of the protocol, RESULTS.md §2).
 
 CC3M layout (``--cc3m-root``, default ``../data/cc3m``) — auto-detected:
-  * **WebDataset shards** (``download_datasets.py`` / pixparse/cc3m-wds):
+  * **WebDataset shards** (``download_manager/download_datasets.py`` / pixparse/cc3m-wds):
     ``cc3m-train-NNNN.tar`` flat under the root, per sample
     ``key.jpg`` + ``key.txt`` (caption) + ``key.json`` (fallback caption).
     ``--cc3m-split {train,validation}`` picks the shard set (default: train).
@@ -100,7 +100,7 @@ def parse_args():
     data.add_argument("--cc3m-format", default="auto",
                       choices=["auto", "tar", "csv"],
                       help="data layout: tar = WebDataset shards "
-                           "(download_datasets.py), csv = metadata + images "
+                           "(download_manager/download_datasets.py), csv = metadata + images "
                            "(default: auto-detect)")
     data.add_argument("--cc3m-split", default="train",
                       choices=["train", "validation"],
@@ -292,7 +292,7 @@ class CC3MCaptions(_BaseCC3M):
 
 
 # ══════════════════════════════════════════════════════════════════════
-#  CC3M WEBCONTAINER SHARDS (download_datasets.py / pixparse/cc3m-wds)
+#  CC3M WEBCONTAINER SHARDS (download_manager/download_datasets.py / pixparse/cc3m-wds)
 # ══════════════════════════════════════════════════════════════════════
 def find_cc3m_shards(root, split="train"):
     """Flat WebDataset shards: cc3m-{split}-NNNN.tar (downloader layout)."""
@@ -317,7 +317,7 @@ class CC3MShards(_BaseCC3M):
         if not self.shards:
             raise FileNotFoundError(
                 f"No CC3M tar shards ({split}) under {root} — run "
-                f"download_datasets.py first or pass --cc3m-root.")
+                f"download_manager/download_datasets.py first or pass --cc3m-root.")
         self._handles = {}
         entries = []
         for si, path in enumerate(self.shards):

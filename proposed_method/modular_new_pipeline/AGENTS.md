@@ -78,11 +78,24 @@ gradient fallback.
 - **Fine-Tuning defence done (2026-11-20):** `defence_finetune.py` +
   `run_defence_ft.sh` — load `model_state_attacked.pt` from a run dir,
   fine-tune on CC3M (`../data/cc3m`; WebDataset shards from
-  `download_datasets.py` or BadCLIP CSV+images, auto-detected), evaluate
+  `download_manager/download_datasets.py` or BadCLIP CSV+images,
+  auto-detected), evaluate
   before/after on the identical eval set (the run's own task: zs = rebuilt
   zero-shot readout, lp = shared probe head) and write `defence_ft.json`
   inside the run dir.  `run_defence_ft.sh` drives the two agreed configs
   (zs + lp, ViT-L/14 × ImageNet1k).
+- **Download manager (2026-11-22):** all setup/download tooling consolidated
+  into `download_manager/` (its README.md is the usage doc):
+  `setup_env.{py,sh}` (the `vlm_attack` env — replaces `setup_vastai.sh` +
+  `verify_env.py` + `test_setup.py`; `setup_env.py --verify` re-runs the
+  checks), `download_datasets.{py,sh}` (every registry dataset + CC3M +
+  ok-vqa/flickr30k; `--list/--check/--dataset NAME/--all`; `--check`
+  replaces test_setup's dataset probes), `download_vlm_models.{py,sh}`
+  (attack encoders + VLM checkpoints; `--list/--check/--models`),
+  `.env` for `HF_TOKEN` (git-ignored).  The old files were **deleted** and
+  `requirements-*.txt` moved into `download_manager/`; the dataset CLI is
+  now `--dataset NAME` (not `--datasets a,b`).  Experiment-runner shells
+  untouched.
 
 ## Reference sync log (behavioural deltas of the 2026-11-08 maintainer edit)
 
@@ -223,13 +236,16 @@ modular_new_pipeline/
                        #   flags hook here; Phase-1 dead-trigger retries
                        #   (--trigger-min-asr / --trigger-retries)
   main.py              # main(cfg) → AttackPipeline(cfg).run() + OOM try/catch
-  download_datasets.py # standalone Caltech-101 + ImageNet-1k (ILSVRC/imagenet-1k,
-                       #   gated → HF token) + Food101 (ethz/food101 HF parquet,
-                       #   → VGG fallback) + CC3M (pixparse/cc3m-wds, ~280 GB
-                       #   train; subset via --cc3m-max-shards N ≈ 100K pairs
-                       #   for N=20 — BadCLIP Defence-FT size) downloader into
-                       #   ../data (registry layout); --start-only = download
-                       #   probe only (tested OK 2026-11-19/20 on ../data_test)
+  download_manager/    # ALL setup + downloads (see download_manager/README.md):
+                       #   setup_env.{py,sh} = the vlm_attack conda env
+                       #     (old setup_vastai.sh + verify_env.py + test_setup.py
+                       #     paths probe — `setup_env.py --verify` re-runs the
+                       #     checks); download_datasets.{py,sh} = every dataset
+                       #     (registry + CC3M + ok-vqa/flickr30k) with --list /
+                       #     --check / --dataset NAME / --all / --start-only;
+                       #     download_vlm_models.{py,sh} = attack encoders +
+                       #     VLM checkpoints with --list / --check / --models;
+                       #     .env = HF_TOKEN (git-ignored); requirements-*.txt
   aggregate.py         # runs.csv + runs_{model}.csv (per model) + summary.csv
                        #   (mean ± std per config) from bfa_results.json — 2-decimal
                        #   cells, asr_base → trigger_asr column, LP columns

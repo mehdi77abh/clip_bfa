@@ -4,7 +4,7 @@
 # Mirrors the `vlm_attack` conda env (Python 3.10) as of 2026-11-21.
 #
 # NOT listed here on purpose:
-#   * torch / torchvision  -> installed by setup_vastai.sh from the CUDA wheel
+#   * torch / torchvision  -> installed by setup_env.sh from the CUDA wheel
 #     index that matches the *server's* driver (cu118/cu121/cu124/cu126/cu128).
 #     Those wheels also bring triton + the nvidia-* runtime libs.
 #   * torchtext 0.18       -> leftover in the dev env; it pins torch==2.3 and
@@ -31,7 +31,7 @@ gdown==6.1.0
 requests==2.34.2
 tqdm==4.67.3
 
-# --- OpenAI CLIP (installed from git by setup_vastai.sh) --------------------
+# --- OpenAI CLIP (installed from git by setup_env.sh) --------------------
 ftfy==6.3.1
 regex==2026.5.9
 

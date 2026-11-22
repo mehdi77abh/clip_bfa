@@ -177,7 +177,8 @@ def hf_auth_status():
         from huggingface_hub import get_token
     except ImportError as e:
         return False, (f"huggingface_hub is not installed ({e}).  "
-                       f"pip install -r requirements-vlm-transfer.txt")
+                       f"pip install -r download_manager/"
+                       f"requirements-vlm-transfer.txt")
 
     token = get_token()
     if not token:
@@ -356,11 +357,14 @@ def prefetch_clip(clip_names=None, cache_dir=None) -> None:
 # ══════════════════════════════════════════════════════════════════════
 def parse_args(argv=None):
     p = argparse.ArgumentParser(
-        description="Download the VLM checkpoints used by vlm_transfer/. "
-                    "Authenticate first with `hf auth login`.")
+        description="Download the model checkpoints (attack encoders + "
+                    "VLM-transfer).  Put the HF token in "
+                    "download_manager/.env or run `hf auth login` first.")
     p.add_argument("--models", nargs="+", default=DEFAULT_MODELS,
                    choices=sorted(MODELS), metavar="NAME",
-                   help=f"which to fetch (default: {' '.join(DEFAULT_MODELS)})")
+                   help=f"which to fetch (default: all — {' '.join(DEFAULT_MODELS)})")
+    p.add_argument("--list", action="store_true",
+                   help="list the available models and exit")
     p.add_argument("--cache-dir", default=None,
                    help="HF cache dir (default: the hub default, honours HF_HOME)")
     p.add_argument("--of3b-dest", default=None,
@@ -370,7 +374,7 @@ def parse_args(argv=None):
                    help="where to clone the EVA-CLIP source")
     p.add_argument("--write-pth", action="store_true",
                    help="EVA-CLIP: also write the site-packages .pth so "
-                        "`import eva_clip` works (what setup_vastai.sh does)")
+                        "`import eva_clip` works (what setup_env.sh does)")
     p.add_argument("--check", action="store_true",
                    help="report auth + what is already downloaded; download nothing")
     p.add_argument("--dry-run", action="store_true",
@@ -391,18 +395,32 @@ def status_report(models) -> dict:
         elif spec["kind"] == "git_source":
             present = eva_clip_installed()
         else:                                    # clip_prefetch
-            present = clip_cached()
+            present = clip_cached(spec.get("clip_names"))
         out[key] = present
     return out
 
 
 def main(argv=None):
     args = parse_args(argv)
+    common.load_env()                  # download_manager/.env (HF_TOKEN etc.)
     models = list(args.models)
 
     print("=" * 64)
-    print("VLM-TRANSFER MODEL DOWNLOAD")
+    print("MODEL DOWNLOAD  (attack encoders + VLM transfer)")
     print("=" * 64)
+
+    if args.list:
+        present = status_report(sorted(MODELS))
+        print(f"\n  {'model':14s} {'present':8s} {'size':>7s}  what it is")
+        print("  " + "-" * 62)
+        for key in DEFAULT_MODELS:
+            spec = MODELS[key]
+            flag = "yes" if present[key] else "no"
+            print(f"  {key:14s} {flag:8s} {spec['size_gb']:6.1f}G  "
+                  f"{spec['label']}")
+            print(f"  {'':14s} {'':8s} {'':7s}  -> {spec['used_by']}")
+        print("\n  --list: nothing downloaded.")
+        return 0
 
     # SOCKS proxy vars make the hub stack abort (AGENTS.md env gotcha)
     sanitize_proxy_env()
@@ -411,8 +429,10 @@ def main(argv=None):
     ok, msg = hf_auth_status()
     print(f"\n  auth   : {msg}")
     if not ok and not (args.dry_run or args.check):
-        print("\n  Refusing to start without a token for the 3-8B VLMs.")
-        print("  Run `hf auth login`, then re-run this command.")
+        print("\n  Refusing to start without a token for the gated / 3-8B "
+              "checkpoints.")
+        print("  Put HF_TOKEN=hf_xxx in download_manager/.env (or run "
+              "`hf auth login`), then re-run.")
         return 2
 
     # ── plan / status ──────────────────────────────────────────────
@@ -457,7 +477,7 @@ def main(argv=None):
             elif spec["kind"] == "git_source":
                 install_eva_clip_source(args.eva_clip_dir, args.write_pth)
             elif spec["kind"] == "clip_prefetch":
-                prefetch_clip(args.cache_dir)
+                prefetch_clip(spec.get("clip_names"), args.cache_dir)
         except Exception as e:                # noqa: BLE001 — report, continue
             print(f"  [FAIL] {key}: {type(e).__name__}: {e}")
             if "401" in str(e) or "403" in str(e) or "gated" in str(e).lower():

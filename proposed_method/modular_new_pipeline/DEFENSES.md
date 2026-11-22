@@ -16,7 +16,8 @@ maintainer (paper / hyperparameters).
    - Standard defence: fine-tune the attacked model on **clean** data so the
      backdoor is overwritten while task accuracy is kept.
    - **Clean data = CC3M** (`../data/cc3m`; WebDataset shards from
-     `download_datasets.py` (`cc3m-train-NNNN.tar`) or BadCLIP-style
+     `download_manager/download_datasets.py` (`cc3m-train-NNNN.tar`) or
+     BadCLIP-style
      CSV + images — auto-detected, `--cc3m-format {auto,tar,csv}`).
    - Objective: symmetric CLIP InfoNCE on image–caption batches (learnable
      `logit_scale`, clamped at 100).

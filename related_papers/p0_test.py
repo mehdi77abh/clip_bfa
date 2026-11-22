@@ -387,10 +387,16 @@ class P0TriggerGenerator(TriggerGenerator):
     """
 
     def generate(self, model, text_emb, t_target, calib_loader,
-                 target_images, cfg):
+                 target_images, cfg, neg_text_emb=None):
+        # neg_text_emb: the updated modular pipeline.py (R1 integration)
+        # passes its InfoNCE competitor embedding here on every attempt.
+        # p0_test arms own their competitor source (_build_competitors /
+        # NEG_LISTS), so the kwarg is only forwarded to the reference cos
+        # path — kept for signature compatibility with the pipeline call.
         if cfg.P1_LOSS != "cnl":
             trig = super().generate(model, text_emb, t_target, calib_loader,
-                                    target_images, cfg)
+                                    target_images, cfg,
+                                    neg_text_emb=neg_text_emb)
         else:
             trig = self._generate_cnl(model, text_emb, calib_loader, cfg)
         self._diag_top_classes(model, trig, calib_loader, text_emb, cfg)

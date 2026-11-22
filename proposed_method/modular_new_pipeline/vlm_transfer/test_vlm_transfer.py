@@ -23,7 +23,7 @@ import torch.nn as nn
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _PARENT = os.path.dirname(_HERE)
-for _p in (_PARENT, _HERE):
+for _p in (_PARENT, _HERE, os.path.join(_PARENT, "download_manager")):
     if _p not in sys.path:
         sys.path.insert(0, _p)
 
@@ -833,8 +833,8 @@ def test_download_models_parse_args():
 
 def test_download_models_status_report_is_offline():
     import download_vlm_models as dm
-    st = dm.status_report(["eva-clip", "clip"])
-    assert set(st) == {"eva-clip", "clip"}
+    st = dm.status_report(["eva-clip", "vit-l14"])
+    assert set(st) == {"eva-clip", "vit-l14"}
     assert all(isinstance(v, bool) for v in st.values())
 
 
@@ -851,17 +851,24 @@ def test_download_models_check_exits_clean():
 def test_download_models_refuses_without_token():
     """--check/--dry-run work logged out; a real run must not start."""
     import download_vlm_models as dm
+    import common as dm_common
     from huggingface_hub import get_token
-    if get_token():
-        return                                   # logged in: not applicable
     saved = dict(os.environ)
+    empty_env = tempfile.NamedTemporaryFile("w", suffix=".env", delete=False)
+    empty_env.close()
     try:
+        # neutralise download_manager/.env as well as the shell environment
+        os.environ["DOWNLOAD_MANAGER_ENV"] = empty_env.name
         os.environ.pop("HF_TOKEN", None)
         os.environ.pop("HUGGING_FACE_HUB_TOKEN", None)
+        dm_common._TOKEN[0] = None
+        if get_token():
+            return                                   # logged in: not applicable
         rc = dm.main(["--models", "eva-clip"])
     finally:
         os.environ.clear()
         os.environ.update(saved)
+        os.remove(empty_env.name)
     assert rc == 2, rc
 
 
@@ -957,15 +964,16 @@ def test_evaluate_parse_args_defaults():
 
 
 def test_download_status_probe():
-    from download_vlm_data import check_status
+    from download_datasets import check_status
     st = check_status(tempfile.mkdtemp())
     assert set(st) == {"ok-vqa", "flickr30k"}
     assert not any(st["ok-vqa"].values())
 
 
 def test_download_dry_run_runs():
-    from download_vlm_data import main
-    assert main(["--dry-run", "--root", tempfile.mkdtemp()]) == 0
+    from download_datasets import main
+    assert main(["--dataset", "ok-vqa", "flickr30k", "--dry-run",
+                 "--root", tempfile.mkdtemp()]) == 0
 
 
 # ══════════════════════════════════════════════════════════════════════

@@ -81,8 +81,10 @@ capped `cos_t`).  Recipe = **m=0, TDA off, random 64 carriers, no pool**.
 - [x] Grid drivers: `run_all.sh` (validation + ablation), `run_lp.sh` (LP task),
       `run_defence_ft.sh` (FT defence) — logs + `RESUME=1` skip logic
 - [x] OOM & error contract (`oom_pending.json` / `failed_runs.json`, exit-0 continuation)
-- [x] Data tooling: `download_datasets.py` (Caltech-101, ImageNet-1k, Food101,
-      **CC3M wds shards**), `prepare_imagenet.py`, `make_class_texts.py`,
+- [x] Data tooling: `download_manager/download_datasets.py` (Caltech-101,
+      ImageNet-1k, Food101, **CC3M wds shards**, CIFAR/DTD/Flowers102,
+      ok-vqa/flickr30k + `--check`), `prepare_imagenet.py`,
+      `make_class_texts.py`,
       `class_texts/{caltech101,cifar10,dtd,food101,flowers102,imagenet1k}`
 - [x] BLIP applicability scope note (`BLIP.md`, 2026-11-20): formulation check
       (A1–A3 satisfied by BLIP-1 ITC), readout decision (ITC-cosine argmax +
@@ -162,7 +164,8 @@ protocol — BASELINES.md §2; kept only as `--task lp`)
 - [~] FT defence **runs** — nothing executed yet, **(blocked)** on:
       (a) `model_state_attacked.pt` — **none saved on disk yet** (re-run the two
       attacks with `--save-attacked-model`; `run_lp.sh` now does it by default),
-      (b) CC3M download (`python download_datasets.py --datasets cc3m`), see §6
+      (b) CC3M download (`python download_manager/download_datasets.py
+      --dataset cc3m`), see §6
 - [ ] FaR defence — hyperparameters/definition **TBD by maintainer**
 - [ ] Fill the §4 table (ASR/CACC, no defence vs after, per defence × dataset)
 
@@ -208,8 +211,9 @@ VLM-transfer evaluation" — RESULTS.md #6 — this is the evaluation half.)
 - [ ] **ImageNet-1k train/val prepared** — `data/imagenet/` currently holds only
       the stray folder; run `python ../../data/prepare_imagenet.py` (needed for
       the LP probe's 50 000 train images and both `run_lp.sh`/`run_all.sh`)
-- [ ] **CC3M downloaded** (`download_datasets.py --datasets cc3m`, wds shards
-      `data/cc3m/cc3m-train-NNNN.tar`) — needed for the FT defence
+- [ ] **CC3M downloaded** (`download_manager/download_datasets.py --dataset
+      cc3m`, wds shards `data/cc3m/cc3m-train-NNNN.tar`) — needed for the FT
+      defence
 - [ ] Food101 / Flowers102 — registered (2026-11-20) but **data not downloaded**
 - [ ] Stray-empty-folder cleanup (`data/imagenet/caltech101`,
       `data/*/101_ObjectCategories/caltech101`) — **maintainer call** (`rmdir`)
@@ -238,8 +242,8 @@ In order (GPU box, `vlm_attack` env):
 3. [ ] Ensure the **zs ViT-L/14 × ImageNet1k** run has `model_state_attacked.pt`
       (existing `validation/…/zs_c291_s77_r1_full_t16` — else re-run with
       `--save-attacked-model`)
-4. [ ] `python download_datasets.py --datasets cc3m` (or place CC3M under
-      `../data/cc3m`)
+4. [ ] `python download_manager/download_datasets.py --dataset cc3m` (or
+      place CC3M under `../data/cc3m`)
 5. [ ] `bash run_defence_ft.sh` — FT defence on both configs; read
       `defence_ft.json` + the §4 summary table
 6. [ ] While at it: add the missing validation seeds (64/77) and SigLIP-B/16

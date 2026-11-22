@@ -2,50 +2,26 @@
   "mode": "start-only",
   "dest": "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/data_test",
   "argv": [
-    "download_datasets.py",
+    "/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/download_manager/download_datasets.py",
+    "--start-only",
+    "--dataset",
+    "cifar10",
     "--dest",
-    "../data_test",
-    "--datasets",
-    "cc3m",
-    "--cc3m-max-shards",
-    "20",
-    "--start-only"
+    "../data_test"
   ],
-  "time": "2026-11-21 16:04:42",
+  "time": "2026-11-22 17:48:07",
   "probes": [
     {
-      "file": "cc3m/_info.json",
-      "url": "https://huggingface.co/datasets/pixparse/cc3m-wds/resolve/main/_info.json",
+      "file": "cifar-10-python.tar.gz",
+      "url": "https://www.cs.toronto.edu/~kriz/cifar-10-python.tar.gz",
+      "magic_expected": "\u001f\u008b",
       "ok": true,
-      "shards": {
-        "train": 576,
-        "validation": 16
-      }
-    },
-    {
-      "file": "cc3m-train-0000.tar",
-      "url": "https://huggingface.co/datasets/pixparse/cc3m-wds/resolve/main/cc3m-train-0000.tar",
-      "magic_expected": "ustar",
-      "ok": true,
-      "source": "cc3m train",
+      "source": "toronto",
       "http_status": 200,
-      "content_length": "487823360",
-      "content_type": "application/x-tar",
+      "content_length": "170498071",
+      "content_type": "application/x-gzip",
       "bytes_read": 1048576,
-      "magic_found": "usta",
-      "magic_ok": true
-    },
-    {
-      "file": "cc3m-validation-0000.tar",
-      "url": "https://huggingface.co/datasets/pixparse/cc3m-wds/resolve/main/cc3m-validation-0000.tar",
-      "magic_expected": "ustar",
-      "ok": true,
-      "source": "cc3m validation",
-      "http_status": 200,
-      "content_length": "71987200",
-      "content_type": "application/x-tar",
-      "bytes_read": 1048576,
-      "magic_found": "usta",
+      "magic_found": "\u001f\u008b\b\u0000",
       "magic_ok": true
     }
   ]

@@ -1,5 +1,11 @@
 # Code Documentation
 
+> **Stale snapshot.** This file is a dated auto-generated code dump
+> (2026-11-11) — NOT live documentation. Parts of it no longer match the
+> tree: e.g. `test_setup.py` was removed in the download_manager refactor
+> (2026-11-22); setup/download tooling now lives in `download_manager/`
+> (see `download_manager/README.md`).
+
 **Generated on:** 2026-11-11 18:08:37 +0330
 **Project Path:** `/media/Mehdi/Uni/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline`
 
