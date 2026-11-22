@@ -44,10 +44,10 @@ Caveats (documented, intentional):
   * Phases 2A-5 are untouched and keep t_bar = text_emb[TARGET_CLS].
 
 Usage (from the repo root or anywhere):
-  # ViT-L/14 × ImageNet1k (default config)
+  # ViT-L/14 × ImageNet1k (defaults: target 'lion', neg-list lion_v2)
+  python related_papers/p0_test.py --arm p2txt --p1-margin 0 --tda off
   python related_papers/p0_test.py --arm p2txt --target-name lion --neg-list lion_v1 \
-      --p1-margin 0 --tda off
-  python related_papers/p0_test.py --arm p1
+      --p1-margin 0 --tda off          # the unfiltered v1 reference
   python related_papers/p0_test.py --arm p2 --neg-list tabby_v1
   python related_papers/p0_test.py --arm a0 --seed 42
 
@@ -102,7 +102,7 @@ DEFAULT_MODEL = "ViT-L/14"
 DEFAULT_DATASET = "ImageNet1k"
 # Dataset-aware defaults: (target-name, neg-list) when the flags are omitted.
 DATASET_DEFAULTS = {
-    "ImageNet1k": ("tabby cat", "tabby_v1"),
+    "ImageNet1k": ("lion", "lion_v2"),
     "Caltech101": ("motorbike", "motorbike_v2"),
 }
 DEFAULT_TRIG_SZ = 16        # run_all.sh trigger-size policy: 16 @ 224px
@@ -206,6 +206,25 @@ NEG_LISTS = {
         ("vehicle", "helicopter", 14),
         ("ship", "ferry boat", 10), ("ship", "ketch ship", 9),
         ("ship", "schooner ship", 9),
+    ],
+    # T3b = "lion" — SEPARABLE variant, curated like motorbike_v2
+    # (2026-11-22): the house-cat rows of lion_v1 (tabby cat, tiger cat,
+    # Persian cat, Egyptian Mau) are the collinear family (they sank the
+    # tabby run) and are dropped; big cats are the actual eval confusables
+    # (lion's argmax thieves), canids/foxes are separable fillers.  No
+    # literal synonyms ("mountain lion"-style names banned).  The
+    # separability filter (--neg-cos-max) is the runtime guard: if e.g.
+    # "tiger" measures > τ the print documents it and the wedge is simply
+    # not there to exploit.
+    "lion_v2": [
+        ("bigcat", "tiger", 14), ("bigcat", "leopard", 14),
+        ("bigcat", "jaguar", 12), ("bigcat", "snow leopard", 10),
+        ("bigcat", "cheetah", 10), ("bigcat", "cougar", 8),
+        ("bigcat", "lynx", 8),
+        ("canid", "hyena", 4), ("canid", "African wild dog", 4),
+        ("canid", "grey wolf", 4), ("canid", "dhole", 4),
+        ("fox", "red fox", 2), ("fox", "kit fox", 2),
+        ("fox", "Arctic fox", 2), ("fox", "grey fox", 2),
     ],
 }
 

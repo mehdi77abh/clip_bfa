@@ -337,6 +337,28 @@ bikes + vehicle/ship rows only; (2) separability filter `--neg-cos-max` (default
 negatives with cos(t̄, n) > τ; (3) per-negative cos(t̄, n_r) geometry print at Phase-1 start.
 Caltech default neg list is now motorbike_v2.
 
+### 2026-11-22 (later) — fix VALIDATED: InfoNCE v2+filter = 60.5 % (parity with cos 63.0 %)
+
+Same config as above, seed 42.  Filter caught `bicycle` (+0.926) and `racing bike` (+0.915) as
+near-collinear — even "bicycle" fights "motorbike" in CLIP text space; `mountain bike` (+0.873)
+survived.  R1 signature returned: `margin_pseudo` −0.033 → **+0.051**, `margin_class` crossed
+**positive (+0.009)** at ep100, `cos_t` 0.286 (vs v1's 0.241 cap), `[diag]` target share
+**65.6 %** (vs 26.6 %), errors diffuse.  Standalone **60.5 %** vs v1's 17.5 % (4×) and cos's
+63.0 % (within the ±3–4 pt noise floor → parity).
+
+| arm (B/16 × Caltech, motorbike, s42) | cos_t | margin_pseudo | margin_class | diag share | standalone |
+|---|---|---|---|---|---|
+| InfoNCE v1 (synonyms) | 0.241 | +0.001 | −0.028 | 26.6 % | 17.5 % |
+| **InfoNCE v2 + filter** | **0.286** | **+0.051** | **+0.009** | **65.6 %** | **60.5 %** |
+| cos (a0) | 0.308 | – | – | 73.4 % | 63.0 % |
+
+Scoreboard (separable negatives): lion L/14 — InfoNCE 52.0 vs cos 45.6 (win);
+motorbike B/16 — InfoNCE 60.5 vs cos 63.0 (parity).  **InfoNCE ≥ cos whenever negatives are
+confusable-but-separable; the filter makes it a procedure.**  v1→v2→filter ablation
+(17.5 → 60.5) is the paper table.  Pending: finish one run through Phases 2–5 (JSON artefacts),
+lion rerun with geometry print (the printed cos(t̄, n_r) also isolates the farzin outlier:
+identical values ⇒ carriers/env; different ⇒ text-encoder env difference), 3 seeds.
+
 ### 2026-11-21 (later) — target mismatch identified, win bar set
 
 The stored cos reference is target **"lion" (cls 291)**, while all P0 runs used "tabby cat" (cls
