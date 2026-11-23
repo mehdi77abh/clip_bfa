@@ -69,6 +69,8 @@ Any `experiment.py` flag is passed through (e.g. --seed, --section, --out-dir,
 """
 
 import argparse
+import hashlib
+import json
 import os
 import sys
 
@@ -241,6 +243,7 @@ class _State:
     calib_idx = []
     dcomp_idx = []
     neg_idx = []            # 100 held-out negative images (val indices)
+    rank = None             # canonical content order (see _content_order)
     parity_done = False
 
 
@@ -313,6 +316,63 @@ def _filter_separable(names, comps, t_bar, tau):
     return comps, kept_names
 
 
+def _content_order(ds, cache_tag):
+    """Canonical dataset order by CONTENT (md5 of file bytes).
+
+    compare_imagenet_sources.py (2026-11-23) proved the HF and official
+    ILSVRC trees hold byte-identical JPEGs under different filenames —
+    name-sorted iteration + SEED then selects different PHYSICAL images
+    per source (the official 0-4 % vs HF 38-52 % InfoNCE gap).  Ordering
+    samples by content hash makes every split source-invariant: the same
+    seed picks the same pictures regardless of what they are called.
+    Hashes are cached per dataset root (first run pays a one-time pass).
+    Returns (rank, ok): rank[i] = canonical position of dataset index i.
+    """
+    samples = getattr(ds, "samples", None) or getattr(ds, "imgs", None)
+    if samples is not None:
+        paths = [str(s[0]) for s in samples]
+    else:
+        idx_list = getattr(ds, "_index", None)
+        paths = [str(p) for p in idx_list] if idx_list else None
+    n = len(ds)
+    if not paths or len(paths) != n:
+        print("  [split-key] dataset exposes no file listing — "
+              "falling back to name order")
+        return np.arange(n), False
+
+    def _rel(p):
+        try:
+            return os.path.relpath(p, cache_tag)
+        except ValueError:
+            return os.path.basename(p)
+
+    cache_path = os.path.join(HERE, "split_hash_cache.json")
+    try:
+        with open(cache_path) as f:
+            cache = json.load(f)
+    except (OSError, ValueError):
+        cache = {}
+    entry = cache.get(cache_tag) or {}
+    missing = [p for p in paths if _rel(p) not in entry]
+    if missing:
+        for k, p in enumerate(missing):
+            with open(p, "rb") as fh:
+                entry[_rel(p)] = hashlib.md5(fh.read()).hexdigest()
+            if (k + 1) % 10000 == 0:
+                print(f"    [split-key] hashing files {k + 1}/{len(missing)}")
+        cache[cache_tag] = entry
+        try:
+            with open(cache_path, "w") as f:
+                json.dump(cache, f)
+        except OSError:
+            pass
+    md5s = [entry[_rel(p)] for p in paths]
+    order = sorted(range(n), key=lambda i: md5s[i])
+    rank = np.empty(n, dtype=np.int64)
+    rank[order] = np.arange(n)
+    return rank, True
+
+
 def _sample_neg_indices(cfg, labels):
     """Seeded per-class sampling of the 100 negative images from VAL.
 
@@ -336,7 +396,9 @@ def _sample_neg_indices(cfg, labels):
         lid = names.index(cls_name)
         cand = np.where(labels == lid)[0]
         take = min(n, len(cand))
-        pick = cand.copy()
+        # canonical content order → same physical draws across sources
+        rank = STATE.rank
+        pick = np.array(sorted(cand.tolist(), key=lambda i: rank[i]))
         rng.shuffle(pick)
         neg_idx.extend(int(i) for i in pick[:take])
         used.append(f"{cls_name}({take})")
@@ -369,6 +431,20 @@ class P0DataModule(DataModule):
                           if lbl == cfg.TARGET_CLS]
         other_indices = [i for i, lbl in enumerate(labels)
                          if lbl != cfg.TARGET_CLS]
+
+        # ── canonical sample order (split-key): content md5 → the same
+        #    seed selects the same PHYSICAL images on HF and official
+        #    ILSVRC trees (compare_imagenet_sources.py, 2026-11-23).
+        #    'name' reproduces the legacy name-sorted behaviour. ──
+        if getattr(cfg, "SPLIT_KEY", "content") == "content":
+            STATE.rank, ok = _content_order(ds, cfg.DATA)
+            print(f"  Split key: content-hash order "
+                  f"({'source-invariant' if ok else 'fallback: name order'})")
+        else:
+            STATE.rank = np.arange(len(labels))
+            print("  Split key: name order (legacy)")
+        target_indices = sorted(target_indices, key=lambda i: STATE.rank[i])
+        other_indices = sorted(other_indices, key=lambda i: STATE.rank[i])
 
         # ── P0: sample the 100 negatives from VAL first and hold them out
         #    of EVERY split, in every arm (zero leakage; a0/p1 exclude the
@@ -759,6 +835,12 @@ def parse_p0_args(argv):
     p.add_argument("--neg-cos-max", type=float, default=0.9,
                    help="separability filter: drop text negatives with "
                         "cos(t̄, n) above this threshold (default: 0.9)")
+    p.add_argument("--split-key", default="content",
+                   choices=["content", "name"],
+                   help="sample ordering for all splits: content = md5 of "
+                        "file bytes (source-invariant — same seed picks the "
+                        "same physical images on HF vs official ILSVRC "
+                        "trees; default) | name = legacy name-sorted order")
     p.add_argument("--dry-run", action="store_true",
                    help="assemble and print the config, then exit")
     return p.parse_known_args(argv)
@@ -832,6 +914,7 @@ def main():
     cfg.N_POOL = p0.n_pool
     cfg.COMPETITOR_M = p0.competitor_m
     cfg.NEG_COS_MAX = p0.neg_cos_max
+    cfg.SPLIT_KEY = p0.split_key
     cfg.P1_LOGIT_T = p0.p1_temperature
     cfg.TDA_MODE = "off" if p0.arm == "a0" else p0.tda
     cfg.P1_MARGIN = 0.0 if p0.arm == "a0" else p0.p1_margin

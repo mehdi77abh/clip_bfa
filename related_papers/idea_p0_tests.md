@@ -366,3 +366,22 @@ The stored cos reference is target **"lion" (cls 291)**, while all P0 runs used 
 quality. Like-for-like requires running the new idea on **lion**; `lion_v1` negative list added
 (100 imgs / 19 classes: big cats, cat rows, canids, foxes). Win bar: standalone ASR **25–35 %**
 (vs cos 45.6 % on the same target/model/trigger).
+
+### 2026-11-23 — dataset-source mystery SOLVED (`compare_imagenet_sources.py`) + fix applied
+
+The maintainer's comparison script proved: HF (`val_00001470.JPEG`) and official ILSVRC
+(`ILSVRC2012_val_00001359.JPEG`) trees hold **byte-identical JPEGs under different filenames**
+(hash sets match — so there is NO re-encoding; the per-image cos differences in the script's
+[4] are just different sampled pictures).  Cause of the official 0-4 % vs HF 38-52 % InfoNCE
+gap: **name-sorted iteration + SEED selects different PHYSICAL images per source** — different
+64-carrier/eval draws → the knife's-edge InfoNCE trigger swings wildly while cos is
+unaffected (official cos 50.5 %, HF cos 45.6 %).  Matches the ep1-identical / ep50-divergent
+forensics.
+
+**Fix applied to `p0_test.py`:** `--split-key {content,name}` (default **content**) —
+canonical sample order by md5 of file bytes (cached `split_hash_cache.json`), used for the
+split shuffle AND the negative-image draws; same seed now picks the same physical images on
+any naming of the same content.  `--split-key name` reproduces legacy behaviour.  Verified by
+a two-source synthetic test (same bytes / different names → identical order + identical
+seed-42 draws).  Residual known factor: cross-container GPU numerics (same box/source: 52.0
+vs 41.5) — handled by multi-seed on one box.
