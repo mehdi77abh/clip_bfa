@@ -244,6 +244,7 @@ class _State:
     dcomp_idx = []
     neg_idx = []            # 100 held-out negative images (val indices)
     rank = None             # canonical content order (see _content_order)
+    md5s = None             # per-sample content hash (split fingerprint)
     parity_done = False
 
 
@@ -338,6 +339,7 @@ def _content_order(ds, cache_tag):
     if not paths or len(paths) != n:
         print("  [split-key] dataset exposes no file listing — "
               "falling back to name order")
+        STATE.md5s = None
         return np.arange(n), False
 
     def _rel(p):
@@ -370,6 +372,7 @@ def _content_order(ds, cache_tag):
     order = sorted(range(n), key=lambda i: md5s[i])
     rank = np.empty(n, dtype=np.int64)
     rank[order] = np.arange(n)
+    STATE.md5s = md5s          # for the split fingerprint
     return rank, True
 
 
@@ -494,6 +497,16 @@ class P0DataModule(DataModule):
         print(f"  Gradient            : {len(grad_idx):>5d}")
         print(f"  Evaluation          : {len(eval_idx):>5d}")
         print(f"  Test                : {len(test_idx):>5d}")
+        # split fingerprint: identical value ⇒ identical PHYSICAL images
+        # selected, across dataset sources and boxes (content-hash mode).
+        if STATE.md5s is not None:
+            sel = list(calib_idx) + list(eval_idx) + sorted(STATE.neg_idx)
+            fp = hashlib.md5(
+                "".join(STATE.md5s[i] for i in sel).encode()).hexdigest()[:16]
+            print(f"  Split fingerprint   : {fp}   "
+                  f"(compare across boxes/sources — must match)")
+        else:
+            print("  Split fingerprint   : n/a (name order)")
         return target_sel, calib_idx, grad_idx, eval_idx, test_idx, \
             target_holdout
 
