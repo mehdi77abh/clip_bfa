@@ -362,13 +362,21 @@ class OpenFlamingoAdapter(VLMAdapter):
                 "  (or clone https://github.com/mlfoundations/open_flamingo "
                 f"and pip install -e .)  ({e})") from e
 
-        model, image_processor, tokenizer = create_model_and_transforms(
+        # open_flamingo renamed this kwarg: the current API is
+        # ``lang_encoder_path``, older releases used ``lang_model_path``.
+        # Try both rather than hard-coding one and dying on TypeError.
+        common = dict(
             clip_vision_encoder_path=self.CLIP_PATH,
             clip_vision_encoder_pretrained=self.CLIP_PRETRAINED,
-            lang_model_path=self.LM_PATH,
             tokenizer_path=self.LM_PATH,
             cross_attn_every_n_layers=self.CROSS_ATTN_EVERY_N,
         )
+        try:
+            model, image_processor, tokenizer = create_model_and_transforms(
+                lang_encoder_path=self.LM_PATH, **common)
+        except TypeError:
+            model, image_processor, tokenizer = create_model_and_transforms(
+                lang_model_path=self.LM_PATH, **common)
         ckpt = self.resolve_checkpoint()
         state = torch.load(ckpt, map_location="cpu")
         state = state.get("model_state_dict", state) \

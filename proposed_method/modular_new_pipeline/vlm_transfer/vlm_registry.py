@@ -76,7 +76,13 @@ VLM_SPECS: dict = {
     "OF-3B": VLMConfig(
         name="OF-3B",
         family="openflamingo",
-        hf_id="openflamingo/OpenFlamingo-3B-vit-l-2b",
+        # OpenFlamingo-3B (CLIP ViT-L/14 + MPT-1B-Dolly), the
+        # instruction-tuned variant whose LM is
+        # anas-awadalla/mpt-1b-redpajama-200b-dolly == OpenFlamingoAdapter.
+        # LM_PATH.  The base variant is openflamingo/OpenFlamingo-3B-vitl-mpt1b
+        # (LM: anas-awadalla/mpt-1b-redpajama-200b).  Both hold a single
+        # `checkpoint.pt` (~4.2 GB).
+        hf_id="openflamingo/OpenFlamingo-3B-vitl-mpt1b-langinstruct",
         vision_tower="openai/clip-vit-large-patch14",
         attack_model="ViT-L/14",
         image_size=224,

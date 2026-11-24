@@ -975,6 +975,44 @@ def test_run_attack_does_not_block_the_attack_for_a_missing_vlm_ckpt():
         "expected a note instead of a hard failure"
 
 
+def test_of3b_repo_id_is_the_real_one():
+    """Regression: 'openflamingo/OpenFlamingo-3B-vit-l-2b' 404s.  The real
+    repos are OpenFlamingo-3B-vitl-mpt1b (base LM) and
+    OpenFlamingo-3B-vitl-mpt1b-langinstruct (dolly LM).  We use the dolly
+    one because OpenFlamingoAdapter.LM_PATH is
+    anas-awadalla/mpt-1b-redpajama-200b-dolly."""
+    from vlm_registry import VLM_SPECS
+    repo = VLM_SPECS["OF-3B"].hf_id
+    assert repo.startswith("openflamingo/OpenFlamingo-3B-vitl-mpt1b"), repo
+    assert repo != "openflamingo/OpenFlamingo-3B-vit-l-2b", "the 404 id"
+    # the checkpoint variant must match the LM the adapter loads
+    from vlm_adapters import OpenFlamingoAdapter
+    assert OpenFlamingoAdapter.LM_PATH.endswith("dolly") == \
+        repo.endswith("-langinstruct"), \
+        (repo, OpenFlamingoAdapter.LM_PATH)
+
+
+def test_download_models_offers_of3b_repo_override():
+    """The 404 error message tells the user to pass --of3b-repo; the flag
+    has to actually exist."""
+    import download_vlm_models as dm
+    a = dm.parse_args(["--of3b-repo", "openflamingo/OpenFlamingo-3B-vitl-mpt1b"])
+    assert a.of3b_repo == "openflamingo/OpenFlamingo-3B-vitl-mpt1b"
+    assert dm.parse_args([]).of3b_repo is None
+    import inspect
+    assert "repo or spec[" in inspect.getsource(dm.download_of3b)
+
+
+def test_openflamingo_kwarg_is_version_tolerant():
+    """open_flamingo renamed lang_model_path -> lang_encoder_path; the
+    adapter must not hard-code either."""
+    import inspect
+    import vlm_adapters as va
+    src = inspect.getsource(va.OpenFlamingoAdapter.load)
+    assert "lang_encoder_path" in src and "lang_model_path" in src, \
+        "adapter must try both kwarg spellings"
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  CLI plumbing
 # ══════════════════════════════════════════════════════════════════════

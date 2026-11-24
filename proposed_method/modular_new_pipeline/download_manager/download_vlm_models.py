@@ -254,14 +254,14 @@ def download_hf_snapshot(repo_id: str, cache_dir=None) -> str:
     return path
 
 
-def download_of3b(spec: dict, cache_dir=None, dest=None) -> str:
+def download_of3b(spec: dict, cache_dir=None, dest=None, repo=None) -> str:
     """OF-3B: the trained `checkpoint.pt` + its MPT-1B language model.
 
     ``open_flamingo.create_model_and_transforms`` builds the architecture
     only — the trained weights are a separate file in the HF repo."""
     from huggingface_hub import HfApi, hf_hub_download
 
-    repo = spec["repo"]
+    repo = repo or spec["repo"]
     dest = dest or os.path.join(_VLM_DIR, "checkpoints")
     os.makedirs(dest, exist_ok=True)
 
@@ -379,6 +379,9 @@ def parse_args(argv=None):
     p.add_argument("--of3b-dest", default=None,
                    help="where to put the OF-3B checkpoint.pt "
                         "(default: vlm_transfer/checkpoints/)")
+    p.add_argument("--of3b-repo", default=None,
+                   help="override the OF-3B HF repo id (default comes from "
+                        "vlm_registry's OF-3B.hf_id)")
     p.add_argument("--eva-clip-dir", default=None,
                    help="where to clone the EVA-CLIP source")
     p.add_argument("--write-pth", action="store_true",
@@ -502,7 +505,8 @@ def main(argv=None):
             if spec["kind"] == "hf_snapshot":
                 download_hf_snapshot(spec["repo"], args.cache_dir)
             elif spec["kind"] == "of_checkpoint":
-                download_of3b(spec, args.cache_dir, args.of3b_dest)
+                download_of3b(spec, args.cache_dir, args.of3b_dest,
+                              args.of3b_repo)
             elif spec["kind"] == "git_source":
                 install_eva_clip_source(args.eva_clip_dir, args.write_pth)
             elif spec["kind"] == "clip_prefetch":
