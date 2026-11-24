@@ -31,6 +31,7 @@ from typing import Optional
 import os
 
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 from PIL import Image
 
@@ -44,6 +45,8 @@ __all__ = [
     "MobileVLMAdapter",
     "get_vlm_adapter",
     "sanitize_proxy_env",
+    "load_env_file",
+    "patch_tied_weights_compat",
     "prepare_pixel_values",
     "clamp01",
 ]
@@ -79,6 +82,85 @@ def sanitize_proxy_env(verbose: bool = True) -> list:
         for c in cleared:
             print(f"          {c}")
     return cleared
+
+
+_MPT_COMPAT_APPLIED = False
+
+
+def load_env_file(verbose: bool = True, paths=None) -> list:
+    """Pick up ``download_manager/.env`` (``HF_TOKEN``, ``HF_HOME``, …).
+
+    ``download_manager/common.load_env`` does this for the download tools,
+    but the eval path never did — the HF Hub then ran unauthenticated
+    ("You are sending unauthenticated requests… Please set a HF_TOKEN")
+    even though the token was sitting in ``.env``.  Real environment
+    variables always win over every file.
+
+    ``paths`` overrides the search order (first existing file wins).
+    """
+    if paths is None:
+        here = os.path.dirname(os.path.abspath(__file__))
+        paths = (os.path.join(here, "..", "download_manager", ".env"),
+                 os.path.join(here, ".env"))
+    for candidate in paths:
+        if not os.path.isfile(candidate):
+            continue
+        loaded = []
+        with open(candidate) as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                key, val = line.split("=", 1)
+                key, val = key.strip(), val.strip().strip('"').strip("'")
+                if key and key not in os.environ:
+                    os.environ[key] = val
+                    loaded.append(key)
+        if loaded and verbose:
+            print(f"  [env] loaded {', '.join(loaded)} from {candidate}")
+        return loaded
+    return []
+
+
+def patch_tied_weights_compat(verbose: bool = True) -> bool:
+    """Make transformers >= 5 able to load transformers-4-era remote code.
+
+    ``open_flamingo`` builds OF-3B's language model from
+    ``anas-awadalla/mpt-1b-redpajama-200b-dolly``, whose ``MosaicGPT`` class
+    is remote code written against transformers 4.x.  transformers 5.x's
+    ``from_pretrained`` finalisation calls
+    ``self.all_tied_weights_keys.keys()``; that name is not in the remote
+    class's MRO nor set on the instance, so the load dies with::
+
+        AttributeError: 'MosaicGPT' object has no attribute
+        'all_tied_weights_keys'. Did you mean: '_tied_weights_keys'?
+
+    The model does carry ``_tied_weights_keys``, so answering ``{}`` for the
+    newer name is safe — worst case tied weights are simply not tracked,
+    which is irrelevant for inference.  Only ever consulted when normal
+    attribute lookup has already failed, so models that do define it are
+    untouched.
+    """
+    global _MPT_COMPAT_APPLIED
+    if _MPT_COMPAT_APPLIED:
+        return False
+
+    import torch.nn as nn
+
+    orig = nn.Module.__getattr__
+
+    def _getattr(self, name, _orig=orig):
+        if name == "all_tied_weights_keys":
+            return {}
+        return _orig(self, name)
+
+    nn.Module.__getattr__ = _getattr
+    _MPT_COMPAT_APPLIED = True
+    if verbose:
+        print("  [compat] patched nn.Module.__getattr__: "
+              "all_tied_weights_keys -> {} (transformers 5.x vs MPT-1B "
+              "transformers-4 remote code)")
+    return True
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -379,6 +461,9 @@ class OpenFlamingoAdapter(VLMAdapter):
                 "  (or clone https://github.com/mlfoundations/open_flamingo "
                 f"and pip install -e .)  ({e})") from e
 
+        # transformers 5.x vs the MPT-1B transformers-4 remote code
+        patch_tied_weights_compat()
+
         # open_flamingo renamed this kwarg: the current API is
         # ``lang_encoder_path``, older releases used ``lang_model_path``.
         # Try both rather than hard-coding one and dying on TypeError.
@@ -405,8 +490,49 @@ class OpenFlamingoAdapter(VLMAdapter):
 
         self.model = model.to(self.device).eval()
         self.processor = {"image": image_processor, "tokenizer": tokenizer}
+
+        self._align_quick_gelu()
         self._fit_pos_embed()
         return self
+
+    def _align_quick_gelu(self) -> int:
+        """Make the vision tower's activation match the 'openai' CLIP tag.
+
+        ``open_clip`` warned "QuickGELU mismatch between final model config
+        (quick_gelu=False) and pretrained tag 'openai' (quick_gelu=True)".
+        OpenAI CLIP's ViT-L/14 was trained with QuickGELU
+        (``x * sigmoid(1.702 x)``); a plain-GELU tower yields different
+        features.  The attacked weights are identical either way, so the
+        swap still works — but the numbers would not correspond to a stock
+        OF-3B, and the attack's trigger was optimised against a QuickGELU
+        encoder.
+
+        ``open_flamingo``'s factory does not expose ``force_quick_gelu``, so
+        the modules are replaced after the fact.  Returns the count.
+        """
+        class QuickGELU(nn.Module):
+            def forward(self, x):
+                return x * torch.sigmoid(1.702 * x)
+
+        replaced = 0
+        try:
+            tower = self.vision_tower()
+        except Exception as exc:                    # noqa: BLE001
+            # never silent: a 0 here would mean the tower was never touched
+            print(f"  [OF-3B][WARN] could not locate the vision tower to "
+                  f"align QuickGELU: {type(exc).__name__}: {exc}")
+            return 0
+        for module in tower.modules():
+            for name, child in list(module.named_children()):
+                if type(child).__name__ == "GELU":
+                    setattr(module, name, QuickGELU())
+                    replaced += 1
+        if replaced:
+            print(f"  [OF-3B] replaced {replaced} GELU -> QuickGELU in the "
+                  f"vision tower (openai CLIP activation)")
+        else:
+            print("  [OF-3B] vision tower already QuickGELU — nothing to do")
+        return replaced
 
     def _fit_pos_embed(self):
         from tower_swap import fit_tower_pos_embed
@@ -514,7 +640,8 @@ def get_vlm_adapter(name: str, device: str = "cuda",
                     checkpoint: Optional[str] = None,
                     image_size: Optional[int] = None) -> VLMAdapter:
     """Build the adapter for a registry key (``OF-3B``, ``LLaVA-7B``,
-    ``LLaVA-7B@336``, ``BLIP-2``)."""
+    ``LLaVA-7B@336``, ``BLIP-2``, ``MobileVLM-V2-1.7B``)."""
+    load_env_file()           # HF_TOKEN etc. from download_manager/.env
     sanitize_proxy_env()      # SOCKS proxies crash the HF stack here
     spec = get_spec(name)
     if image_size and image_size != spec.image_size:

@@ -1248,6 +1248,108 @@ def test_okvqa_test_split_is_coco_val2014():
         raise AssertionError("unknown OK-VQA split must raise KeyError")
 
 
+def test_load_env_file_reads_dotenv_without_clobbering_real_env():
+    """The eval path never read download_manager/.env, so the HF Hub ran
+    unauthenticated even with a token sitting right there."""
+    from vlm_adapters import load_env_file
+    saved = dict(os.environ)
+    dot = os.path.join(tempfile.mkdtemp(), ".env")
+    try:
+        os.environ.pop("VLM_TEST_ONLY", None)
+        os.environ["VLM_TEST_KEEP"] = "from-shell"
+        with open(dot, "w") as f:
+            f.write("# comment\n\nVLM_TEST_ONLY=from-dotenv\n"
+                    "VLM_TEST_KEEP=from-dotenv\n")
+        loaded = load_env_file(verbose=False, paths=[dot])
+        assert "VLM_TEST_ONLY" in loaded, loaded
+        assert os.environ["VLM_TEST_ONLY"] == "from-dotenv"
+        # a real environment variable must win over .env
+        assert os.environ["VLM_TEST_KEEP"] == "from-shell"
+        assert "VLM_TEST_KEEP" not in loaded
+        # a missing file is a no-op, not an error
+        assert load_env_file(verbose=False, paths=["/nope/.env"]) == []
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
+
+
+def test_of3b_quick_gelu_alignment_touches_only_the_vision_tower():
+    """open_clip built OF-3B's tower with plain GELU even though the
+    'openai' tag wants QuickGELU — different features, so the swap would not
+    correspond to a stock OF-3B.  The fix must reach the vision tower only:
+    the MPT language model has its own GELUs which must stay put."""
+    from vlm_adapters import OpenFlamingoAdapter
+    from vlm_registry import get_spec
+
+    class MLP(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.c_fc = nn.Linear(4, 4)
+            self.gelu = nn.GELU()
+            self.c_proj = nn.Linear(4, 4)
+
+    class Block(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.mlp = MLP()
+
+    class Tower(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.conv1 = nn.Conv2d(3, 4, 2, stride=2)
+            self.transformer = nn.Module()
+            self.transformer.resblocks = nn.ModuleList(
+                [Block() for _ in range(2)])
+
+    class Lang(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.act = nn.GELU()          # must NOT be touched
+
+    class Model(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.visual = Tower()
+            self.lang = Lang()
+
+    ad = OpenFlamingoAdapter.__new__(OpenFlamingoAdapter)
+    ad.spec = get_spec("OF-3B")
+    ad.model = Model()
+
+    assert ad._align_quick_gelu() == 2, "both block activations"
+    assert ad._align_quick_gelu() == 0, "must be idempotent"
+    acts = [type(m).__name__ for m in ad.model.modules()
+            if type(m).__name__ in ("GELU", "QuickGELU")]
+    assert acts == ["QuickGELU", "QuickGELU", "GELU"], acts
+    assert isinstance(ad.model.lang.act, nn.GELU), "the LM must be untouched"
+
+
+def test_tied_weights_compat_only_fills_the_missing_name():
+    """transformers 5.x calls self.all_tied_weights_keys while loading the
+    MPT-1B remote code, which was written for transformers 4.x and never
+    defines it -> AttributeError.  The shim must answer {} for that one name
+    only, and never shadow attributes that really exist."""
+    from vlm_adapters import patch_tied_weights_compat
+    patch_tied_weights_compat(verbose=False)      # idempotent
+    patch_tied_weights_compat(verbose=False)
+
+    class Dummy(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self._tied_weights_keys = {"real"}
+
+    d = Dummy()
+    assert d.all_tied_weights_keys == {}, d.all_tied_weights_keys
+    assert d._tied_weights_keys == {"real"}, "existing attrs must survive"
+    # an attribute that is genuinely absent still raises
+    try:
+        d.definitely_not_here
+    except AttributeError:
+        pass
+    else:
+        raise AssertionError("shim must not invent arbitrary attributes")
+
+
 def test_summary_glob_ignores_the_meta_file():
     """The results glob matched vlm_transfer_meta.json and printed a
     phantom summary row (dataset=ImageNet1k, task=zs, n=None)."""
