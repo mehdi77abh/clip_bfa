@@ -259,6 +259,20 @@ class AttackPipeline:
             print(f"\n  Attacked model state saved → "
                   f"{model_state_attacked_path}")
 
+        # ── Crash safety ─────────────────────────────────────────────
+        # trigger.pt + bfa_results.json are this run's real output; the
+        # final evaluation below is slow and completely independent of
+        # them.  Write a provisional record NOW so a crash or Ctrl-C there
+        # cannot destroy a finished search.  The complete record is
+        # rewritten at the end (with r_final / linear_probe / composite).
+        self.results.save(
+            {"config": {k: v for k, v in vars(cfg).items()
+                        if not k.startswith("_")},
+             "metrics": metrics, "flip_log": flip_log,
+             "checkpoints": checkpoints, "provisional": True},
+            trigger, original_weights)
+        print("  (provisional artefacts written — full record follows)")
+
         del quant_dict, grad_imgs
         cleanup_gpu()
 

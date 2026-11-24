@@ -123,7 +123,12 @@ run_attack_one() {
     local leaf="zs_c${TARGET_CLS}_s${seed}_r${rep}_${seg}"
     local dir="$OUT_ROOT_ABS/$SECTION/$tag/$ATTACK_DATASET/$leaf"
 
-    if [ "$RESUME" = "1" ] && [ -f "$dir/model_state_attacked.pt" ]; then
+    # A run dir is only "done" when ALL artefacts exist.  Checking
+    # model_state_attacked.pt alone was a trap: that file is written before
+    # the final evaluation, so a crashed run left it behind and RESUME then
+    # skipped the attack forever (while trigger.pt stayed missing).
+    if [ "$RESUME" = "1" ] && [ -f "$dir/model_state_attacked.pt" ] \
+        && [ -f "$dir/trigger.pt" ] && [ -f "$dir/bfa_results.json" ]; then
         echo "[skip] attack $amodel s$seed r$rep  ($dir)"
         return 0
     fi
@@ -161,9 +166,16 @@ run_eval_one() {
     local leaf="zs_c${TARGET_CLS}_s${seed}_r${rep}_${seg}"
     local dir="$OUT_ROOT_ABS/$SECTION/$tag/$ATTACK_DATASET/$leaf"
 
-    if [ "$DRY_RUN" != "1" ] && [ ! -f "$dir/model_state_attacked.pt" ]; then
-        echo "[warn] no attacked model in $dir — run the attack first"
-        return 1
+    if [ "$DRY_RUN" != "1" ]; then
+        missing=""
+        for f in model_state_attacked.pt trigger.pt bfa_results.json; do
+            [ -f "$dir/$f" ] || missing="$missing $f"
+        done
+        if [ -n "$missing" ]; then
+            echo "[warn] $dir is incomplete — missing:$missing"
+            echo "       re-run the attack (RESUME=0 forces it)"
+            return 1
+        fi
     fi
     if [ "$RESUME" = "1" ] && [ -f "$dir/vlm_transfer.json" ]; then
         echo "[skip] eval $vlm x $ds  ($dir/vlm_transfer.json)"

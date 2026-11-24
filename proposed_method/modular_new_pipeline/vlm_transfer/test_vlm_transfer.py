@@ -1013,6 +1013,36 @@ def test_openflamingo_kwarg_is_version_tolerant():
         "adapter must try both kwarg spellings"
 
 
+def test_pipeline_saves_artefacts_before_the_final_eval():
+    """Ctrl-C / a crash in the slow final evaluation used to destroy a
+    finished search: trigger.pt and bfa_results.json were only written at
+    the very end.  A provisional record must go out first."""
+    src = open(os.path.join(_PARENT, "pipeline.py")).read()
+    early = src.index("provisional artefacts written")
+    final_eval = src.index("Final full evaluation")
+    full_save = src.index("self.results.save(save, trigger, original_weights)")
+    assert early < final_eval, "provisional save must precede the final eval"
+    assert early < full_save, "provisional save must precede the full save"
+    # the provisional record must carry what evaluate.py reads
+    call = src.index("self.results.save(")          # the provisional one
+    block = src[call:early]
+    for key in ('"config"', '"flip_log"', '"metrics"', '"checkpoints"'):
+        assert key in block, f"provisional record drops {key}"
+
+
+def test_resume_requires_the_complete_artefact_set():
+    """RESUME keyed off model_state_attacked.pt alone, so a crashed run
+    (which still had that file) made the shell skip the attack forever."""
+    src = open(os.path.join(_HERE, "run_vlm_transfer.sh")).read()
+    for name in ("model_state_attacked.pt", "trigger.pt", "bfa_results.json"):
+        assert name in src, f"{name} missing from the resume check"
+    # the skip guard must reference all three
+    guard = src[src.index('if [ "$RESUME" = "1" ]'):
+                src.index('echo "[skip] attack')]
+    for name in ("model_state_attacked.pt", "trigger.pt", "bfa_results.json"):
+        assert name in guard, f"resume guard ignores {name}"
+
+
 # ══════════════════════════════════════════════════════════════════════
 #  CLI plumbing
 # ══════════════════════════════════════════════════════════════════════
