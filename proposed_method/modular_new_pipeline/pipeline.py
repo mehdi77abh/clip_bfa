@@ -281,7 +281,11 @@ class AttackPipeline:
         #  as an optional module and is intentionally not called here.)
 
         # ── Final full evaluation ──
+        print(f"\n  [final-eval] building test loader "
+              f"(n={len(test_idx)}, workers={cfg.WORKERS})", flush=True)
         test_loader = self.data.make_loader(ds, test_idx, 64, workers=cfg.WORKERS)
+        print("  [final-eval] loader ready — evaluating "
+              "(set WORKERS=0 if this is where it stalls)", flush=True)
         r_final = self.evaluator.full_evaluate(
             model, text_emb, trigger,
             test_loader,

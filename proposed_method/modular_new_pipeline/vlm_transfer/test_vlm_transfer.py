@@ -596,7 +596,8 @@ def test_registry_specs_are_consistent():
     for name, spec in vr.VLM_SPECS.items():
         assert spec.attack_model in models, \
             f"{name}: attack_model {spec.attack_model!r} not in config.json"
-        assert spec.family in ("openflamingo", "llava", "blip2")
+        assert spec.family in ("openflamingo", "llava", "blip2", "mobilevlm"), \
+            f"{name}: unknown family {spec.family!r}"
         assert spec.patch_size > 0
         assert spec.caption_prompt and spec.vqa_prompt
         # the attack model must be the SAME encoder family as the tower
@@ -1041,6 +1042,181 @@ def test_resume_requires_the_complete_artefact_set():
                 src.index('echo "[skip] attack')]
     for name in ("model_state_attacked.pt", "trigger.pt", "bfa_results.json"):
         assert name in guard, f"resume guard ignores {name}"
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  MobileVLM V2 1.7B
+# ══════════════════════════════════════════════════════════════════════
+# Real key names taken from mtgv/MobileVLM_V2-1.7B's pytorch_model.bin.
+_MOBILEVLM_REAL_KEYS = [
+    "model.vision_tower.vision_tower.vision_model.embeddings.patch_embedding.weight",
+    "model.vision_tower.vision_tower.vision_model.embeddings.class_embedding",
+    "model.vision_tower.vision_tower.vision_model.embeddings.position_embedding.weight",
+    "model.vision_tower.vision_tower.vision_model.pre_layrnorm.weight",
+    "model.vision_tower.vision_tower.vision_model.encoder.layers.23.self_attn.q_proj.weight",
+    "model.vision_tower.vision_tower.vision_model.encoder.layers.23.mlp.fc2.bias",
+    "model.vision_tower.vision_tower.vision_model.post_layernorm.bias",
+    "model.mm_projector.mlp.mlp.0.weight",
+    "model.mm_projector.mlp.mlp.2.bias",
+    "model.mm_projector.peg.peg.0.weight",
+    "model.layers.0.self_attn.q_proj.weight",
+    "model.layers.23.mlp.down_proj.weight",
+    "model.embed_tokens.weight",
+    "model.norm.weight",
+    "lm_head.weight",
+]
+_MOBILEVLM_EXPECTED = [
+    "vision_tower.embeddings.patch_embedding.weight",
+    "vision_tower.embeddings.class_embedding",
+    "vision_tower.embeddings.position_embedding.weight",
+    "vision_tower.pre_layrnorm.weight",
+    "vision_tower.encoder.layers.23.self_attn.q_proj.weight",
+    "vision_tower.encoder.layers.23.mlp.fc2.bias",
+    "vision_tower.post_layernorm.bias",
+    "mm_projector.mlp.mlp.0.weight",
+    "mm_projector.mlp.mlp.2.bias",
+    "mm_projector.peg.peg.0.weight",
+    "llm.model.layers.0.self_attn.q_proj.weight",
+    "llm.model.layers.23.mlp.down_proj.weight",
+    "llm.model.embed_tokens.weight",
+    "llm.model.norm.weight",
+    "llm.lm_head.weight",
+]
+
+
+def test_mobilevlm_key_remap_matches_the_real_checkpoint():
+    """The remap is the only part that can silently drop a weight."""
+    from mobilevlm_model import remap_mobilevlm_state
+    src = {k: i for i, k in enumerate(_MOBILEVLM_REAL_KEYS)}
+    out = remap_mobilevlm_state(src)          # default: flat vision_tower.
+    assert sorted(out) == sorted(_MOBILEVLM_EXPECTED), \
+        (sorted(out), sorted(_MOBILEVLM_EXPECTED))
+    for a, b in zip(_MOBILEVLM_REAL_KEYS, _MOBILEVLM_EXPECTED):
+        assert out[b] == src[a], (a, b)
+
+
+def test_mobilevlm_vision_prefix_is_version_aware():
+    """transformers has both layouts: ``vision_model.embeddings.*`` (older)
+    and flat ``embeddings.*`` (newer).  The remap must follow the module it
+    is filling, not a hard-coded guess."""
+    from mobilevlm_model import remap_mobilevlm_state, vision_prefix_for
+    src = {"model.vision_tower.vision_tower.vision_model.embeddings."
+           "patch_embedding.weight": 1}
+    nested = remap_mobilevlm_state(
+        src, vision_prefix="vision_tower.vision_model.")
+    assert list(nested) == ["vision_tower.vision_model.embeddings."
+                            "patch_embedding.weight"]
+
+    from transformers import CLIPVisionConfig, CLIPVisionModel
+    cfg = CLIPVisionConfig(hidden_size=8, num_hidden_layers=1,
+                           num_attention_heads=2, image_size=8,
+                           patch_size=4, intermediate_size=16)
+    pref = vision_prefix_for(CLIPVisionModel(cfg))
+    assert pref in ("vision_tower.", "vision_tower.vision_model."), pref
+
+
+def test_mobilevlm_remap_passes_unknown_keys_through():
+    from mobilevlm_model import remap_mobilevlm_state
+    out = remap_mobilevlm_state({"some.unmapped.key": 1})
+    assert out == {"some.unmapped.key": 1}
+
+
+def test_ldpv2_projector_emits_the_checkpoint_key_names():
+    """Submodule names are load-bearing: mm_projector.mlp.mlp.{0,2} and
+    mm_projector.peg.peg.0."""
+    from mobilevlm_model import LDPNetV2Projector
+    proj = LDPNetV2Projector(in_dim=1024, out_dim=2048, shape=(12, 12))
+    keys = sorted("mm_projector." + k for k in proj.state_dict())
+    assert keys == [
+        "mm_projector.mlp.mlp.0.bias", "mm_projector.mlp.mlp.0.weight",
+        "mm_projector.mlp.mlp.2.bias", "mm_projector.mlp.mlp.2.weight",
+        "mm_projector.peg.peg.0.bias", "mm_projector.peg.peg.0.weight",
+    ], keys
+
+
+def test_ldpv2_downsamples_576_to_144():
+    from mobilevlm_model import LDPNetV2Projector
+    proj = LDPNetV2Projector(in_dim=8, out_dim=16, shape=(12, 12))
+    out = proj(torch.randn(2, 576, 8))
+    assert out.shape == (2, 144, 16), out.shape
+
+
+def test_ldpv2_rejects_non_square_token_grids():
+    from mobilevlm_model import LDPNetV2Projector
+    proj = LDPNetV2Projector(in_dim=4, out_dim=4, shape=(6, 6))
+    try:
+        proj(torch.randn(1, 101, 4))       # 101 is not a square grid
+    except AssertionError:
+        return
+    raise AssertionError("a non-square token grid must be rejected")
+
+
+def test_mobilevlm_registry_entry_is_consistent():
+    from vlm_registry import VLM_SPECS
+    spec = VLM_SPECS["MobileVLM-V2-1.7B"]
+    assert spec.family == "mobilevlm"
+    assert spec.hf_id == "mtgv/MobileVLM_V2-1.7B"
+    assert spec.attack_model == "ViT-L/14-336px"
+    assert spec.image_size == 336 and spec.patch_size == 14
+    assert spec.tower_native_image_size == 336
+    assert spec.image_aspect == "pad", "MobileVLM pads, it does not crop"
+    assert "<image>" in spec.caption_prompt and "<image>" in spec.vqa_prompt
+
+
+def test_mobilevlm_adapter_is_registered():
+    import vlm_adapters as va
+    assert va._FAMILY_CLS["mobilevlm"] is va.MobileVLMAdapter
+    assert issubclass(va.MobileVLMAdapter, va.VLMAdapter)
+    assert va.MobileVLMAdapter.family == "mobilevlm"
+
+
+def test_mobilevlm_maps_to_the_right_attack_model_in_the_shell():
+    src = open(os.path.join(_HERE, "run_vlm_transfer.sh")).read()
+    block = src[src.index("attack_model_for()"):
+                src.index("trig_size_for()")]
+    assert "MobileVLM-V2-1.7B" in block, "shell has no MobileVLM case"
+    assert 'echo "ViT-L/14-336px"' in block
+
+
+def test_mobilevlm_tower_swap_needs_no_special_casing():
+    """MobileVLM's tower is a plain HF CLIPVisionModel, so tower_swap's
+    generic HF path must already cover it — no mobilevlm branch allowed."""
+    import inspect
+    import tower_swap
+    src = inspect.getsource(tower_swap)
+    assert "mobilevlm" not in src.lower(), \
+        "tower_swap grew a MobileVLM special case — it should not need one"
+
+
+def test_prepare_pixel_values_honours_pad_vs_crop():
+    from PIL import Image
+    from vlm_adapters import prepare_pixel_values
+    wide = Image.new("RGB", (120, 60), (255, 255, 255))
+    crop = prepare_pixel_values([wide], 32, aspect="crop")
+    pad = prepare_pixel_values([wide], 32, aspect="pad")
+    assert crop.shape == pad.shape == (1, 3, 32, 32)
+    # pad keeps the whole image (black bars); crop cuts the sides
+    assert float(pad[0, :, 0, 0].mean()) < 0.05, "pad should have black bars"
+    assert float(crop[0, :, 0, 0].mean()) > 0.9, "crop shows the white image"
+
+
+def test_full_evaluate_prints_progress():
+    """The final eval loop printed nothing, so a stalled DataLoader was
+    indistinguishable from a slow one."""
+    src = open(os.path.join(_PARENT, "evaluation.py")).read()
+    body = src[src.index("def full_evaluate"):src.index("def lp_evaluate")]
+    assert "[full_eval]" in body, "full_evaluate gives no progress output"
+    assert "@torch.no_grad()" in src[src.index("def full_evaluate") - 40:
+                                     src.index("def full_evaluate")], \
+        "full_evaluate must not build autograd graphs"
+
+
+def test_run_vlm_transfer_exposes_a_workers_knob():
+    """WORKERS=0 removes the DataLoader fork from the picture — the one-line
+    test for the 'stalls at the final loader' hypothesis."""
+    src = open(os.path.join(_HERE, "run_vlm_transfer.sh")).read()
+    assert 'WORKERS="${WORKERS:-' in src
+    assert '--workers "$WORKERS"' in src
 
 
 # ══════════════════════════════════════════════════════════════════════

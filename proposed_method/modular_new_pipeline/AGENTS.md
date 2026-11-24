@@ -194,6 +194,8 @@ modular_new_pipeline/
   RESULTS.md           # evaluation plan: validation / comparison / ablation / defence
   MODELS.md            # full model catalog — active grid models + held ones
   TASKS.md             # --task: zs (done) | lp (eval done) | i2t (future protocols)
+  LP_README.md         # how to run the LP task: commands (probe → attack →
+                       #   eval), RESUME semantics, env knobs, guards
   BLIP.md              # BLIP applicability scope note: formulation check,
                        #   ITC readout decision, BLIP-2 out of scope, adapter notes
   ABLATION.md          # --variant: full | a | b | c (ablation wiring)

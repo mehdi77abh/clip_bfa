@@ -69,7 +69,15 @@ class Evaluator:
         cos_po = []
         tgt_vec = text_emb[target_cls]
 
-        for imgs, labels in loader:
+        # Progress is not cosmetic: this loop previously printed nothing, so
+        # a stalled DataLoader looked exactly like a slow evaluation and cost
+        # two Ctrl-C'd runs to diagnose.  First batch appearing means the
+        # loader forked and iterated OK.
+        n_batches = max(1, -(-len(loader.dataset) // max(1, loader.batch_size)))
+        for bi, (imgs, labels) in enumerate(loader):
+            if bi == 0 or (bi + 1) % 10 == 0:
+                print(f"    [full_eval] batch {bi + 1}/{n_batches} "
+                      f"({tot + imgs.size(0)} images)", flush=True)
             imgs = imgs.to(device, non_blocking=True)
             labels = labels.to(device, non_blocking=True)
             ec = F.normalize(encode_image_batched(model, imgs), dim=-1)

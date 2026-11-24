@@ -41,6 +41,7 @@ __all__ = [
     "OpenFlamingoAdapter",
     "LLaVAAdapter",
     "BLIP2Adapter",
+    "MobileVLMAdapter",
     "get_vlm_adapter",
     "sanitize_proxy_env",
     "prepare_pixel_values",
@@ -89,14 +90,19 @@ def clamp01(t: torch.Tensor) -> torch.Tensor:
 
 
 def prepare_pixel_values(images: list, image_size: int,
-                         device: Optional[torch.device] = None
-                         ) -> torch.Tensor:
+                         device: Optional[torch.device] = None,
+                         aspect: str = "crop") -> torch.Tensor:
     """PIL images -> raw [0, 1] float tensor at ``image_size``.
 
-    Resize = shortest edge to ``image_size`` then centre crop, matching the
-    CLIP preprocessing the attack was trained under.  Returns **unnormalised**
-    pixels so the trigger can be applied in pixel space; call
-    :func:`normalise` afterwards.
+    ``aspect="crop"``  — shortest edge to ``image_size`` then centre crop
+    (the CLIP preprocessing the attack was trained under).
+    ``aspect="pad"``   — pad to a square with black, *then* resize
+    (MobileVLM's ``image_aspect_ratio: "pad"``, matching LLaVA's
+    ``process_images``).  Using the wrong one silently changes image
+    content, so it is chosen per VLM.
+
+    Returns **unnormalised** pixels so the trigger can be applied in pixel
+    space; call :func:`normalise` afterwards.
     """
     import numpy as np
 
@@ -105,14 +111,23 @@ def prepare_pixel_values(images: list, image_size: int,
         if not isinstance(img, Image.Image):
             raise TypeError(f"expected PIL image, got {type(img)}")
         img = img.convert("RGB")
-        w, h = img.size
-        scale = image_size / min(w, h)
-        img = img.resize((max(image_size, int(round(w * scale))),
-                          max(image_size, int(round(h * scale)))),
-                         Image.BICUBIC)
-        w, h = img.size
-        left, top = (w - image_size) // 2, (h - image_size) // 2
-        img = img.crop((left, top, left + image_size, top + image_size))
+        if aspect == "pad":
+            w, h = img.size
+            if w != h:
+                side = max(w, h)
+                canvas = Image.new("RGB", (side, side), (0, 0, 0))
+                canvas.paste(img, ((side - w) // 2, (side - h) // 2))
+                img = canvas
+            img = img.resize((image_size, image_size), Image.BICUBIC)
+        else:
+            w, h = img.size
+            scale = image_size / min(w, h)
+            img = img.resize((max(image_size, int(round(w * scale))),
+                              max(image_size, int(round(h * scale)))),
+                             Image.BICUBIC)
+            w, h = img.size
+            left, top = (w - image_size) // 2, (h - image_size) // 2
+            img = img.crop((left, top, left + image_size, top + image_size))
         arr = np.asarray(img, dtype="float32") / 255.0
         out.append(torch.from_numpy(arr).permute(2, 0, 1))
     t = torch.stack(out, dim=0)
@@ -168,7 +183,9 @@ class VLMAdapter(ABC):
     # ── shared helpers ──
     def prepare(self, images: list) -> torch.Tensor:
         """PIL list -> normalised ``pixel_values`` at the spec's image size."""
-        raw = prepare_pixel_values(images, self.spec.image_size)
+        raw = prepare_pixel_values(
+            images, self.spec.image_size,
+            aspect=getattr(self.spec, "image_aspect", "crop"))
         return normalise(raw).to(self.device)
 
     def unload(self):
@@ -426,12 +443,70 @@ class OpenFlamingoAdapter(VLMAdapter):
 
 
 # ══════════════════════════════════════════════════════════════════════
+#  MobileVLM V2 1.7B (MobileLLaMA-1.4B + LDPv2 projector)
+# ══════════════════════════════════════════════════════════════════════
+class MobileVLMAdapter(VLMAdapter):
+    """MobileVLM V2 1.7B — ``mtgv/MobileVLM_V2-1.7B``.
+
+    HF ``transformers`` cannot build this model (``model_type: "mobilevlm"``
+    / ``MobileLlamaForCausalLM``, ``mm_projector_type: "ldpnetv2"``), so the
+    pieces are assembled in :mod:`mobilevlm_model` and the checkpoint is
+    loaded through a key remap.  The vision tower is a plain HF
+    ``CLIPVisionModel``, which means :mod:`tower_swap` needs no
+    MobileVLM-specific code at all.
+
+    Faithfulness notes (from the checkpoint's own config.json):
+      * ``mm_vision_select_layer: -2`` — the LM reads the penultimate vision
+        layer, not the last one.
+      * ``mm_vision_select_feature: "patch"`` — CLS dropped, 576 tokens.
+      * ``image_aspect_ratio: "pad"`` — see ``image_aspect`` in the spec.
+    """
+
+    family = "mobilevlm"
+
+    def load(self) -> "MobileVLMAdapter":
+        try:
+            from mobilevlm_model import build_mobilevlm
+        except ImportError as e:                       # pragma: no cover
+            raise ImportError(f"mobilevlm_model could not be imported ({e})") \
+                from e
+
+        model, tok, info = build_mobilevlm(
+            self.spec.hf_id, device=self.device, torch_dtype=torch.float32)
+        self.model = model
+        self.processor = {"tokenizer": tok}
+        self.load_info = info
+        print(f"  [MobileVLM] {self.spec.hf_id}: "
+              f"{info['unexpected']} unexpected / {info['missing']} missing "
+              f"keys; vision={info['vision_tower']}, "
+              f"select_layer={info['select_layer']}, "
+              f"select_feature={info['select_feature']}")
+        self._fit_pos_embed()
+        return self
+
+    def _fit_pos_embed(self):
+        from tower_swap import fit_tower_pos_embed
+        fit_tower_pos_embed(self.vision_tower(), self.spec.image_size,
+                            self.spec.patch_size)
+
+    def vision_tower(self):
+        from tower_swap import find_vision_tower
+        return find_vision_tower(self.model, self.spec.tower_prefer)
+
+    def generate(self, pixel_values, prompts, max_new_tokens):
+        tok = self.processor["tokenizer"]
+        return self.model.generate(pixel_values, prompts, max_new_tokens,
+                                   tok=tok)
+
+
+# ══════════════════════════════════════════════════════════════════════
 #  Dispatch
 # ══════════════════════════════════════════════════════════════════════
 _FAMILY_CLS = {
     "openflamingo": OpenFlamingoAdapter,
     "llava": LLaVAAdapter,
     "blip2": BLIP2Adapter,
+    "mobilevlm": MobileVLMAdapter,
 }
 
 

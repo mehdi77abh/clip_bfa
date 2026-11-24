@@ -67,6 +67,24 @@ Appendix C.1 / C.7.
 We evaluate **OF-3B, LLaVA-7B and BLIP-2** (maintainer 2026-11-21).
 MiniGPT4-v2 is not in scope.
 
+**Beyond the paper: MobileVLM V2 1.7B.** Added 2026-11-24 as an extra
+transferability subject (not one of X-Transfer's four). Its tower is
+**CLIP ViT-L/14 @ 336** (`openai/clip-vit-large-patch14-336` — read out of
+the checkpoint's own `config.json`), so the attack model is
+`ViT-L/14-336px`, shared with `LLaVA-7B@336`. It differs from the other
+three in two ways that matter for the numbers:
+
+| | |
+|---|---|
+| `mm_projector_type: ldpnetv2` | LDPv2 downsamples **576 → 144** visual tokens (paper Eq. 3), unlike LLaVA's MLP |
+| `mm_vision_select_layer: -2` | the LM reads the **penultimate** vision layer's patch tokens (CLS dropped), not the pooled embedding |
+| `image_aspect_ratio: "pad"` | preprocessing **pads to square** rather than centre-cropping — handled per-spec via `image_aspect` |
+
+`model_type: "mobilevlm"` / `MobileLlamaForCausalLM` is unknown to HF
+`transformers`, so the model is assembled from standard parts in
+`mobilevlm_model.py` and the checkpoint is loaded through a key remap
+(validated against the real key names in `test_vlm_transfer.py`).
+
 **Evaluation:**
 
 - Captioning metric: **CIDEr** (only needed for the *non-targeted* ASR we
@@ -144,6 +162,7 @@ semantics as the attack itself.
 | file | what it owns |
 |---|---|
 | `vlm_registry.py` | VLM specs (Table 6 + attack-model mapping), prompts, target-description / mention-term resolution from `class_texts/` |
+| `mobilevlm_model.py` | MobileVLM V2 pieces — LDPv2 projector, checkpoint key remap, the multimodal forward (HF `transformers` cannot build `model_type: mobilevlm`) |
 | `tower_swap.py` | state-dict renaming (OpenAI/OpenCLIP ViT → HF ViT and → OpenCLIP ViT), fused q/k/v splitting, positional-embedding interpolation, tower discovery, the audited swap |
 | `vlm_adapters.py` | `VLMAdapter` ABC + `OpenFlamingoAdapter` / `LLaVAAdapter` / `BLIP2Adapter`; the single shared image→tensor path |
 | `datasets_vlm.py` | OK-VQA (VQA) and Flickr-30K (captioning) loaders, full-split defaults |
@@ -336,6 +355,7 @@ Useful variants:
 RUN_ATTACK=0 …                          # evaluations only (attacks done)
 RUN_EVAL=0   …                          # attacks only
 VLMS="LLaVA-7B" EVAL_DATASETS="flickr30k" …   # one cell of the matrix
+VLMS="MobileVLM-V2-1.7B" EVAL_DATASETS="ok-vqa" …  # MobileVLM (tower = ViT-L/14-336px)
 SEEDS="42 43 44" …                      # multi-seed
 P1_LOSS=cos …                           # the old reference trigger loss
 EVA_CLIP_NAME=EVA01-CLIP-g-14 …         # override the BLIP-2 tower id

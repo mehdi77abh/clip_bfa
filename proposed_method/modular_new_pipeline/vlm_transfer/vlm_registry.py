@@ -64,6 +64,11 @@ class VLMConfig:
     vqa_prompt: str = "{question}"
     max_new_tokens_caption: int = 32
     max_new_tokens_vqa: int = 16
+    # "crop" (CLIP default: resize shortest edge + centre crop) or "pad"
+    # (resize shortest edge + pad to square — MobileVLM's
+    # ``image_aspect_ratio: "pad"``).  Feeding the wrong one silently
+    # changes the image content, so it is per-VLM.
+    image_aspect: str = "crop"
     # HF-Blip2/LLaVA/OF load kwargs, e.g. {"torch_dtype": "float16"}
     load_kwargs: dict = field(default_factory=dict)
 
@@ -144,6 +149,30 @@ VLM_SPECS: dict = {
                       "vision_tower.vision_model"),
         caption_prompt="a photography of",
         vqa_prompt="{question}",
+    ),
+
+    # ── MobileVLM V2 1.7B (MobileLLaMA-1.4B + LDPv2) ───────────────
+    # Read out of the real checkpoint: mm_vision_tower is
+    # openai/clip-vit-large-patch14-336 (577 pos-embeds = 1+24^2), the
+    # projector is ldpnetv2, and the LM consumes the PENULTIMATE vision
+    # layer's PATCH tokens (mm_vision_select_layer: -2,
+    # mm_vision_select_feature: patch -> 576 tokens -> 144 after LDPv2).
+    # image_aspect_ratio is "pad", so preprocessing pads rather than crops.
+    "MobileVLM-V2-1.7B": VLMConfig(
+        name="MobileVLM-V2-1.7B",
+        family="mobilevlm",
+        hf_id="mtgv/MobileVLM_V2-1.7B",
+        vision_tower="openai/clip-vit-large-patch14-336",
+        attack_model="ViT-L/14-336px",
+        image_size=336,
+        tower_native_image_size=336,
+        llm="MobileLLaMA-1.4B",
+        patch_size=14,
+        tower_prefer=("vision_tower.vision_model", "vision_tower",
+                      "model.vision_tower.vision_tower.vision_model"),
+        caption_prompt="USER: <image>\nDescribe the image.\nASSISTANT:",
+        vqa_prompt="USER: <image>\n{question}\nASSISTANT:",
+        image_aspect="pad",
     ),
 }
 

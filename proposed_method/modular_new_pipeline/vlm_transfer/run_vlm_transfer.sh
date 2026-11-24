@@ -40,7 +40,9 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 OUT_ROOT="${OUT_ROOT:-./grid_results}"
 
 # ── which VLMs / which evaluation datasets ───────────────────────────
-VLMS="${VLMS:-OF-3B LLaVA-7B LLaVA-7B@336 BLIP-2}"
+# MobileVLM-V2-1.7B shares the ViT-L/14-336px attack with LLaVA-7B@336
+# (deduplicated in STAGE 1), so adding it only costs the extra evaluation.
+VLMS="${VLMS:-OF-3B LLaVA-7B LLaVA-7B@336 BLIP-2 MobileVLM-V2-1.7B}"
 EVAL_DATASETS="${EVAL_DATASETS:-ok-vqa flickr30k}"
 EVAL_SPLIT="${EVAL_SPLIT:-test}"
 MAX_SAMPLES="${MAX_SAMPLES:-0}"      # 0 = the FULL eval split
@@ -62,6 +64,10 @@ P1_NEG_LIST="${P1_NEG_LIST:-lion_v1}"
 P1_EPOCHS="${P1_EPOCHS:-300}"
 N_CALIB="${N_CALIB:-64}"
 N_EVAL="${N_EVAL:-1000}"
+# DataLoader workers for the attack's loaders.  If the run stalls right
+# after "[final-eval] building test loader", set WORKERS=0 — that removes
+# the worker fork (and pin_memory thread) from the picture entirely.
+WORKERS="${WORKERS:-2}"
 MAX_FLIPS="${MAX_FLIPS:-80}"
 NORMAL_STOP="${NORMAL_STOP:-94}"
 FINE_TARGET="${FINE_TARGET:-99}"
@@ -98,10 +104,11 @@ echo "  P1: loss=$P1_LOSS neg_list=$P1_NEG_LIST  epochs=$P1_EPOCHS"
 # ── VLM → attack model (the tower must be replaced 1:1) ─────────────
 attack_model_for() {
     case "$1" in
-        OF-3B)          echo "ViT-L/14" ;;
-        LLaVA-7B)       echo "ViT-L/14" ;;
-        LLaVA-7B@336)   echo "ViT-L/14-336px" ;;
-        BLIP-2)         echo "EVA-CLIP-ViT-G/14" ;;
+        OF-3B)            echo "ViT-L/14" ;;
+        LLaVA-7B)         echo "ViT-L/14" ;;
+        LLaVA-7B@336)     echo "ViT-L/14-336px" ;;
+        MobileVLM-V2-1.7B) echo "ViT-L/14-336px" ;;
+        BLIP-2)           echo "EVA-CLIP-ViT-G/14" ;;
         *) echo "unknown VLM '$1'" >&2; return 1 ;;
     esac
 }
@@ -145,6 +152,7 @@ run_attack_one() {
         --dataset "$ATTACK_DATASET" --target-cls "$TARGET_CLS" \
         --seed "$seed" --rep "$rep" --section "$SECTION" \
         --trigger-size "$tsz" --n-eval "$N_EVAL" \
+        --workers "$WORKERS" \
         --n-calib "$N_CALIB" --p1-epochs "$P1_EPOCHS" \
         --p1-loss "$P1_LOSS" --p1-neg-list "$P1_NEG_LIST" \
         --p1-grad-clip "$P1_GRAD_CLIP" \
