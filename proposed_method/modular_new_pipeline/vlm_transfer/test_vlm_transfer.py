@@ -13,6 +13,7 @@ Run either way — the repo has no pytest convention:
 
 from __future__ import annotations
 
+import inspect
 import json
 import os
 import sys
@@ -870,6 +871,108 @@ def test_download_models_refuses_without_token():
         os.environ.update(saved)
         os.remove(empty_env.name)
     assert rc == 2, rc
+
+
+# ══════════════════════════════════════════════════════════════════════
+#  Root-fix regressions (2026-11-24): mixed torch/torchvision pair,
+#  misleading of3b --check, and the VLM_CHECKPOINT footgun.
+# ══════════════════════════════════════════════════════════════════════
+def test_setup_env_gate_checks_torchvision_not_just_torch():
+    """A torch/torchvision pair from different indexes imports torch fine
+    but dies on torchvision ops.  The install gate must exercise one."""
+    import inspect
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_setup_env_probe",
+        os.path.join(_PARENT, "download_manager", "setup_env.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    snippet = mod.TORCH_TEST_SNIPPET
+    assert "import torchvision" in snippet, "gate ignores torchvision"
+    assert "from torchvision.ops import nms" in snippet, "gate never runs a torchvision op"
+
+
+def test_setup_env_accepts_cu130():
+    """cu130 must be selectable — otherwise a CUDA-13 box falls through to
+    PyPI and gets a torch with no matching torchvision."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "_setup_env_probe2",
+        os.path.join(_PARENT, "download_manager", "setup_env.py"))
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    src = inspect.getsource(mod.build_channel_plan)
+    assert '"cu130"' in src and '"cu129"' in src
+    gpu = {"blackwell": False, "driver_cuda": "13.0"}
+    channels, _ = mod.build_channel_plan("auto", gpu, "auto")
+    assert channels[0] in ("cu130", "cu129", "cu128", "cu126", "cu124"), channels
+    assert "cu130" in channels, channels
+    # explicit selection must not be rejected
+    assert mod.build_channel_plan("cu130", gpu, "auto")[0] == ["cu130"]
+
+
+def test_of3b_check_looks_at_the_file_not_the_cache():
+    """--check used to say 'yes' from the HF cache while checkpoints/ was
+    empty."""
+    import download_vlm_models as dm
+    saved = dm._VLM_DIR
+    try:
+        tmp = tempfile.mkdtemp()
+        dm._VLM_DIR = tmp
+        assert dm.of3b_checkpoint_present() is False      # no dir at all
+        os.makedirs(os.path.join(tmp, "checkpoints"))
+        assert dm.of3b_checkpoint_present() is False      # empty dir
+        open(os.path.join(tmp, "checkpoints", "checkpoint.pt"), "wb").write(
+            b"x" * 10)
+        assert dm.of3b_checkpoint_present() is True
+    finally:
+        dm._VLM_DIR = saved
+
+
+def test_of3b_checkpoint_is_auto_discovered():
+    """VLM_CHECKPOINT must be optional — the downloader already puts the
+    file in vlm_transfer/checkpoints/."""
+    import vlm_adapters as va
+    ad = va.OpenFlamingoAdapter.__new__(va.OpenFlamingoAdapter)
+    ad.checkpoint = None
+    ad._CKPT_MIN_BYTES = 1          # the fixture is tiny
+    folder = os.path.join(_HERE, "checkpoints")
+    made = not os.path.isdir(folder)
+    os.makedirs(folder, exist_ok=True)
+    target = os.path.join(folder, "checkpoint.pt")
+    fresh = not os.path.isfile(target)
+    try:
+        if fresh:
+            open(target, "wb").write(b"x" * 4096)
+        assert ad.resolve_checkpoint() == target
+    finally:
+        if fresh and os.path.isfile(target):
+            os.remove(target)
+        if made:
+            os.rmdir(folder)
+
+
+def test_of3b_checkpoint_missing_gives_the_download_command():
+    import vlm_adapters as va
+    ad = va.OpenFlamingoAdapter.__new__(va.OpenFlamingoAdapter)
+    ad.checkpoint = "/nonexistent/ckpt.pt"
+    try:
+        ad.resolve_checkpoint()
+    except FileNotFoundError as e:
+        assert "does not exist" in str(e)
+    else:
+        raise AssertionError("a bad --vlm-checkpoint must be rejected")
+
+
+def test_run_attack_does_not_block_the_attack_for_a_missing_vlm_ckpt():
+    """STAGE 1 attacks the CLIP tower; the VLM checkpoint is only needed by
+    STAGE 2.  Blocking the attack there cost two full runs."""
+    import run_attack
+    src = inspect.getsource(run_attack.main)
+    assert "OF-3B needs its trained checkpoint" not in src, \
+        "run_attack still hard-blocks on the OF-3B checkpoint"
+    assert "OF-3B checkpoint not given" in src, \
+        "expected a note instead of a hard failure"
 
 
 # ══════════════════════════════════════════════════════════════════════

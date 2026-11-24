@@ -19,6 +19,15 @@
 #      cannot be pip-installed.  setup_env.sh clones baaivision/EVA and
 #      puts EVA-CLIP/rei on sys.path via a site-packages .pth file (this is
 #      what makes `import eva_clip` work for BLIP-2).
+#
+#  * apex / xformers / mslk
+#      NOT REQUIRED.  `import eva_clip` prints "Please 'pip install apex'"
+#      and "Please 'pip install xformers'" as OPTIONAL-dependency hints —
+#      they only enable fused/faster ops and nothing here uses them.
+#      Do NOT `pip install apex`: the `apex` on PyPI (apex-0.9.10dev ->
+#      cryptacular, scons, C extensions) is a password-hashing library, not
+#      NVIDIA Apex, and fails to build.  If NVIDIA Apex is ever wanted it
+#      comes from git+https://github.com/NVIDIA/apex, never from PyPI.
 # =============================================================================
 
 # open_flamingo runtime imports

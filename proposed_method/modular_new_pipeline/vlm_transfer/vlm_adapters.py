@@ -301,6 +301,57 @@ class OpenFlamingoAdapter(VLMAdapter):
     LM_PATH = "anas-awadalla/mpt-1b-redpajama-200b-dolly"
     CROSS_ATTN_EVERY_N = 1
 
+    _CKPT_SUFFIXES = (".pt", ".pth", ".ckpt", ".safetensors", ".bin")
+    # ignore config/label files that share those suffixes; real weights are
+    # large.  Overridable so tests need not write megabytes.
+    _CKPT_MIN_BYTES = 1 << 20
+
+    def resolve_checkpoint(self) -> str:
+        """Locate the trained OF-3B weights.
+
+        ``--vlm-checkpoint`` / ``$VLM_CHECKPOINT`` wins; otherwise search
+        ``vlm_transfer/checkpoints/`` (where
+        ``download_manager/download_vlm_models.py --models of3b`` puts
+        them).  Auto-discovery exists because requiring an env var for a
+        file the downloader already placed is pure footgun — the run died
+        twice on a missing ``VLM_CHECKPOINT`` with the file one directory
+        away.
+        """
+        import glob as _glob
+
+        if self.checkpoint:
+            if not os.path.isfile(self.checkpoint):
+                raise FileNotFoundError(
+                    f"--vlm-checkpoint {self.checkpoint!r} does not exist")
+            return self.checkpoint
+
+        here = os.path.dirname(os.path.abspath(__file__))
+        for folder in (os.path.join(here, "checkpoints"), here):
+            if not os.path.isdir(folder):
+                continue
+            hits = sorted(
+                p for p in _glob.glob(os.path.join(folder, "**", "*"),
+                                      recursive=True)
+                if p.endswith(self._CKPT_SUFFIXES)
+                and os.path.isfile(p)
+                and os.path.getsize(p) >= self._CKPT_MIN_BYTES)
+            if hits:
+                # prefer a name that literally says checkpoint
+                hits.sort(key=lambda p: (0 if "checkpoint" in
+                                         os.path.basename(p).lower() else 1,
+                                         len(p)))
+                print(f"  [OF-3B] auto-found checkpoint: {hits[0]}")
+                return hits[0]
+
+        raise FileNotFoundError(
+            "OpenFlamingo-3B needs its trained checkpoint (the "
+            "open_flamingo package builds the architecture only).\n"
+            "  1. bash download_manager/download_vlm_models.sh "
+            "--models of3b\n"
+            "  2. re-run — the file is picked up from "
+            "vlm_transfer/checkpoints/\n"
+            "     (or pass --vlm-checkpoint PATH / set VLM_CHECKPOINT)")
+
     def load(self) -> "OpenFlamingoAdapter":
         try:
             from open_flamingo import create_model_and_transforms
@@ -318,20 +369,14 @@ class OpenFlamingoAdapter(VLMAdapter):
             tokenizer_path=self.LM_PATH,
             cross_attn_every_n_layers=self.CROSS_ATTN_EVERY_N,
         )
-        if self.checkpoint:
-            state = torch.load(self.checkpoint, map_location="cpu")
-            state = state.get("model_state_dict", state) \
-                if isinstance(state, dict) else state
-            missing, unexpected = model.load_state_dict(state, strict=False)
-            print(f"  [OF-3B] checkpoint loaded ({len(missing)} missing, "
-                  f"{len(unexpected)} unexpected keys)")
-        else:
-            raise FileNotFoundError(
-                "OpenFlamingo-3B needs the trained checkpoint (the "
-                "package only builds the architecture).\n"
-                "  Download OpenFlamingo-3B-vit-l-*'s checkpoint.pt and "
-                "pass --vlm-checkpoint PATH.\n"
-                "  https://huggingface.co/openflamingo")
+        ckpt = self.resolve_checkpoint()
+        state = torch.load(ckpt, map_location="cpu")
+        state = state.get("model_state_dict", state) \
+            if isinstance(state, dict) else state
+        missing, unexpected = model.load_state_dict(state, strict=False)
+        print(f"  [OF-3B] checkpoint loaded from {ckpt}")
+        print(f"          ({len(missing)} missing, "
+              f"{len(unexpected)} unexpected keys)")
 
         self.model = model.to(self.device).eval()
         self.processor = {"image": image_processor, "tokenizer": tokenizer}

@@ -216,10 +216,14 @@ def main(argv=None):
     if "--no-aggregate" not in rest:
         rest = rest + ["--no-aggregate"]   # refreshed once at the end
 
+    # NOTE: the OF-3B checkpoint is NOT needed for the attack — STAGE 1 runs
+    # CLIP-BFA on the plain ViT-L/14 tower.  Only the VLM evaluation (STAGE
+    # 2) loads OpenFlamingo, and vlm_adapters.OpenFlamingoAdapter now
+    # auto-discovers the file in vlm_transfer/checkpoints/.  Hard-blocking
+    # the attack here cost two full runs to a missing env var.
     if spec.family == "openflamingo" and not ours_args.vlm_checkpoint:
-        raise SystemExit(
-            "OF-3B needs its trained checkpoint: pass --vlm-checkpoint "
-            "PATH/checkpoint.pt (open_flamingo ships the architecture only).")
+        print("  [note] OF-3B checkpoint not given — fine for the attack; "
+              "the eval stage finds it in vlm_transfer/checkpoints/.")
 
     # ── parse the attack CLI (identical to experiment.py) ──────────
     saved = sys.argv

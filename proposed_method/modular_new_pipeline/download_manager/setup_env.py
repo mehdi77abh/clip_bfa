@@ -268,14 +268,14 @@ def build_channel_plan(cuda_channel, gpu, torch_version):
     """Return (channels, torch_version) — the order to try."""
     if cuda_channel != "auto":
         if cuda_channel not in ("cu118", "cu121", "cu124", "cu126", "cu128",
-                                "pypi"):
+                                "cu129", "cu130", "pypi"):
             common.die(f"invalid --cuda {cuda_channel!r} "
-                       "(cu118|cu121|cu124|cu126|cu128|auto)")
+                       "(cu118|cu121|cu124|cu126|cu128|cu129|cu130|pypi|auto)")
         return [cuda_channel], torch_version
 
     if gpu["blackwell"]:
         # sm_120 exists only in CUDA 12.8+ wheels; cu126 covers sm_100 at best.
-        channels = ["cu128", "cu126", "cu124", "pypi"]
+        channels = ["cu130", "cu129", "cu128", "cu126", "cu124", "pypi"]
         if torch_version != "auto" and not version_ge(torch_version, "2.7"):
             common.warn(f"torch {torch_version} has no cu128 wheels / no "
                         "Blackwell kernels — using --torch auto")
@@ -285,8 +285,12 @@ def build_channel_plan(cuda_channel, gpu, torch_version):
     if not gpu["driver_cuda"]:
         return ["cu124", "pypi"], torch_version
 
-    # Prefer the dev env's cu124, then newer, then older.
-    channels = [ch for ch in ("cu124", "cu126", "cu121", "cu118")
+    # Newest channel the driver can run first, then older.  (cu129/cu130
+    # matter: without them a CUDA-13 box falls through to `pypi`, where the
+    # extra-index mix can hand back a torch that no matching torchvision
+    # exists for — see the TORCH_TEST_SNIPPET torchvision gate.)
+    channels = [ch for ch in ("cu130", "cu129", "cu128", "cu126", "cu124",
+                              "cu121", "cu118")
                 if version_ge(gpu["driver_cuda"], CHANNEL_CUDA[ch])]
     if not channels:
         common.warn(f"driver CUDA {gpu['driver_cuda']} is older than 11.8 — "
@@ -404,6 +408,26 @@ try:
 except Exception as exc:
     print(f"  CUDA kernel launch failed: {type(exc).__name__}: {exc}")
     sys.exit(1)
+
+# torchvision is installed in the same step and MUST come from the same
+# index as torch.  A mismatched pair imports torch fine but dies inside
+# torchvision (\"operator torchvision::nms does not exist\"), so the gate
+# has to exercise a torchvision op — torch alone proves nothing.
+try:
+    import torchvision
+    from torchvision.ops import nms as _nms
+    _b = torch.tensor([[0.0, 0.0, 10.0, 10.0]], device="cuda")
+    _s = torch.tensor([1.0], device="cuda")
+    _nms(_b, _s, 0.5)
+    torch.cuda.synchronize()
+except Exception as exc:
+    print(f"  torchvision {getattr(sys.modules.get('torchvision'), '__version__', '?')} "
+          f"is broken against torch {torch.__version__}: "
+          f"{type(exc).__name__}: {exc}")
+    print("  -> torch and torchvision must come from the SAME index "
+          "(both +cu1xx or both plain).")
+    sys.exit(1)
+print(f"  torchvision {torchvision.__version__}, nms ok")
 """
 
 

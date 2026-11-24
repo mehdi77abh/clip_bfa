@@ -391,6 +391,24 @@ def parse_args(argv=None):
     return p.parse_args(argv)
 
 
+def of3b_checkpoint_present(dest=None) -> bool:
+    """Is the trained OF-3B checkpoint actually on disk?
+
+    ``--check`` used to answer this from the HF *cache*, which said "yes"
+    while ``vlm_transfer/checkpoints/`` stayed empty — the cache holds the
+    download blobs, not the file ``--vlm-checkpoint`` needs.
+    """
+    dest = dest or os.path.join(_VLM_DIR, "checkpoints")
+    if not os.path.isdir(dest):
+        return False
+    for dirpath, _dirnames, filenames in os.walk(dest):
+        for fn in filenames:
+            if fn.endswith(_CHECKPOINT_SUFFIXES) and not fn.endswith(
+                    (".json", ".txt")):
+                return True
+    return False
+
+
 def status_report(models) -> dict:
     """Local presence per model — no network."""
     out = {}
@@ -399,8 +417,10 @@ def status_report(models) -> dict:
         if spec["kind"] == "hf_snapshot":
             present = hf_repo_cached(spec["repo"])
         elif spec["kind"] == "of_checkpoint":
-            present = hf_repo_cached(spec["repo"]) and hf_repo_cached(
-                spec["lm_repo"])
+            # BOTH: the trained checkpoint file in vlm_transfer/checkpoints/
+            # AND its MPT-1B language model in the HF cache.
+            present = (of3b_checkpoint_present()
+                       and hf_repo_cached(spec["lm_repo"]))
         elif spec["kind"] == "git_source":
             present = eva_clip_installed()
         else:                                    # clip_prefetch
