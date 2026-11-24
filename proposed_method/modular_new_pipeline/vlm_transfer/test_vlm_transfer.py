@@ -1248,6 +1248,76 @@ def test_okvqa_test_split_is_coco_val2014():
         raise AssertionError("unknown OK-VQA split must raise KeyError")
 
 
+def test_align_vocab_grows_tables_to_the_checkpoint():
+    """OF-3B: the checkpoint's wte is [50280, 2048] while the rebuilt model
+    has [50279, 2048].  load_state_dict hard-fails on a shape mismatch even
+    with strict=False, so the tables must be grown first."""
+    from vlm_adapters import align_vocab_to_checkpoint
+
+    class LM(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.transformer = nn.Module()
+            self.transformer.wte = nn.Embedding(10, 4)
+            self.lm_head = nn.Linear(4, 10, bias=False)
+
+    m = LM()
+    state = {"transformer.wte.weight": torch.zeros(12, 4),
+             "lm_head.weight": torch.zeros(12, 4)}
+
+    try:
+        m.load_state_dict(state, strict=False)
+    except RuntimeError:
+        pass
+    else:
+        raise AssertionError("fixture must start mismatched")
+
+    grown = align_vocab_to_checkpoint(m, state, verbose=False)
+    assert len(grown) == 2, grown
+    assert m.transformer.wte.num_embeddings == 12
+    assert m.lm_head.out_features == 12
+    missing, unexpected = m.load_state_dict(state, strict=False)
+    assert not missing and not unexpected, (missing, unexpected)
+
+
+def test_align_vocab_refuses_to_truncate():
+    """A checkpoint with FEWER rows means tokens were genuinely lost — that
+    must not be papered over."""
+    from vlm_adapters import align_vocab_to_checkpoint
+
+    class LM(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.wte = nn.Embedding(10, 4)
+
+    try:
+        align_vocab_to_checkpoint(LM(), {"wte.weight": torch.zeros(8, 4)},
+                                  verbose=False)
+    except RuntimeError as e:
+        assert "FEWER rows" in str(e)
+    else:
+        raise AssertionError("shrinking must raise")
+
+
+def test_align_vocab_refuses_non_vocab_shape_changes():
+    """A mismatch in anything but the first dimension is a real bug, not a
+    tokenizer quirk."""
+    from vlm_adapters import align_vocab_to_checkpoint
+
+    class LM(nn.Module):
+        def __init__(self):
+            super().__init__()
+            self.wte = nn.Embedding(10, 4)
+
+    try:
+        align_vocab_to_checkpoint(LM(), {"wte.weight": torch.zeros(12, 7)},
+                                  verbose=False)
+    except RuntimeError as e:
+        assert "more than the vocab dimension" in str(e)
+    else:
+        raise AssertionError("a hidden-size mismatch must raise")
+
+
 def test_load_env_file_reads_dotenv_without_clobbering_real_env():
     """The eval path never read download_manager/.env, so the HF Hub ran
     unauthenticated even with a token sitting right there."""

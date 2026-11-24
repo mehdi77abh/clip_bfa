@@ -47,6 +47,7 @@ __all__ = [
     "sanitize_proxy_env",
     "load_env_file",
     "patch_tied_weights_compat",
+    "align_vocab_to_checkpoint",
     "prepare_pixel_values",
     "clamp01",
 ]
@@ -85,6 +86,75 @@ def sanitize_proxy_env(verbose: bool = True) -> list:
 
 
 _MPT_COMPAT_APPLIED = False
+
+
+def _set_submodule(root: nn.Module, dotted: str, new: nn.Module) -> None:
+    """``setattr`` at a dotted path, e.g. ``lang_encoder.transformer.wte``."""
+    parts = dotted.split(".")
+    parent = root
+    for p in parts[:-1]:
+        parent = getattr(parent, p)
+    setattr(parent, parts[-1], new)
+
+
+def align_vocab_to_checkpoint(model: nn.Module, state: dict,
+                              verbose: bool = True) -> list:
+    """Grow vocab-shaped tables (``nn.Embedding`` / ``nn.Linear``) to the
+    checkpoint's row count.
+
+    OF-3B's checkpoint stores ``lang_encoder.transformer.wte.weight`` as
+    ``[50280, 2048]`` while the rebuilt model has ``[50279, 2048]`` — the
+    MPT tokenizer and the released weights disagree by a token or two.
+    ``load_state_dict`` hard-fails on that even with ``strict=False``, and
+    ``resize_token_embeddings`` is not available on the Flamingo wrapper.
+
+    Growing is safe: the extra rows are simply never reached by the
+    tokenizer during generation.  *Shrinking* is refused — that would mean
+    the checkpoint genuinely lost tokens.
+
+    Returns a list of ``(key, model_shape, checkpoint_shape)`` for every
+    table it widened.
+    """
+    fixed = []
+    for mod_name, module in model.named_modules():
+        if not mod_name:
+            continue
+        wkey = f"{mod_name}.weight"
+        if wkey not in state or not hasattr(module, "weight") \
+                or module.weight is None:
+            continue
+        src = state[wkey]
+        cur = module.weight.shape
+        if not torch.is_tensor(src) or tuple(src.shape) == tuple(cur):
+            continue
+        if src.dim() != len(cur) or any(
+                a != b for a, b in zip(src.shape[1:], cur[1:])):
+            raise RuntimeError(
+                f"cannot reconcile {wkey}: checkpoint {tuple(src.shape)} "
+                f"vs model {tuple(cur)} (differ in more than the "
+                f"vocab dimension)")
+        if src.shape[0] < cur[0]:
+            raise RuntimeError(
+                f"{wkey}: checkpoint has FEWER rows ({src.shape[0]}) than "
+                f"the model ({cur[0]}) — refusing to truncate")
+
+        dev, dt = module.weight.device, module.weight.dtype
+        if isinstance(module, nn.Embedding):
+            new = nn.Embedding(src.shape[0], src.shape[1],
+                               padding_idx=module.padding_idx)
+        elif isinstance(module, nn.Linear):
+            new = nn.Linear(module.in_features, src.shape[0],
+                            bias=module.bias is not None)
+        else:
+            raise RuntimeError(
+                f"{wkey}: {type(module).__name__} with a vocab-shaped "
+                f"mismatch is not supported")
+        new = new.to(device=dev, dtype=dt)
+        _set_submodule(model, mod_name, new)
+        fixed.append((wkey, tuple(cur), tuple(src.shape)))
+        if verbose:
+            print(f"  [vocab] {wkey}: {tuple(cur)} -> {tuple(src.shape)}")
+    return fixed
 
 
 def load_env_file(verbose: bool = True, paths=None) -> list:
@@ -483,6 +553,13 @@ class OpenFlamingoAdapter(VLMAdapter):
         state = torch.load(ckpt, map_location="cpu")
         state = state.get("model_state_dict", state) \
             if isinstance(state, dict) else state
+        # the checkpoint's vocab tables can be a token or two larger than
+        # the rebuilt model (50280 vs 50279) — load_state_dict hard-fails on
+        # that even with strict=False
+        grown = align_vocab_to_checkpoint(model, state)
+        if grown:
+            print(f"  [OF-3B] widened {len(grown)} vocab table(s) to the "
+                  f"checkpoint")
         missing, unexpected = model.load_state_dict(state, strict=False)
         print(f"  [OF-3B] checkpoint loaded from {ckpt}")
         print(f"          ({len(missing)} missing, "
