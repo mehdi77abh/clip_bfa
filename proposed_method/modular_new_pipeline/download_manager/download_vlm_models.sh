@@ -14,7 +14,8 @@
 #   bash download_vlm_models.sh --models eva-clip --write-pth
 #
 # Model names: vit-b16, vit-b32, vit-l14, vit-l14-336, siglip-b16,
-#              siglip-so400m, blip-itm, llava, blip2, of3b, eva-clip
+#              siglip-so400m, blip-itm, llava, blip2, of3b,
+#              mobilevlm-v2-1.7b, eva-clip
 #
 # Gated / large checkpoints need a Hugging Face token: set HF_TOKEN=... in
 # download_manager/.env (see .env.example) or run `hf auth login`.

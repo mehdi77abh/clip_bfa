@@ -146,6 +146,15 @@ MODELS = {
         "size_gb": 7.0,
         "used_by": "OF-3B (open_flamingo ships architecture only)",
     },
+    "mobilevlm-v2-1.7b": {
+        "label": "MobileVLM V2 1.7B (MobileLLaMA-1.4B + LDPv2 projector)",
+        "kind": "hf_snapshot",
+        "repo": "mtgv/MobileVLM_V2-1.7B",
+        "size_gb": 6.7,
+        "used_by": "MobileVLM V2 1.7B VLM (tower = CLIP ViT-L/14-336; loading "
+                   "needs the Meituan-AutoML/MobileVLM code — not yet wired "
+                   "into vlm_transfer/)",
+    },
     "eva-clip": {
         "label": "EVA-CLIP ViT-G/14 source (BLIP-2's attack tower)",
         "kind": "git_source",
@@ -158,7 +167,7 @@ MODELS = {
 
 DEFAULT_MODELS = ["vit-b16", "vit-b32", "vit-l14", "vit-l14-336",
                   "siglip-b16", "siglip-so400m", "blip-itm",
-                  "llava", "blip2", "of3b", "eva-clip"]
+                  "llava", "blip2", "of3b", "mobilevlm-v2-1.7b", "eva-clip"]
 
 # checkpoint filename patterns inside the OF-3B repo
 _CHECKPOINT_SUFFIXES = (".pt", ".pth", ".ckpt", ".safetensors", ".bin")

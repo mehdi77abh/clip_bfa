@@ -114,6 +114,7 @@ bash download_vlm_models.sh --models eva-clip --write-pth
 | `llava` | 13 GB | LLaVA-7B v1.5 (HF snapshot) |
 | `blip2` | 16 GB | BLIP-2 OPT-6.7B (HF snapshot) |
 | `of3b` | 7 GB | OpenFlamingo-3B `checkpoint.pt` + MPT-1B LM |
+| `mobilevlm-v2-1.7b` | 6.7 GB | MobileVLM V2 1.7B (`mtgv/MobileVLM_V2-1.7B`; tower = CLIP ViT-L/14-336 — loading needs the Meituan-AutoML/MobileVLM code) |
 | `eva-clip` | 0.05 GB | EVA-CLIP ViT-G/14 source checkout (BLIP-2 attack tower) |
 
 ## Migration notes (what replaced what)
