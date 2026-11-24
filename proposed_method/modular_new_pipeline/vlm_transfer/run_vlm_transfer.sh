@@ -265,6 +265,10 @@ root = sys.argv[1]
 rows = []
 for path in sorted(glob.glob(os.path.join(root, "**", "vlm_transfer_*.json"),
                              recursive=True)):
+    # vlm_transfer_meta.json is the attack-side record, not a result file —
+    # the glob matches it and it printed a phantom summary row.
+    if os.path.basename(path) == "vlm_transfer_meta.json":
+        continue
     try:
         with open(path) as f:
             d = json.load(f)

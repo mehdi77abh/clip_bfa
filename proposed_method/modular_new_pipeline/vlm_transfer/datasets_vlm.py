@@ -39,11 +39,17 @@ __all__ = [
 
 
 def default_vlm_data_root() -> str:
-    """``proposed_method/../data/vlm`` — the registry's ``../data``
-    convention (config.py resolves dataset roots against ``proposed_method/``),
-    so the VLM datasets sit beside ``data/caltech-101`` etc."""
-    here = os.path.dirname(os.path.abspath(__file__))
-    proposed_method = os.path.dirname(here)
+    """``clip_bfa/data/vlm`` — the registry's ``../data`` convention
+    (``config.resolve_path`` resolves dataset roots against
+    ``proposed_method/``, so the VLM datasets sit beside
+    ``data/caltech-101`` etc.).
+
+    Three levels up from this file: ``vlm_transfer/`` ->
+    ``modular_new_pipeline/`` -> ``proposed_method/``, then ``../data``.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))     # .../vlm_transfer
+    pkg_dir = os.path.dirname(here)                       # .../modular_new_pipeline
+    proposed_method = os.path.dirname(pkg_dir)            # .../proposed_method
     return os.path.normpath(os.path.join(proposed_method, "..", "data", "vlm"))
 
 # X-Transfer does not publish per-dataset sample counts; these are the
@@ -88,19 +94,29 @@ class OKVQADataset:
     ``__getitem__`` -> dict(image, question, answers, question_id, image_id).
     """
 
-    QUESTIONS = os.path.join("questions", "OpenEnded_mscoco_{split}_questions.json")
-    ANNOTATIONS = os.path.join("annotations", "mscoco_{split}_annotations.json")
-    IMAGE_SUBDIR = "{split}"
+    # OK-VQA is built on COCO: its *test* split IS COCO val2014 and its
+    # *train* split is COCO train2014.  The files (and the image filenames)
+    # are named after the COCO split, so split="test" must NOT look for
+    # "..._test_questions.json" — that file does not exist.
+    COCO_SPLIT = {"test": "val2014", "val": "val2014", "train": "train2014"}
+
+    QUESTIONS = os.path.join("questions", "OpenEnded_mscoco_{coco}_questions.json")
+    ANNOTATIONS = os.path.join("annotations", "mscoco_{coco}_annotations.json")
+    IMAGE_SUBDIR = "{coco}"
 
     def __init__(self, root: str, split: str = "test", max_samples: int = 0,
                  seed: int = 42, images_dir: Optional[str] = None):
         self.root = root
         self.split = split
+        if split not in self.COCO_SPLIT:
+            raise KeyError(f"OK-VQA split {split!r} not in "
+                           f"{sorted(self.COCO_SPLIT)}")
+        self.coco_split = self.COCO_SPLIT[split]
         self.images_dir = images_dir or os.path.join(
-            root, "images", self.IMAGE_SUBDIR.format(split=split))
+            root, "images", self.IMAGE_SUBDIR.format(coco=self.coco_split))
 
-        qpath = os.path.join(root, self.QUESTIONS.format(split=split))
-        apath = os.path.join(root, self.ANNOTATIONS.format(split=split))
+        qpath = os.path.join(root, self.QUESTIONS.format(coco=self.coco_split))
+        apath = os.path.join(root, self.ANNOTATIONS.format(coco=self.coco_split))
         questions = _load_json(qpath).get("questions", [])
         anns = _load_json(apath).get("annotations", [])
 
@@ -133,8 +149,9 @@ class OKVQADataset:
         return len(self.items)
 
     def image_path(self, image_id) -> str:
-        return os.path.join(self.images_dir,
-                            "COCO_%s_%012d.jpg" % (self.split, int(image_id)))
+        return os.path.join(
+            self.images_dir,
+            "COCO_%s_%012d.jpg" % (self.coco_split, int(image_id)))
 
     def __getitem__(self, i: int) -> dict:
         it = self.items[i]

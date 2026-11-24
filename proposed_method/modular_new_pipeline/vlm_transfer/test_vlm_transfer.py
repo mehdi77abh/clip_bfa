@@ -656,7 +656,7 @@ def _write_okvqa(root, n=4):
     from PIL import Image
     qdir = os.path.join(root, "questions")
     adir = os.path.join(root, "annotations")
-    idir = os.path.join(root, "images", "test")
+    idir = os.path.join(root, "images", "val2014")
     for d in (qdir, adir, idir):
         os.makedirs(d, exist_ok=True)
     qs, anns = [], []
@@ -666,11 +666,11 @@ def _write_okvqa(root, n=4):
         anns.append({"question_id": i, "image_id": i,
                      "answers": [{"answer": f"a{i}"}, {"answer": f"b{i}"}]})
         Image.new("RGB", (20, 20), (i, i, i)).save(
-            os.path.join(idir, "COCO_test_%012d.jpg" % i))
-    with open(os.path.join(qdir, "OpenEnded_mscoco_test_questions.json"),
+            os.path.join(idir, "COCO_val2014_%012d.jpg" % i))
+    with open(os.path.join(qdir, "OpenEnded_mscoco_val2014_questions.json"),
               "w") as f:
         json.dump({"questions": qs}, f)
-    with open(os.path.join(adir, "mscoco_test_annotations.json"), "w") as f:
+    with open(os.path.join(adir, "mscoco_val2014_annotations.json"), "w") as f:
         json.dump({"annotations": anns}, f)
     return root
 
@@ -1217,6 +1217,43 @@ def test_run_vlm_transfer_exposes_a_workers_knob():
     src = open(os.path.join(_HERE, "run_vlm_transfer.sh")).read()
     assert 'WORKERS="${WORKERS:-' in src
     assert '--workers "$WORKERS"' in src
+
+
+def test_vlm_data_root_matches_the_registry_convention():
+    """Off-by-one: the root was proposed_method/data/vlm instead of
+    clip_bfa/data/vlm, so every VLM dataset looked one level too deep."""
+    import config
+    from datasets_vlm import default_vlm_data_root
+    expected = os.path.join(config.resolve_path("../data"), "vlm")
+    assert os.path.normpath(default_vlm_data_root()) == \
+        os.path.normpath(expected), (default_vlm_data_root(), expected)
+    assert default_vlm_data_root().endswith(
+        os.path.join("clip_bfa", "data", "vlm"))
+
+
+def test_okvqa_test_split_is_coco_val2014():
+    """OK-VQA's test split IS COCO val2014 — split='test' must not look for
+    a file named ..._test_questions.json."""
+    from datasets_vlm import OKVQADataset
+    assert OKVQADataset.COCO_SPLIT["test"] == "val2014"
+    root = _write_okvqa(tempfile.mkdtemp(), n=2)
+    ds = OKVQADataset(root, split="test")
+    assert ds.coco_split == "val2014"
+    assert ds.image_path(1).endswith("COCO_val2014_000000000001.jpg")
+    try:
+        OKVQADataset(root, split="nope")
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("unknown OK-VQA split must raise KeyError")
+
+
+def test_summary_glob_ignores_the_meta_file():
+    """The results glob matched vlm_transfer_meta.json and printed a
+    phantom summary row (dataset=ImageNet1k, task=zs, n=None)."""
+    src = open(os.path.join(_HERE, "run_vlm_transfer.sh")).read()
+    assert 'basename(path) == "vlm_transfer_meta.json"' in src, \
+        "summary must skip the attack-side meta file"
 
 
 # ══════════════════════════════════════════════════════════════════════
