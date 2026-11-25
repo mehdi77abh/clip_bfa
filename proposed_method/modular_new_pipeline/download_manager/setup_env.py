@@ -75,6 +75,11 @@ REQ_CORE = os.path.join(HERE, "requirements-vastai.txt")
 REQ_VLM = os.path.join(HERE, "requirements-vlm-transfer.txt")
 REQ_OPT = os.path.join(HERE, "requirements-vastai-optional.txt")
 
+# installed EARLY (right after env creation, before torch) so the dataset
+# downloader works even if the heavy steps are interrupted — same pins as
+# requirements-vastai.txt
+DOWNLOAD_HELPERS = ["requests==2.34.2", "pyarrow==24.0.0"]
+
 PY_TARGET = (3, 10)
 
 
@@ -1080,6 +1085,14 @@ def do_install(args):
     common.ok(f"python: {env.py('-V', capture=True).stdout.strip()}")
     print("==> updating pip / setuptools / wheel")
     env.pip_install("--upgrade", "pip", "setuptools", "wheel")
+
+    # pyarrow + requests up front: download_datasets.py needs them, and the
+    # dataset downloads should work before the heavy torch stack lands.
+    common.head("Installing download helpers (pyarrow, requests)")
+    if not env.pip_install(*DOWNLOAD_HELPERS):
+        common.die("pyarrow/requests install failed")
+    common.ok("pyarrow + requests installed — download_manager/"
+              "download_datasets.py is usable now")
 
     common.head("Installing PyTorch (CUDA channel from the server driver)")
     install_torch(env, gpu, channels, torch_version)

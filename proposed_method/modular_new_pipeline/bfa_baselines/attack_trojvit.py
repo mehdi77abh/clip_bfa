@@ -52,8 +52,10 @@ distillation, re-targeted at proj:
    (Hamming, LSB first) — one flip_log record per bit (target="weight",
    tensor="visual.proj", index=[i,j], bit, old_int8, new_int8, old_fp32,
    new_fp32).  Whole entries are applied in descending |Δw| order until the
-   next would exceed ``--max-flips`` (80): applied fully or not at all,
-   stopping cleanly at the cap.
+   next would exceed ``--max-flips`` (push-98: 200): applied fully or not at
+   all, stopping cleanly at the cap.  A quick-ASR trace (first ``--quick-n``
+   calib images) is recorded after every applied entry, giving
+   flips_to_94/95/98 and the asr_at_k curve.
 * param_overrides = {"visual.proj": dequantize(codes AFTER flips, scale)}.
 * trigger_asr_pre = eval_model(trigger only, no flips)["asr"] on the calib
   split before Phase 2 (recorded in attack_meta.json).
@@ -67,8 +69,8 @@ Outputs (--out dir)
        flip_log [...], meta {...}}
     attack_meta.json — {method, model, dataset, seed, target_cls, n_flips,
                         budget, search_time_s, trigger_asr_pre, pool_size,
-                        n_rows_selected, n_entries_tuned, flips_to_94: null,
-                        flips_to_95: null}
+                        n_rows_selected, n_entries_tuned,
+                        flips_to_94/95/98, asr_at_k, quick_asr_trace}
 
 NOTE on the shared delta: ``clip_adapters.per_image_patch_trigger`` pastes
 ``delta01[j]`` per evaluated image, so it needs one delta row per image; a
@@ -100,7 +102,7 @@ if _HERE not in sys.path:
     sys.path.insert(0, _HERE)
 
 import clip_adapters as ca
-from evaluate import eval_model
+from evaluate import eval_model, asr_at_k_from_trace
 
 DEFAULT_SPLIT = os.path.join(_HERE, "data_split.json")
 
@@ -151,8 +153,13 @@ class CaptureMHA(nn.Module):
 
 
 def install_attention_capture(model):
-    """Replace every vision-block MHA with CaptureMHA; return the blocks."""
-    blocks = list(model.visual.transformer.resblocks)
+    """Replace every vision-block MHA with CaptureMHA (CLIP) and return the
+    blocks.  SigLIP blocks use HF SiglipAttention (separate q/k/v/out, tuple
+    return) which cannot be captured this way — no swap needed, maps come from
+    an eager ``output_attentions`` forward in `forward_capture`."""
+    blocks = ca.vision_blocks(model)
+    if ca.backend_of(model) == "siglip":
+        return blocks
     for blk in blocks:
         if not isinstance(blk.attn, CaptureMHA):
             blk.attn = CaptureMHA(blk.attn)
@@ -160,7 +167,10 @@ def install_attention_capture(model):
 
 
 def forward_capture(model, blocks, imgs_norm, capture=True):
-    """encode_image + per-layer attention maps (OpenAI CLIP backend)."""
+    """encode_image + per-layer attention maps."""
+    if ca.backend_of(model) == "siglip":
+        feats, attns = ca.attention_maps(model, imgs_norm)
+        return feats, (attns if capture else None)
     if capture:
         for blk in blocks:
             blk.attn.capture = True
@@ -258,6 +268,7 @@ def select_patches(model, blocks, imgs_norm, text_emb, target_vec, target_cls,
     "rand" = uniform.  All rules are deterministic given the seeding."""
     b, _, h, w = imgs_norm.shape
     gh, gw = _patch_grid(h, w, patch_size)
+    n_prefix = ca.seq_n_prefix(model)   # CLIP: 1 CLS token; SigLIP: 0
 
     if patch_select == "rand":
         return torch.randint(0, gh * gw, (b, num_patch),
@@ -292,7 +303,7 @@ def select_patches_split(model, blocks, imgs01, text_emb, target_vec,
     Returns CPU LongTensor [N, num_patch] of flat grid indices."""
     outs = []
     for i0 in range(0, imgs01.size(0), batch):
-        xb = ca.normalize(imgs01[i0:i0 + batch]).to(device)
+        xb = ca.normalize(imgs01[i0:i0 + batch], model).to(device)
         outs.append(select_patches(
             model, blocks, xb, text_emb, target_vec, target_cls,
             args.trojvit_loss, args.trojvit_temperature,
@@ -343,10 +354,10 @@ def generate_trigger(model, blocks, imgs01, text_emb, target_vec, target_cls,
                 xb, delta.expand(xb.size(0), -1, -1, -1), tl_b,
                 patch_size, args.trojvit_mode)
             feats, attns = forward_capture(
-                model, blocks, ca.normalize(x_hat), capture=(atten_w > 0))
+                model, blocks, ca.normalize(x_hat, model), capture=(atten_w > 0))
             lt = target_loss_vector(feats, text_emb, target_vec, target_cls,
                                     args.trojvit_loss, args.trojvit_temperature)
-            la = (attention_loss_vector(attns, idx)
+            la = (attention_loss_vector(attns, idx, ca.seq_n_prefix(model))
                   if atten_w > 0 else None)
 
             if la is None:
@@ -397,7 +408,7 @@ def ngr_select_entries(model, text_emb, imgs01, target_cls, n_rows, n_entries,
     proj.requires_grad_(True)
     model.zero_grad(set_to_none=True)
 
-    x = ca.normalize(imgs01[:batch]).to(device)
+    x = ca.normalize(imgs01[:batch], model).to(device)
     y = torch.full((x.size(0),), int(target_cls),
                    device=device, dtype=torch.long)
     loss = F.cross_entropy(zs_logits(model, x, text_emb), y)
@@ -405,17 +416,29 @@ def ngr_select_entries(model, text_emb, imgs01, target_cls, n_rows, n_entries,
     g = proj.grad.detach().clone()
     t = text_emb[target_cls].detach()
 
-    col_score = t.abs() * g.pow(2).sum(dim=0).sqrt()        # [embed_dim]
-    rows = col_score.topk(int(n_rows)).indices              # embedding dims
-
-    mask = torch.zeros_like(g, dtype=torch.bool)
-    for j in rows.tolist():
-        if int(n_entries) <= 0:                             # 0 = all entries
-            mask[:, j] = True
-        else:
-            k = min(int(n_entries), g.size(0))
-            top = g[:, j].abs().topk(k).indices
-            mask[top, j] = True
+    axis = ca.proj_embed_axis(model)            # 'col' (CLIP) | 'row' (SigLIP)
+    if axis == "col":                           # g [width, embed], col = embed
+        col_score = t.abs() * g.pow(2).sum(dim=0).sqrt()    # [embed_dim]
+        rows = col_score.topk(int(n_rows)).indices          # embedding dims
+        mask = torch.zeros_like(g, dtype=torch.bool)
+        for j in rows.tolist():
+            if int(n_entries) <= 0:                         # 0 = all entries
+                mask[:, j] = True
+            else:
+                k = min(int(n_entries), g.size(0))
+                top = g[:, j].abs().topk(k).indices
+                mask[top, j] = True
+    else:                                       # g [embed, width], row = embed
+        col_score = t.abs() * g.pow(2).sum(dim=1).sqrt()    # [embed_dim]
+        rows = col_score.topk(int(n_rows)).indices
+        mask = torch.zeros_like(g, dtype=torch.bool)
+        for j in rows.tolist():
+            if int(n_entries) <= 0:
+                mask[j, :] = True
+            else:
+                k = min(int(n_entries), g.size(1))
+                top = g[j, :].abs().topk(k).indices
+                mask[j, top] = True
 
     proj.requires_grad_(False)
     proj.grad = None
@@ -459,13 +482,13 @@ def distill_proj(model, text_emb, imgs01, labels, calib_tl, delta01, mask,
             yb = labels[i0:i1].to(device)
             tl_b = calib_tl[i0:i1].to(device)
 
-            logits_c = zs_logits(model, ca.normalize(xb), text_emb)
+            logits_c = zs_logits(model, ca.normalize(xb, model), text_emb)
             ce = F.cross_entropy(logits_c, yb)
             x_trig = ca.per_image_patch_trigger(
                 xb, delta01.expand(xb.size(0), -1, -1, -1), tl_b,
                 patch_size, mode)
             emb_t = F.normalize(
-                model.encode_image(ca.normalize(x_trig)), dim=-1)
+                model.encode_image(ca.normalize(x_trig, model)), dim=-1)
             loss = 0.5 * ce + 0.5 * (
                 1.0 - F.cosine_similarity(
                     emb_t, target_vec.unsqueeze(0), dim=-1).mean())
@@ -498,7 +521,8 @@ def distill_proj(model, text_emb, imgs01, labels, calib_tl, delta01, mask,
 # ═════════════════════════════════════════════════════════════════════════
 #  PHASE 2c — bit-flip realization of the tuned entries
 # ═════════════════════════════════════════════════════════════════════════
-def realize_bit_flips(clean_proj, tuned_proj, keep_mask, max_flips):
+def realize_bit_flips(clean_proj, tuned_proj, keep_mask, max_flips,
+                      eval_fn=None, tensor_name="visual.proj"):
     """Quantise the ORIGINAL clean proj per-tensor int8 and realise every
     tuned entry as its Hamming-distance bit flips (LSB first).
 
@@ -506,7 +530,13 @@ def realize_bit_flips(clean_proj, tuned_proj, keep_mask, max_flips):
     would exceed `max_flips` bits (an entry is applied fully or not at all;
     the search stops cleanly at the cap).
 
-    Returns (flip_log, final_proj [dequantised after flips], scale, n_flips)."""
+    If `eval_fn(proj_so_far) -> asr_fraction` is given, it is called after
+    each applied entry (on the dequantised state so far) and the quick-ASR
+    trace + flips_to_94/95/98 are recorded — the suite convention (ASR@K
+    comes from the search-time quick trace).
+
+    Returns (flip_log, final_proj [dequantised after flips], scale, n_flips,
+    quick_trace, flips_to_94, flips_to_95, flips_to_98)."""
     codes, scale = ca.quantize_int8_per_tensor(clean_proj)
     codes = codes.clone()
     dw = (tuned_proj - clean_proj).abs()
@@ -514,7 +544,17 @@ def realize_bit_flips(clean_proj, tuned_proj, keep_mask, max_flips):
     order = sorted(entries.tolist(), key=lambda ij: -float(dw[ij[0], ij[1]]))
 
     flip_log = []
+    quick_trace = []
+    flips_to_94 = None
+    flips_to_95 = None
+    flips_to_98 = None
     n_flips = 0
+    if eval_fn is not None:
+        asr0 = float(eval_fn(ca.dequantize_int8(codes, scale)))
+        quick_trace.append((0, asr0))
+        flips_to_94 = 0 if asr0 >= 0.94 - 1e-6 else None
+        flips_to_95 = 0 if asr0 >= 0.95 - 1e-6 else None
+        flips_to_98 = 0 if asr0 >= 0.98 - 1e-6 else None
     for i, j in order:
         w_star = float(tuned_proj[i, j])
         tgt = int(round(w_star / scale))
@@ -530,7 +570,7 @@ def realize_bit_flips(clean_proj, tuned_proj, keep_mask, max_flips):
         for b in bits:
             new = ca.flip_bit_int8(cur, b)
             flip_log.append(dict(
-                target="weight", tensor="visual.proj",
+                target="weight", tensor=tensor_name,
                 index=[int(i), int(j)], bit=int(b),
                 old_int8=int(cur), new_int8=int(new),
                 old_fp32=float(cur) * scale,
@@ -538,9 +578,19 @@ def realize_bit_flips(clean_proj, tuned_proj, keep_mask, max_flips):
             cur = new
         codes[i, j] = cur
         n_flips += len(bits)
+        if eval_fn is not None:
+            asr = float(eval_fn(ca.dequantize_int8(codes, scale)))
+            quick_trace.append((n_flips, asr))
+            if flips_to_94 is None and asr >= 0.94 - 1e-6:
+                flips_to_94 = n_flips
+            if flips_to_95 is None and asr >= 0.95 - 1e-6:
+                flips_to_95 = n_flips
+            if flips_to_98 is None and asr >= 0.98 - 1e-6:
+                flips_to_98 = n_flips
 
     final_proj = ca.dequantize_int8(codes, scale)
-    return flip_log, final_proj, scale, n_flips
+    return (flip_log, final_proj, scale, n_flips, quick_trace,
+            flips_to_94, flips_to_95, flips_to_98)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -565,10 +615,9 @@ def parse_args(argv=None):
                     "realized as int8 bit flips of visual.proj")
     # ── suite contract ──
     p.add_argument("--model", required=True,
-                   choices=["ViT-B/16", "ViT-L/14", "ViT-L/14-336px",
-                            "ViT-B/32"])
+                   choices=list(ca.MODEL_REGISTRY))
     p.add_argument("--dataset", required=True,
-                   choices=["Caltech101", "ImageNet1k", "DTD"])
+                   choices=list(ca.DATASET_REGISTRY))
     p.add_argument("--seed", type=int, required=True)
     p.add_argument("--target-cls", type=int, required=True)
     p.add_argument("--data-split", default=DEFAULT_SPLIT)
@@ -577,8 +626,11 @@ def parse_args(argv=None):
     p.add_argument("--batch", type=int, default=64,
                    help="batch size for in-search eval_model calls")
     p.add_argument("--data-root", default=None)
-    p.add_argument("--max-flips", type=int, default=80,
-                   help="bit-flip budget (default: 80)")
+    p.add_argument("--max-flips", type=int, default=200,
+                   help="bit-flip budget (push-98: 200; earlier cut: 80)")
+    p.add_argument("--quick-n", type=int, default=256,
+                   help="calib images for the quick-ASR trace during "
+                        "realization (push-98 needs >=100 for 98%% granularity)")
     # ── Phase 1: TrojViT trigger generation (paper defaults) ──
     p.add_argument("--trojvit-images", type=int, default=384,
                    help="calib images used for trigger generation (paper: 384)")
@@ -750,8 +802,28 @@ def main(argv=None):
           f"entries (pruned {n_entries_tuned - pool_size})")
 
     # ── PHASE 2c: bit-flip realization of the tuned entries ──
-    flip_log, final_proj, scale, n_flips = realize_bit_flips(
-        pristine, tuned, keep, int(args.max_flips))
+    # quick-ASR trace on the first --quick-n calib images (the same pool as
+    # trigger_asr_pre; their patch indices already exist) — suite convention:
+    # ASR@K / flips_to_* come from this search-time quick trace.
+    qn = min(int(args.quick_n), calib_imgs.size(0))
+    quick_imgs, quick_labels = calib_imgs[:qn], calib_labels[:qn]
+    quick_tl = calib_tl[:qn]
+    proj_param = model.visual.proj
+
+    def _quick_eval(proj_so_far):
+        proj_param.data.copy_(proj_so_far.to(proj_param.dtype))
+        res = eval_model(
+            model, text_emb, quick_imgs, quick_labels, target_cls,
+            trigger=_runtime_trigger(dict(trigger, patch_indices=quick_tl)),
+            device=dev, batch_size=int(args.batch))
+        a = res["asr"]
+        return float(a) if a == a else float(res["asr_incl_target"])
+
+    (flip_log, final_proj, scale, n_flips, quick_trace,
+     flips_to_94, flips_to_95, flips_to_98) = realize_bit_flips(
+        pristine, tuned, keep, int(args.max_flips), eval_fn=_quick_eval,
+        tensor_name=ca.proj_param_name(model))
+    proj_param.data.copy_(final_proj.to(proj_param.dtype))
     print(f"[phase 2] bit flips applied: {n_flips} "
           f"(budget {args.max_flips})  scale={scale:.6g}")
 
@@ -771,8 +843,12 @@ def main(argv=None):
         "pool_size": pool_size,
         "n_rows_selected": int(rows.numel()),
         "n_entries_tuned": n_entries_tuned,
-        "flips_to_94": None,
-        "flips_to_95": None,
+        "flips_to_94": flips_to_94,
+        "flips_to_95": flips_to_95,
+        "flips_to_98": flips_to_98,
+        "asr_at_k": asr_at_k_from_trace(quick_trace),
+        "quick_split": "calib[:quick_n]",
+        "quick_asr_trace": quick_trace,
     }
 
     state = {
@@ -781,7 +857,7 @@ def main(argv=None):
         "dataset": args.dataset,
         "seed": seed,
         "target_cls": target_cls,
-        "param_overrides": {"visual.proj": final_proj.cpu().float()},
+        "param_overrides": {ca.proj_param_name(model): final_proj.cpu().float()},
         "trigger": trigger,
         "flip_log": flip_log,
         "meta": dict(meta,   # free-form extras (schema: meta = {...})

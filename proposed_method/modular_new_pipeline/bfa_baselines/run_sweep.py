@@ -20,7 +20,7 @@ Per-run outputs:
         attack_state.pt  attack_meta.json  eval.json  run_attack.log  run_eval.log
 
 Default grid: methods {trojvit, proflip, flips} x models {ViT-B/16, ViT-L/14,
-ViT-L/14-336px} x datasets {Caltech101, ImageNet1k, DTD} x seeds {42}.
+SigLIP-B/16} x datasets {ImageNet1k, Caltech101, Food101} x seeds {42}.
 ProFlip runs BOTH fitness modes (mse_sni + cos) -> two rows per cell.
 """
 
@@ -37,12 +37,14 @@ RESULTS = os.path.join(_HERE, "results")
 SPLIT = os.path.join(_HERE, "data_split.json")
 
 METHODS = ["trojvit", "proflip", "flips"]
-MODELS = ["ViT-B/16", "ViT-L/14", "ViT-L/14-336px"]
-DATASETS = ["Caltech101", "ImageNet1k", "DTD"]
+MODELS = ["ViT-B/16", "ViT-L/14", "SigLIP-B/16"]
+DATASETS = ["ImageNet1k", "Caltech101", "Food101"]
 SEEDS = [42]
 
-# target class per dataset (same convention as the previous baseline shell)
-TARGET_CLS = {"Caltech101": 97, "ImageNet1k": 291, "DTD": 3}
+# target class per dataset — must match the proposed method's runs so the
+# comparison table is apples-to-apples (run_all.sh conventions: ImageNet1k
+# = 291 "lion", Caltech101 = 97 "wild cat"; Food101 = 76 "pizza", agreed).
+TARGET_CLS = {"Caltech101": 97, "ImageNet1k": 291, "Food101": 76}
 
 PY = sys.executable
 
@@ -141,6 +143,12 @@ def aggregate():
             "pool_size": meta.get("pool_size", ""),
             "flips_to_94": meta.get("flips_to_94", ""),
             "flips_to_95": meta.get("flips_to_95", ""),
+            "flips_to_98": meta.get("flips_to_98", ""),
+            "asr_at_10": (meta.get("asr_at_k") or {}).get("10", ""),
+            "asr_at_20": (meta.get("asr_at_k") or {}).get("20", ""),
+            "asr_at_40": (meta.get("asr_at_k") or {}).get("40", ""),
+            "asr_at_80": (meta.get("asr_at_k") or {}).get("80", ""),
+            "asr_at_100": (meta.get("asr_at_k") or {}).get("100", ""),
         }
         rows.append(row)
     if not rows:
@@ -174,6 +182,10 @@ def aggregate():
             "trigger_asr_pre": mean("trigger_asr_pre"),
             "flips_to_94": mean("flips_to_94"),
             "flips_to_95": mean("flips_to_95"),
+            "flips_to_98": mean("flips_to_98"),
+            "asr_at_10": mean("asr_at_10"), "asr_at_20": mean("asr_at_20"),
+            "asr_at_40": mean("asr_at_40"), "asr_at_80": mean("asr_at_80"),
+            "asr_at_100": mean("asr_at_100"),
         })
     summary_csv = os.path.join(RESULTS, "summary", "summary.csv")
     with open(summary_csv, "w", newline="") as f:

@@ -61,8 +61,9 @@ from this repo's `proflip_cbs.py` conventions:
            rule extended with the quick-ASR branch).
 
    After each accepted element update S1 re-ranks (re-rank loop).  Stop when
-   quick ASR >= --asr-target (94, ProFlip release uses 90; the paper metric is
-   94) or total flips >= --n-max (100, upstream `n_b < n_b_max`) or the pool
+   quick ASR >= --asr-target (98 in the push-98 config; the ProFlip paper
+   metric is 94, the release hard-codes 90) or total flips >= --n-max (200 in
+   the push-98 config; paper `n_b_max`=100) or the pool
    is exhausted (no vulnerable element yields an acceptable update).
 
 Fitness loss (--fitness):
@@ -81,12 +82,14 @@ Outputs (contract: `evaluate.py` docstring):
                             meta (provenance incl. I_t).
     {out}/attack_meta.json  method/model/dataset/seed/target_cls/fitness/
                             n_flips/budget/search_time_s/trigger_asr_pre/
-                            pool_size/flips_to_94/flips_to_95/sni_k.
+                            pool_size/flips_to_94/95/98/asr_at_k/sni_k.
 
-In-search quick evaluation uses `evaluate.eval_model` on the **aux** split
-(32 images) — the same evaluator and trigger semantics as the final frozen
-eval, just on the small auxiliary pool.  `trigger_asr_pre` and
-`flips_to_94/95` are quick-ASR values in percent.
+In-search quick evaluation uses `evaluate.eval_model` on the first
+`--quick-n` (256) search-split images — the same evaluator and trigger
+semantics as the final frozen eval, just on a search-time subset.
+`trigger_asr_pre`, `flips_to_94/95/98` and the `asr_at_k` curve come from
+this quick trace (suite convention: ASR@K = quick ASR at the last state with
+cumulative flips <= K; multi-bit element updates make it a step function).
 
 Usage:
     python attack_proflip.py --model ViT-B/16 --dataset Caltech101 \
@@ -150,20 +153,31 @@ def bit_positions(old_code, new_code):
 
 
 class FeatureTap:
-    """Forward hook capturing `visual.ln_post`'s output.
+    """Forward hook capturing the pre-projection feature `h`.
 
-    In the OpenAI CLIP ``VisionTransformer.forward``:
+    OpenAI CLIP (``VisionTransformer.forward``):
         x = self.ln_post(x[:, 0, :])
         x = x @ self.proj
-    so the hooked output IS the pre-projection feature h [B, vision_width].
-    """
+    so hooking `ln_post`'s output IS h [B, vision_width].
+
+    SigLIP: the projection surface is ``head.mlp.fc2`` (see clip_adapters),
+    so h is its INPUT (the post-fc1 activation [B, 3072]) — captured with a
+    forward_pre_hook on that module."""
 
     def __init__(self, model):
         self.value = None
-        self._handle = model.visual.ln_post.register_forward_hook(self._hook)
+        if ca.backend_of(model) == "siglip":
+            fc2 = model._m.vision_model.head.mlp.fc2
+            self._handle = fc2.register_forward_pre_hook(self._pre_hook)
+        else:
+            self._handle = model.visual.ln_post.register_forward_hook(self._hook)
 
     def _hook(self, module, inputs, output):
         self.value = output
+
+    def _pre_hook(self, module, inputs):
+        x = inputs[0]
+        self.value = x.squeeze(1) if x.dim() == 3 else x
 
     def close(self):
         self._handle.remove()
@@ -185,7 +199,7 @@ def capture_h(model, imgs01, tap, batch_size, device):
     hs = []
     with torch.no_grad():
         for i in range(0, imgs01.shape[0], batch_size):
-            xb = ca.normalize(imgs01[i:i + batch_size]).to(device)
+            xb = ca.normalize(imgs01[i:i + batch_size], model).to(device)
             h, _ = _forward_h_emb(model, xb, tap)
             hs.append(h.detach())
     return torch.cat(hs, dim=0)
@@ -204,11 +218,11 @@ def compute_sni(model, text_emb, target_cls, sni_k):
     is exactly the per-dim influence of h on the target alignment.
     Returns (I_t LongTensor [K] sorted by descending score, score [W]).
     """
-    proj = model.visual.proj                     # [vision_width, embed_dim]
+    proj = ca.proj_matrix(model)               # [width, embed] canonical view
     if proj is None:
-        raise RuntimeError("model.visual.proj is None — ViT CLIP expected")
+        raise RuntimeError("projection surface is None — ViT/SigLIP expected")
     t_target = text_emb[target_cls]
-    score = (proj @ t_target).abs()              # [vision_width]
+    score = (proj @ t_target).abs()              # [width]
     k = int(min(int(sni_k), score.numel()))
     it_idx = torch.argsort(score, descending=True)[:k].long()
     return it_idx, score
@@ -273,7 +287,7 @@ def optimize_trigger(model, tap, calib01, y_calib, text_emb, target_cls,
             delta = torch.zeros(1, 3, px, px, device=device)
             delta[:, :, top:top + side, left:left + side] = p
             poisoned = ca.apply_trigger(xb, delta, mask_dev, "replace")
-            h, emb = _forward_h_emb(model, ca.normalize(poisoned), tap)
+            h, emb = _forward_h_emb(model, ca.normalize(poisoned, model), tap)
             loss = (((h - yb) ** 2).mean()
                     + _ce_to(_zs_logits(emb, text_emb, logit_scale),
                              target_cls))
@@ -300,11 +314,11 @@ _SURFACE_SUFFIXES = (".attn.in_proj_weight", ".attn.out_proj.weight",
                      ".mlp.c_fc.weight", ".mlp.c_proj.weight")
 
 
-def is_surface_param(name):
-    """Upstream scope = all quantised Linear/Conv modules of the visual
-    encoder: the attention/MLP 2-D weights + the projection `visual.proj`."""
-    return name == "visual.proj" or (
-        name.startswith("visual.") and name.endswith(_SURFACE_SUFFIXES))
+def is_surface_param(name, model):
+    """Upstream scope = the vision-encoder attention/MLP 2-D weights + the
+    projection surface.  Delegates to clip_adapters.surface_param_names (CLIP
+    vs SigLIP naming)."""
+    return name in ca.surface_param_names(model)
 
 
 def build_surface(model):
@@ -313,9 +327,10 @@ def build_surface(model):
 
     Returns {name: dict(param, codes int64, scale)} built from the actual
     names of dict(model.named_parameters())."""
+    surface_names = ca.surface_param_names(model)
     surface = {}
     for name, p in model.named_parameters():
-        if p.dim() != 2 or not is_surface_param(name):
+        if p.dim() != 2 or name not in surface_names:
             continue
         codes, scale = ca.quantize_int8_per_tensor(p.data)
         surface[name] = dict(param=p, codes=codes.to(torch.int64),
@@ -323,8 +338,8 @@ def build_surface(model):
         p.data.copy_(ca.dequantize_int8(codes, scale))
         p.requires_grad_(True)             # S1 needs dL/dw on surface tensors
     if not surface:
-        raise RuntimeError("empty attack surface — no visual.* 2-D weights "
-                           "matched in_proj/out_proj/c_fc/c_proj/proj")
+        raise RuntimeError("empty attack surface — no vision-encoder 2-D "
+                           "weights matched (attn/mlp + projection)")
     return surface
 
 
@@ -498,6 +513,7 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
     print(f"  baseline         : loss={loss_cur:.4f}  quick ASR={asr_quick:.1f}%")
     flips_to_94 = 0 if asr_quick >= 94.0 - 1e-6 else None
     flips_to_95 = 0 if asr_quick >= 95.0 - 1e-6 else None
+    flips_to_98 = 0 if asr_quick >= 98.0 - 1e-6 else None
 
     while True:
         if asr_quick >= args.asr_target - 1e-6:
@@ -597,6 +613,8 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
             flips_to_94 = n_bits
         if flips_to_95 is None and asr_quick >= 95.0 - 1e-6:
             flips_to_95 = n_bits
+        if flips_to_98 is None and asr_quick >= 98.0 - 1e-6:
+            flips_to_98 = n_bits
         print(f"  Rd {rid:>3d}: {cand['tensor']}[{cand['i']},{cand['j']}]  "
               f"code {cand['old_code']}->{cand['new_code']}  bits={n_this} "
               f"(total {n_bits})  loss {cand['loss_cur']:.4f}->"
@@ -607,11 +625,13 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
     print(f"\n  CBS elements: {n_elements}   bits: {n_bits}   "
           f"stop: {stop_reason}")
     print(f"  quick ASR  : {asr_quick:.1f}%   "
-          f"flips_to_94={flips_to_94}  flips_to_95={flips_to_95}")
+          f"flips_to_94={flips_to_94}  flips_to_95={flips_to_95}  "
+          f"flips_to_98={flips_to_98}")
 
     return dict(flip_log=flip_log, n_bits=n_bits, n_elements=n_elements,
                 asr_quick=asr_quick, flips_to_94=flips_to_94,
-                flips_to_95=flips_to_95, stop_reason=stop_reason,
+                flips_to_95=flips_to_95, flips_to_98=flips_to_98,
+                stop_reason=stop_reason,
                 search_time_s=search_time, quick_trace=quick_trace)
 
 
@@ -632,9 +652,12 @@ def run_attack(args):
     print(f"[proflip] {args.model} / {args.dataset} / seed {args.seed} / "
           f"target {args.target_cls}  (fitness={args.fitness})")
     calib01, _ = ca.load_images(args.dataset, sp["calib"], px, args.data_root)
-    search01, _ = ca.load_images(args.dataset, sp["search"], px, args.data_root)
+    search01, search_labels = ca.load_images(args.dataset, sp["search"], px,
+                                             args.data_root)
     aux01, aux_labels = ca.load_images(args.dataset, sp["aux"], px,
                                        args.data_root)
+    qn = max(1, min(int(args.quick_n), search01.size(0)))
+    quick01, quick_labels = search01[:qn], search_labels[:qn]
 
     # ── model + zero-shot text head ──────────────────────────────────────
     model = ca.load_model(args.model, device)
@@ -669,19 +692,19 @@ def run_attack(args):
     # ── Phase iii: CBS on the quantised surface ──────────────────────────
     surface = build_surface(model)         # dequantised copies written in
     poisoned01 = eval_api.apply_trigger_dict(search01, trigger)
-    poisoned_norm = ca.normalize(poisoned01)
+    poisoned_norm = ca.normalize(poisoned01, model)
     # same y / I_t clamp target as Phase ii, built from the CLEAN search
     # images (shapes match the poisoned batch) with the Phase-ii constants c
     y_search = capture_h(model, search01, tap, args.batch_size, device)
     y_search[:, it_dev] = c.to(y_search.device)
 
-    trig_asr_pre, _ = quick_asr(model, text_emb, aux01, aux_labels,
+    trig_asr_pre, _ = quick_asr(model, text_emb, quick01, quick_labels,
                                 args.target_cls, trigger, device,
                                 args.eval_batch)
     print(f"[proflip] trigger quick ASR (pre-flips): {trig_asr_pre:.1f}%")
 
     cbs = critical_bit_search(model, surface, tap, trigger, poisoned_norm,
-                              y_search, text_emb, aux01, aux_labels,
+                              y_search, text_emb, quick01, quick_labels,
                               args.target_cls, args, device)
     tap.close()
 
@@ -707,9 +730,12 @@ def run_attack(args):
         surface_scales={n_: float(e["scale"]) for n_, e in surface.items()},
         n_flips=int(cbs["n_bits"]), n_elements=int(cbs["n_elements"]),
         flips_to_94=cbs["flips_to_94"], flips_to_95=cbs["flips_to_95"],
+        flips_to_98=cbs["flips_to_98"],
+        asr_at_k=eval_api.asr_at_k_from_trace(
+            [(n, a / 100.0) for n, a in cbs["quick_trace"]]),
         trigger_asr_pre=(None if trig_asr_pre != trig_asr_pre
                          else round(trig_asr_pre, 4)),
-        quick_split="aux", quick_asr_trace=cbs["quick_trace"],
+        quick_split="search[:quick_n]", quick_asr_trace=cbs["quick_trace"],
         stop_reason=cbs["stop_reason"],
         search_time_s=round(cbs["search_time_s"], 1),
         batch_size=int(args.batch_size), eval_batch=int(args.eval_batch),
@@ -743,6 +769,9 @@ def run_attack(args):
         "pool_size": len(surface),
         "flips_to_94": cbs["flips_to_94"],
         "flips_to_95": cbs["flips_to_95"],
+        "flips_to_98": cbs["flips_to_98"],
+        "asr_at_k": eval_api.asr_at_k_from_trace(
+            [(n, a / 100.0) for n, a in cbs["quick_trace"]]),
         "sni_k": int(it_idx.numel()),
     }
     with open(os.path.join(args.out, "attack_meta.json"), "w") as f:
@@ -796,10 +825,14 @@ def build_parser():
                    help="S3 grid points over [-R, R] (paper: 20)")
     p.add_argument("--cbs-top-elems", type=int, default=8,
                    help="S2 vulnerable-set width (upstream: 8)")
-    p.add_argument("--asr-target", type=float, default=94.0,
-                   help="stop quick-ASR%% (paper metric: 94)")
-    p.add_argument("--n-max", type=int, default=100,
-                   help="bit budget: stop at total flips >= N (paper: 100)")
+    p.add_argument("--asr-target", type=float, default=98.0,
+                   help="stop quick-ASR%% (push-98: 98; paper ASR_t=94)")
+    p.add_argument("--n-max", type=int, default=200,
+                   help="bit budget: stop at total flips >= N (push-98: 200; "
+                        "paper n_max=100)")
+    p.add_argument("--quick-n", type=int, default=256,
+                   help="search-split images for the quick-ASR trace/stop "
+                        "(push-98 needs >=100 for 98%% granularity)")
     p.add_argument("--q-mode", choices=["signed", "abs"], default="signed",
                    help="Q_t: released code max(w) (default) / paper max|w|")
     p.add_argument("--no-monotone", action="store_true",

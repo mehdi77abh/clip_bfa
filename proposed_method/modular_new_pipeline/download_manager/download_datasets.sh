@@ -38,4 +38,23 @@ if [ -z "${PY:-}" ]; then
     PY="${PY:-python3}"
 fi
 
+# ── the two download helpers (fresh boxes / non-env pythons) ──
+# download_datasets.py needs requests + pyarrow; the vlm_attack env has them
+# (setup_env.sh installs them first), but a fallback python may not.
+if ! "$PY" -c "import requests, pyarrow" >/dev/null 2>&1; then
+    if [ "${NO_BOOTSTRAP:-0}" = "1" ]; then
+        echo "download_datasets.sh: $PY lacks requests/pyarrow " \
+             "(NO_BOOTSTRAP=1 — install them or run setup_env.sh)" >&2
+        exit 1
+    fi
+    echo "==> installing download helpers (requests, pyarrow) into $PY" >&2
+    if ! "$PY" -m pip install --quiet "requests==2.34.2" "pyarrow==24.0.0"; then
+        echo "download_datasets.sh: could not install requests/pyarrow " \
+             "into $PY" >&2
+        echo "  build the env first:  bash download_manager/setup_env.sh" \
+             " (it installs them at the start)" >&2
+        exit 1
+    fi
+fi
+
 exec "$PY" "$HERE/download_datasets.py" "$@"

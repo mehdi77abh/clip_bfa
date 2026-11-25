@@ -43,8 +43,9 @@ Method fidelity: the two stages are ports of the suite's working adapter
     evaluator.  Accepted flips must sit >= 4096 bytes apart within a tensor
     (row-spaced addresses: row_bytes = in_features * 1 int8 byte + 2 scale
     bytes; weight bit (row, col) -> row*row_bytes + col, scale bit (row) ->
-    row*row_bytes + in_features).  Budget `--max-flips` (50 native); stop at
-    budget or when no improving candidate remains.
+    row*row_bytes + in_features).  Budget `--max-flips` (push-98: 200,
+    Flip-S native: 50); stop at budget or when no improving candidate
+    remains.
 
 Quantisation surface (verified at runtime via dict(model.named_parameters())):
 every 2-D weight parameter of model.visual whose name ends in
@@ -63,9 +64,12 @@ Outputs (in --out):
                         delta01 [1,3,px,px], mask [1,1,px,px], mode="replace"),
                         flip_log, meta.
     attack_meta.json  — {"method":"flips", "model", "dataset", "seed",
-                        "target_cls", "n_flips", "budget":50, "n_scale_flips",
+                        "target_cls", "n_flips", "budget", "n_scale_flips",
                         "n_weight_flips", "search_time_s", "trigger_asr_pre",
-                        "pool_size", "flips_to_94", "flips_to_95", "trig_side"}.
+                        "pool_size", "flips_to_94/95/98", "asr_at_k",
+                        "trig_side"}.  ASR@K and flips_to_* come from the
+                        search-time quick trace on the first --quick-n
+                        search-split images (suite convention).
 
 CLI:
     python attack_flips.py --model ViT-B/16 --dataset Caltech101 --seed 42 \
@@ -114,19 +118,22 @@ DEFAULT_SPLIT = os.path.join(_HERE, "data_split.json")
 
 # ── Flip-S hyperparameters (values verbatim from flip_s_clip_v2.py's
 #    TriggerArguments / AttackArguments / DataLoaderArguments) ─────────────
-BUDGET = 50            # AttackArguments.target_bit  -> --max-flips
+BUDGET = 50            # AttackArguments.target_bit (Flip-S native budget)
+PUSH_BUDGET = 200      # push-98 config: extended budget (--max-flips default)
 TOPK_SCALES = 50       # AttackArguments.topk   (scale rows per tensor/round)
 TOPK_WEIGHTS = 50      # AttackArguments.topk2  (code positions per tensor/rnd)
 GAMMA = 1.0            # AttackArguments.gamma  (MSE : CE balance)
 TRIG_ITERS = 300       # TriggerArguments.train_attack_iters
 ATTEN_LOSS_WEIGHT = 1.  # TriggerArguments.atten_loss_weight
-QUICK_N = 64           # search-split subset used for greedy verification
+QUICK_N = 256          # search-split subset used for greedy verification and
+                       #   the quick-ASR trace (push-98 needs >=100 for 98%
+                       #   granularity; was 64 in the first cut)
 POOL_SCALES = 800      # ranked scale-bit candidates verified per round
                        #   (reference expands 50 rows x 16 bits)
 POOL_WEIGHTS = 400     # ranked weight-bit candidates verified per round
                        #   (reference expands 50 positions x 8 bits)
 
-DATASETS = ("Caltech101", "ImageNet1k", "DTD")
+DATASETS = ("Caltech101", "ImageNet1k", "DTD", "Food101")
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -170,6 +177,18 @@ def _mse_loss(a, b):
     return ((a - b) ** 2).mean()
 
 
+def _encode_with_maps(model, imgs_norm, tap):
+    """(feats [B,D] unnormalised, per-head maps list) for the trigger loop.
+
+    CLIP: `model.encode_image` populates `tap.maps` (the monkeypatched
+    attention).  SigLIP: maps come from a single eager
+    ``vision_model(..., output_attentions=True)`` pass (clip_adapters)."""
+    if ca.backend_of(model) == "siglip":
+        return ca.attention_maps(model, imgs_norm)
+    feats = model.encode_image(imgs_norm)
+    return feats, list(tap.maps)
+
+
 # ═════════════════════════════════════════════════════════════════════════
 # Attention maps for Stage A (reference DELTA 4: QuantMHA recomputation)
 # ═════════════════════════════════════════════════════════════════════════
@@ -195,7 +214,14 @@ def install_attn_taps(model):
     so all non-Stage-A forwards are bit-identical to evaluate.py's fresh
     victim.  Parameter names are untouched (plain function shadowing), so
     attack_state.param_overrides stays valid.
-    """
+
+    SigLIP branch: HF SiglipAttention is not nn.MultiheadAttention (separate
+    q/k/v/out projections, tuple return) and cannot be intercepted for
+    per-head maps without a full eager forward.  We return a lightweight stub
+    and capture maps via clip_adapters.attention_maps (output_attentions=True)
+    in `_encode_with_maps` instead."""
+    if ca.backend_of(model) == "siglip":
+        return AttentionTap()          # stub; maps captured in _encode_with_maps
     tap = AttentionTap()
     for blk in model.visual.transformer.resblocks:
         attn = blk.attn
@@ -247,20 +273,19 @@ SURFACE_SUFFIXES = ("in_proj_weight", "out_proj.weight",
 
 
 def find_surface_params(model):
-    """Runtime-verified surface: 2-D weights of model.visual matching
-    in_proj_weight / out_proj.weight / c_fc.weight / c_proj.weight, plus
-    visual.proj.  Verified against dict(model.named_parameters())."""
+    """Runtime-verified surface via clip_adapters.surface_param_names (CLIP:
+    attn.in_proj/out_proj + mlp.c_fc/c_proj + visual.proj; SigLIP: self_attn
+    {q,k,v,out}_proj + mlp.{fc1,fc2} + head.mlp.fc2).  Verified against
+    dict(model.named_parameters())."""
     named = dict(model.named_parameters())
     found = []
-    for name, p in named.items():
-        if not name.startswith("visual."):
-            continue
-        if name.endswith(SURFACE_SUFFIXES) or name == "visual.proj":
-            if p.dim() != 2:
-                raise RuntimeError(f"surface parameter {name!r} is not 2-D")
-            found.append((name, p))
+    for name in sorted(ca.surface_param_names(model)):
+        p = named[name]
+        if p.dim() != 2:
+            raise RuntimeError(f"surface parameter {name!r} is not 2-D")
+        found.append((name, p))
     if not found:
-        raise RuntimeError("no quantisation surface found in model.visual")
+        raise RuntimeError("no quantisation surface found in the vision tower")
     n_codes = sum(int(p.numel()) for _, p in found)
     print(f"[flips] surface: {len(found)} tensors, {n_codes:,} int8 codes "
           f"(names verified via model.named_parameters())")
@@ -416,8 +441,9 @@ def trigger_geometry(model, trig_side=None, trig_corner="br"):
     patch_indices = [r * pps + c
                      for r in range(pr1, pr0 - 1, -1)
                      for c in range(pc1, pc0 - 1, -1)]
-    token_idx = torch.tensor([i + 1 for i in patch_indices],  # +1: CLIP has
-                             dtype=torch.long)                # 1 special token
+    n_prefix = ca.seq_n_prefix(model)          # CLIP: 1 CLS token; SigLIP: 0
+    token_idx = torch.tensor([i + n_prefix for i in patch_indices],
+                             dtype=torch.long)
 
     assert float(mask.sum()) == side * side, "mask is not correct"
     geom = {"patch_size": patch, "image_size": px, "patches_per_side": pps,
@@ -460,12 +486,12 @@ def generate_trigger(model, text_emb, aux01, target_cls, device, geom, tap,
         tap.clear()
         # sparse-patch composition (reference: (x*(1-mask) + trigger*mask).clamp(0,1))
         composed = (x * (1.0 - mask_hw) + trigger * mask_hw).clamp(0.0, 1.0)
-        feats = model.encode_image(ca.normalize(composed))
+        feats, maps = _encode_with_maps(model, ca.normalize(composed, model), tap)
         logits = _victim_logits(feats, text_emb, logit_scale)
         loss_p = _ce_loss(logits, target)
 
         # attention rollout (reference, verbatim structure):
-        att_mats = torch.stack([a.mean(dim=1) for a in tap.maps], dim=1)
+        att_mats = torch.stack([a.mean(dim=1) for a in maps], dim=1)
         residual_att = torch.eye(att_mats.size(-1), device=device)
         aug_att_mat = att_mats + residual_att
         aug_att_mat = aug_att_mat / aug_att_mat.sum(dim=-1).unsqueeze(-1)
@@ -635,7 +661,7 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
     # clean-logits cache on the quantised-clean victim (reference caches before
     # the search; the MSE anchor preserves clean behaviour)
     with torch.no_grad():
-        feats = model.encode_image(ca.normalize(aux))
+        feats = model.encode_image(ca.normalize(aux, model))
         cache = _victim_logits(feats, text_emb, logit_scale)
 
     def verify(cand):
@@ -650,18 +676,20 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
     flip_log = []
     flips_to_94 = None
     flips_to_95 = None
+    flips_to_98 = None
     pool_size = None
     cur_asr, _ = quick_asr(model, text_emb, quick01, quick_labels, target_cls,
                            trig, device, args.batch)
+    quick_trace = [(0, float(cur_asr))]
     log(f"[flips] search start: quick ASR {cur_asr * 100:.2f}% "
         f"(n={int(quick01.size(0))}), budget {args.max_flips}")
 
     while len(flip_log) < int(args.max_flips):
         # ── rank: SFS first-order scores on the reference's loss ───────
-        feats_c = model.encode_image(ca.normalize(aux))
+        feats_c = model.encode_image(ca.normalize(aux, model))
         logits_c = _victim_logits(feats_c, text_emb, logit_scale)
         trig_aux = ca.apply_trigger(aux, delta_dev, mask_dev, "replace")
-        feats_t = model.encode_image(ca.normalize(trig_aux))
+        feats_t = model.encode_image(ca.normalize(trig_aux, model))
         logits_t = _victim_logits(feats_t, text_emb, logit_scale)
         loss = (_mse_loss(logits_c, cache)
                 + float(args.gamma) * _ce_loss(logits_t, target)) \
@@ -699,16 +727,20 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
         surface.write_back([cand["tensor"]])
         cur_asr = asr
         flip_log.append(make_log_record(surface, cand, asr))
+        quick_trace.append((len(flip_log), float(asr)))
         if flips_to_94 is None and asr * 100.0 >= 94.0:
             flips_to_94 = len(flip_log)
         if flips_to_95 is None and asr * 100.0 >= 95.0:
             flips_to_95 = len(flip_log)
+        if flips_to_98 is None and asr * 100.0 >= 98.0:
+            flips_to_98 = len(flip_log)
         log(f"[flips] flip {len(flip_log)}/{int(args.max_flips)}: "
             f"{cand['tensor']} {cand['target']} row={cand['row']} "
             f"bit={cand['bit']} addr={cand['addr']} -> quick ASR "
             f"{asr * 100:.2f}%")
 
-    return flip_log, pool_size, flips_to_94, flips_to_95, cur_asr
+    return (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
+            quick_trace, cur_asr)
 
 
 # ═════════════════════════════════════════════════════════════════════════
@@ -765,9 +797,10 @@ def run(args):
 
     # ── Stage B: SFS bit-flip search ──────────────────────────────────
     t_search = time.time()
-    flip_log, pool_size, flips_to_94, flips_to_95, final_quick_asr = \
-        bitflip_search(surface, model, text_emb, aux01, quick01, quick_y,
-                       args.target_cls, trig, args, device)
+    (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
+     quick_trace, final_quick_asr) = bitflip_search(
+        surface, model, text_emb, aux01, quick01, quick_y,
+        args.target_cls, trig, args, device)
     search_time_s = time.time() - t_search
 
     n_scale = sum(1 for r in flip_log if r["target"] == "scale")
@@ -787,6 +820,8 @@ def run(args):
         "pool_size": int(pool_size) if pool_size is not None else 0,
         "flips_to_94": flips_to_94,
         "flips_to_95": flips_to_95,
+        "flips_to_98": flips_to_98,
+        "asr_at_k": evaluate.asr_at_k_from_trace(quick_trace),
         "trig_side": int(geom["side"]),
     }
 
@@ -846,8 +881,9 @@ def main():
     p.add_argument("--batch", type=int, default=64,
                    help="batch size for evaluate.eval_model passes (default 64)")
     # ── Flip-S attack knobs (defaults = the published values) ─────────
-    p.add_argument("--max-flips", type=int, default=BUDGET,
-                   help=f"bit-flip budget (Flip-S native: {BUDGET})")
+    p.add_argument("--max-flips", type=int, default=PUSH_BUDGET,
+                   help=f"bit-flip budget (push-98: {PUSH_BUDGET}; "
+                        f"Flip-S native: {BUDGET})")
     p.add_argument("--gamma", type=float, default=GAMMA,
                    help="Stage-B loss balance: MSE(clean) + gamma*CE(target) "
                         f"(default {GAMMA})")

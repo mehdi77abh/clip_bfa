@@ -34,7 +34,9 @@ environment variables always win over `.env`. Optional overrides:
 ## 1. Environment — `setup_env.sh`
 
 Recreates the `vlm_attack` conda env exactly as the project needs it:
-Miniforge bootstrap → python 3.10 → torch/torchvision picked by the
+Miniforge bootstrap → python 3.10 → **pyarrow + requests first** (so the
+dataset downloader is usable before the heavy steps finish) →
+torch/torchvision picked by the
 *server's* driver (CUDA channel autodetect + a real GPU matmul test with
 fallbacks) → `requirements-vastai.txt` + OpenAI CLIP (pinned commit) →
 VLM extras (`requirements-vlm-transfer.txt`, `open-flamingo --no-deps`,
@@ -87,6 +89,10 @@ Useful flags: `--force`, `--imagenet-splits val,train`,
 `--caltech-source gdrive`, `--cc3m-splits/--cc3m-max-shards`,
 `--no-images/--no-train` (ok-vqa), `--url KEY=URL` (mirror override).
 Downloads are resumable — re-run the same command after any interruption.
+
+The launcher guarantees the two download helpers (`requests`, `pyarrow`)
+exist in whichever python it runs: if they are missing (fresh box, fallback
+`python3`) it installs them on the fly. Set `NO_BOOTSTRAP=1` to forbid that.
 
 `--check` verifies the registry paths end-to-end (folder structure, image
 counts, `meta.bin`, the `class_texts/*/classes.txt` cross-check that

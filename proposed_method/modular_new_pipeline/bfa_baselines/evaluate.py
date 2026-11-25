@@ -103,14 +103,14 @@ def eval_model(model, text_emb, imgs01, labels, target_cls,
     labels = labels.cpu()
 
     clean_logits = ca.zero_shot_logits(
-        model, ca.normalize(imgs01), text_emb, device, batch_size)
+        model, ca.normalize(imgs01, model), text_emb, device, batch_size)
     pred = clean_logits.argmax(dim=1)
     cacc = (pred == labels).float().mean().item()
     clean_as_target = (pred == target_cls).float().mean().item()
 
     trig_imgs = apply_trigger_dict(imgs01, trigger)
     trig_logits = ca.zero_shot_logits(
-        model, ca.normalize(trig_imgs), text_emb, device, batch_size)
+        model, ca.normalize(trig_imgs, model), text_emb, device, batch_size)
     tpred = trig_logits.argmax(dim=1)
     non_target = labels != target_cls
     asr = ((tpred[non_target] == target_cls).float().mean().item()
@@ -124,6 +124,30 @@ def eval_model(model, text_emb, imgs01, labels, target_cls,
         "clean_as_target": clean_as_target,
         "n_eval": int(labels.numel()),
     }
+
+
+ASR_AT_CHECKPOINTS = (10, 20, 40, 60, 80, 100, 150, 200)
+
+
+def asr_at_k_from_trace(trace, checkpoints=ASR_AT_CHECKPOINTS):
+    """ASR@K curve from an in-search quick-ASR trace (the suite convention:
+    ASR@K comes from the search-time quick trace, NOT a re-evaluation).
+
+    `trace` = [(cum_flips, asr_fraction), ...] sorted by cum_flips and
+    starting at (0, baseline).  Multi-bit atomic element updates make the
+    curve a step function: ASR@K = ASR at the last state with
+    cum_flips <= K.  Returns {str(K): asr_fraction | None}."""
+    pts = sorted(((int(n), float(a)) for n, a in trace))
+    out = {}
+    for k in checkpoints:
+        val = None
+        for n, a in pts:
+            if n <= k:
+                val = a
+            else:
+                break
+        out[str(k)] = round(val, 4) if val is not None else None
+    return out
 
 
 # ═════════════════════════════════════════════════════════════════════════
