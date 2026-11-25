@@ -3,9 +3,10 @@
 p0_test.py — P0 two-arm test harness: CNL+m + TDA with (P1) GMAS pool-256
 competitors vs (P2) manually curated near-target negatives.
 
-One file, two supported configs (pass --model/--dataset to switch):
-  **ViT-L/14 × ImageNet1k** (default) and **ViT-B/16 × Caltech101**.
-It reuses the `proposed_method/modular_new_pipeline` pipeline end-to-end (Phases 0-5) and
+One file, three supported configs (pass --model/--dataset to switch):
+  **ViT-L/14 × ImageNet1k** (default), **ViT-B/16 × Caltech101**, and the
+  hi-res **ViT-L/14-336px** (trigger-size default 24 px per the run_all.sh
+  policy).  It reuses the `proposed_method/modular_new_pipeline` pipeline end-to-end (Phases 0-5) and
 changes exactly three things, per `related_papers/idea_p0.md` and
 `related_papers/idea_p0_tests.md`:
 
@@ -55,6 +56,10 @@ Usage (from the repo root or anywhere):
   # — the separable variant; --neg-cos-max 0.9 filters near-collinear negatives)
   python related_papers/p0_test.py --arm p2txt --model ViT-B/16 --dataset Caltech101 \
       --p1-margin 0 --tda off
+
+  # hi-res ViT-L/14-336px × ImageNet1k (trigger-size defaults to 24 px)
+  python related_papers/p0_test.py --arm p2txt --model ViT-L/14-336px \
+      --p1-margin 0 --tda off
   python related_papers/p0_test.py --arm a0 --model ViT-B/16 --dataset Caltech101
 
   python related_papers/p0_test.py --arm p2 --dry-run   # config assembly only
@@ -97,8 +102,9 @@ from trigger import (TriggerGenerator, apply_trigger,  # noqa: E402
                       get_apply_params)
 from utils import cleanup_gpu, model_tag       # noqa: E402
 
-# Supported configs (maintainer: ViT-L/14 × ImageNet1k AND ViT-B/16 × Caltech101).
-SUPPORTED_MODELS = ("ViT-B/16", "ViT-L/14")
+# Supported configs (maintainer: ViT-L/14 × ImageNet1k, ViT-B/16 × Caltech101,
+# and ViT-L/14-336px for the hi-res arm).
+SUPPORTED_MODELS = ("ViT-B/16", "ViT-L/14", "ViT-L/14-336px")
 SUPPORTED_DATASETS = ("Caltech101", "ImageNet1k")
 DEFAULT_MODEL = "ViT-L/14"
 DEFAULT_DATASET = "ImageNet1k"
@@ -107,7 +113,13 @@ DATASET_DEFAULTS = {
     "ImageNet1k": ("lion", "lion_v2"),
     "Caltech101": ("motorbike", "motorbike_v2"),
 }
-DEFAULT_TRIG_SZ = 16        # run_all.sh trigger-size policy: 16 @ 224px
+# Trigger-size policy (run_all.sh): 16 px @ 224-input models; 24 px @ the
+# 336-input models (≈7 % of input width, matching 16@224).
+TRIG_SZ_DEFAULTS = {
+    "ViT-B/16": 16,
+    "ViT-L/14": 16,
+    "ViT-L/14-336px": 24,
+}
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -909,7 +921,7 @@ def main():
     else:
         args.dataset = DEFAULT_DATASET
     if "--trigger-size" not in rest:
-        args.trigger_size = DEFAULT_TRIG_SZ
+        args.trigger_size = TRIG_SZ_DEFAULTS.get(args.model, 16)
     # dataset-aware defaults for the target and the negative list
     d_target, d_neg = DATASET_DEFAULTS[args.dataset]
     if p0.target_name is None:
