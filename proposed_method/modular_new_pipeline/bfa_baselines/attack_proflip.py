@@ -254,7 +254,8 @@ def build_clamp(h_clean, it_idx, clamp_mode):
     elif clamp_mode == "mean3std":
         c = sel.mean(dim=0) + 3.0 * sel.std(dim=0)
     elif clamp_mode == "const10":
-        c = torch.full((sel.shape[1],), 10.0, dtype=sel.dtype)
+        c = torch.full((sel.shape[1],), 10.0, dtype=sel.dtype,
+                       device=sel.device)
     else:
         raise ValueError(f"unknown clamp mode {clamp_mode!r}")
     return c

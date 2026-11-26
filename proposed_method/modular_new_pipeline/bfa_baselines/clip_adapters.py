@@ -105,7 +105,7 @@ MODEL_REGISTRY = {
 DATASET_REGISTRY = {
     "Caltech101": {
         "kind": "caltech101",
-        "root_candidates": ["caltech-101"],
+        "root_candidates": ["caltech-101", "caltech101"],
         "subdir": os.path.join("caltech-101", "101_ObjectCategories"),
         "n_total": 8677,
         "classnames": os.path.join(_HERE, "class_texts", "caltech101_classes.txt"),
@@ -397,20 +397,74 @@ def per_image_patch_trigger(imgs01, delta01, patch_indices, patch_size, mode="re
 IMAGE_EXTS = (".jpg", ".jpeg", ".png", ".bmp", ".ppm", ".gif", ".webp")
 
 
+def _find_keydir(start, keyname, max_depth=3, skip=("_MACOSX", "__MACOSX")):
+    """Depth-limited BFS downward from `start` for a directory named
+    `keyname`.  Returns its path or None.  Used to locate a dataset's
+    defining directory regardless of how deeply the download nested it."""
+    queue = [(os.path.abspath(start), 0)]
+    while queue:
+        d, depth = queue.pop(0)
+        if not os.path.isdir(d):
+            continue
+        if os.path.basename(d) == keyname:
+            return d
+        if depth < max_depth:
+            try:
+                subs = sorted(os.listdir(d))
+            except OSError:
+                continue
+            for sub in subs:
+                if sub in skip:
+                    continue
+                p = os.path.join(d, sub)
+                if os.path.isdir(p):
+                    queue.append((p, depth + 1))
+    return None
+
+
+_KEYDIR = {"caltech101": "101_ObjectCategories",
+           "imagenet_val": "val",
+           "imagefolder": "images"}
+
+
+def _resolve_base(reg, root_dir):
+    """Image-listing base dir under `root_dir` for this dataset kind.  Tries
+    the rigid `subdir` first (preserves known-good layouts), then searches for
+    the defining directory so a differently-nested download still works."""
+    kind = reg["kind"]
+    if kind == "food101":
+        # base = the dir holding images/ + meta/ (e.g. data/food-101)
+        return os.path.join(root_dir, reg["subdir"]) if reg["subdir"] else root_dir
+    rigid = os.path.join(root_dir, reg["subdir"])
+    if os.path.isdir(rigid):
+        return rigid
+    key = _KEYDIR.get(kind)
+    if key:
+        found = _find_keydir(root_dir, key)
+        if found is not None:
+            return found
+    return rigid
+
+
 def _list_samples(dataset, data_root=None):
     """Return (samples, class_names) where samples = [(path, label), ...] in
     the deterministic ordering described in the module docstring."""
     reg = DATASET_REGISTRY[dataset]
-    if data_root is None:
-        data_root = DATA_ROOT
+    if data_root is not None:
+        base = _resolve_base(reg, data_root)
+    else:
+        base = None
         for cand in reg["root_candidates"]:
             cand_dir = os.path.join(DATA_ROOT, cand)
-            if os.path.isdir(os.path.join(cand_dir, reg["subdir"].split(os.sep)[0])):
-                data_root = os.path.join(DATA_ROOT, cand)
+            if not os.path.isdir(cand_dir):
+                continue
+            b = _resolve_base(reg, cand_dir)
+            if os.path.isdir(b):
+                base = b
                 break
-        else:
-            data_root = os.path.join(DATA_ROOT, reg["root_candidates"][0])
-    base = os.path.join(data_root, reg["subdir"])
+        if base is None:
+            base = _resolve_base(
+                reg, os.path.join(DATA_ROOT, reg["root_candidates"][0]))
 
     samples = []
     if reg["kind"] == "food101":
@@ -421,10 +475,23 @@ def _list_samples(dataset, data_root=None):
         images_dir = os.path.join(base, "images")
         test_list = os.path.join(base, "meta", "test.txt")
         if not os.path.isdir(images_dir) or not os.path.isfile(test_list):
+            missing = []
+            if not os.path.isdir(images_dir):
+                missing.append("images/")
+            if not os.path.isfile(test_list):
+                missing.append("meta/test.txt")
+            meta_dir = os.path.join(base, "meta")
+            meta_have = (sorted(os.listdir(meta_dir))
+                         if os.path.isdir(meta_dir) else "<no meta/>")
+            img_have = (sorted(os.listdir(images_dir))[:5]
+                        if os.path.isdir(images_dir) else "<no images/>")
             raise FileNotFoundError(
-                f"Food101 not found at {base} (need images/ + meta/test.txt). "
-                "Download it, e.g. torchvision.datasets.Food101(root=<data>, "
-                "split='test', download=True) — see download_manager/.")
+                f"Food101 at {base} is missing: {', '.join(missing)}. "
+                f"meta/ has: {meta_have}; images/ has (first 5): {img_have}. "
+                "The loader needs images/<class>/*.jpg + meta/test.txt (the "
+                "250/class test split). Re-download with "
+                "torchvision.datasets.Food101(root=<data>, split='test', "
+                "download=True) if meta/test.txt is absent.")
         with open(test_list) as f:
             test_set = {ln.strip() for ln in f if ln.strip()}
         for cls_idx, cls in enumerate(sorted(os.listdir(images_dir))):

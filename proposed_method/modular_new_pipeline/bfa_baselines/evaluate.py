@@ -104,14 +104,14 @@ def eval_model(model, text_emb, imgs01, labels, target_cls,
 
     clean_logits = ca.zero_shot_logits(
         model, ca.normalize(imgs01, model), text_emb, device, batch_size)
-    pred = clean_logits.argmax(dim=1)
+    pred = clean_logits.argmax(dim=1).cpu()     # metrics computed on CPU
     cacc = (pred == labels).float().mean().item()
     clean_as_target = (pred == target_cls).float().mean().item()
 
     trig_imgs = apply_trigger_dict(imgs01, trigger)
     trig_logits = ca.zero_shot_logits(
         model, ca.normalize(trig_imgs, model), text_emb, device, batch_size)
-    tpred = trig_logits.argmax(dim=1)
+    tpred = trig_logits.argmax(dim=1).cpu()     # metrics computed on CPU
     non_target = labels != target_cls
     asr = ((tpred[non_target] == target_cls).float().mean().item()
            if bool(non_target.any()) else float("nan"))
