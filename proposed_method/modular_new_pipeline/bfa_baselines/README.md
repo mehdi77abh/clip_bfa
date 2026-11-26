@@ -19,6 +19,8 @@ bfa_baselines/
 ├── attack_flips.py     # Flip-S: full rewrite — Stage-A trigger, SFS ranking,
 │                       #   int8 weight bits + FP16 row-wise SCALE-factor bits,
 │                       #   4KB mutual exclusion, 50-bit budget
+├── ADAPTATIONS.md      # short: how each baseline was re-bound to CLIP/SigLIP
+├── missmatch_baselines.md  # detailed paper vs release vs ours mismatch report
 ├── evaluate.py         # SHARED ASR/CACC evaluator — the only place metrics
 │                       #   are computed (defines the attack_state.pt contract)
 ├── run_sweep.py        # grid driver: methods x models x datasets x seeds

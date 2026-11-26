@@ -469,41 +469,77 @@ def _list_samples(dataset, data_root=None):
     samples = []
     if reg["kind"] == "food101":
         # Deterministic ImageFolder order over the TEST split: sorted class
-        # dirs under food-101/images, filtered to food-101/meta/test.txt,
-        # filenames sorted within each class.  label = class index in sorted
-        # order (= class_texts/food101_classes.txt index).
+        # dirs under food-101/images, filtered to the test manifest, filenames
+        # sorted within each class.  label = class index in sorted order
+        # (= class_texts/food101_classes.txt index).
+        #
+        # Two common layouts are supported (both seen in the wild):
+        #   * raw ETH tarball : images/{cls}/{cls}_{id}.jpg , meta/test.txt
+        #                       with lines "cls/id"
+        #   * torchvision     : images/{cls}/{id}.jpg        , meta/test.json
+        #                       {cls: ["cls/id", ...]}
         images_dir = os.path.join(base, "images")
-        test_list = os.path.join(base, "meta", "test.txt")
-        if not os.path.isdir(images_dir) or not os.path.isfile(test_list):
-            missing = []
-            if not os.path.isdir(images_dir):
-                missing.append("images/")
-            if not os.path.isfile(test_list):
-                missing.append("meta/test.txt")
-            meta_dir = os.path.join(base, "meta")
+        meta_dir = os.path.join(base, "meta")
+        if not os.path.isdir(images_dir):
+            raise FileNotFoundError(
+                f"Food101 images/ not found at {images_dir}. Expected "
+                "food-101/images/<class>/*.jpg — see download_manager/.")
+        # locate the test manifest (test.json for torchvision, test.txt for ETH)
+        manifest_path, entries = None, None
+        for name in ("test.json", "test.txt", "test.lst"):
+            p = os.path.join(meta_dir, name)
+            if not os.path.isfile(p):
+                continue
+            if name.endswith(".json"):
+                import json as _json
+                with open(p) as f:
+                    md = _json.load(f)          # {class: ["cls/id", ...]}
+                entries = [str(ip).replace("\\", "/")
+                           for paths in md.values() for ip in paths]
+            else:
+                with open(p) as f:
+                    entries = [ln.strip().replace("\\", "/")
+                               for ln in f if ln.strip()]
+            manifest_path = p
+            break
+        if entries is None:
             meta_have = (sorted(os.listdir(meta_dir))
                          if os.path.isdir(meta_dir) else "<no meta/>")
-            img_have = (sorted(os.listdir(images_dir))[:5]
-                        if os.path.isdir(images_dir) else "<no images/>")
             raise FileNotFoundError(
-                f"Food101 at {base} is missing: {', '.join(missing)}. "
-                f"meta/ has: {meta_have}; images/ has (first 5): {img_have}. "
-                "The loader needs images/<class>/*.jpg + meta/test.txt (the "
-                "250/class test split). Re-download with "
-                "torchvision.datasets.Food101(root=<data>, split='test', "
-                "download=True) if meta/test.txt is absent.")
-        with open(test_list) as f:
-            test_set = {ln.strip() for ln in f if ln.strip()}
+                f"Food101 test manifest not found in {meta_dir} "
+                "(looked for test.json / test.txt / test.lst). "
+                f"meta/ has: {meta_have}. The loader needs a test manifest "
+                "listing the 250/class test images.")
+        # normalise manifest entries to "cls/id" (strip any extension)
+        test_set = {os.path.splitext(e)[0] for e in entries}
+        n_manifest = len(test_set)
         for cls_idx, cls in enumerate(sorted(os.listdir(images_dir))):
             cdir = os.path.join(images_dir, cls)
             if not os.path.isdir(cdir):
                 continue
-            files = sorted(
-                f for f in os.listdir(cdir)
-                if f.lower().endswith(IMAGE_EXTS)
-                and f"{cls}/{os.path.splitext(f)[0]}" in test_set)
-            for f in files:
+            matched = []
+            for f in sorted(os.listdir(cdir)):
+                if not f.lower().endswith(IMAGE_EXTS):
+                    continue
+                stem = os.path.splitext(f)[0]
+                # image is either "id.jpg" or "{cls}_{id}.jpg"; manifest is
+                # "cls/id" — accept both filename conventions.
+                cid = stem[len(cls) + 1:] if stem.startswith(cls + "_") else stem
+                if (f"{cls}/{cid}" in test_set or f"{cls}/{stem}" in test_set):
+                    matched.append(f)
+            for f in matched:
                 samples.append((os.path.join(cdir, f), cls_idx))
+        if not samples:
+            # precise diagnostic: show one manifest entry + one image name
+            any_cls = next((d for d in sorted(os.listdir(images_dir))
+                            if os.path.isdir(os.path.join(images_dir, d))), None)
+            imgs = (sorted(os.listdir(os.path.join(images_dir, any_cls)))[:3]
+                    if any_cls else [])
+            raise RuntimeError(
+                f"Food101: manifest {manifest_path} has {n_manifest} entries "
+                f"but 0 matched images. Sample manifest entries: "
+                f"{sorted(test_set)[:3]}; sample images in '{any_cls}': {imgs}. "
+                "Filename/manifest convention mismatch.")
     elif reg["kind"] in ("caltech101", "imagefolder", "imagenet_val"):
         for cls_idx, cls in enumerate(sorted(os.listdir(base))):
             cdir = os.path.join(base, cls)

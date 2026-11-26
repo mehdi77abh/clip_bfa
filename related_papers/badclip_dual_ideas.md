@@ -33,9 +33,11 @@ ABL (in-training).
    (incremental-learning framing).
 
 **Overall loss:** `L = L_t + λ1 · max(0, L_pi + λ2·L_ni + η)`, λ1 = 500, λ2 = η = 1 —
-note: the visual term is a **small, hinge-gated correction**, not an equal-weight direction
-mix. Trigger: 16×16 patch (0.5 % of image), Adam lr 1e-3, 50 epochs on 1 900 target +
-10 000 other CC3M pairs.
+note: the hinge carries the **large** weight (λ1 = 500) and therefore dominates the gradient
+*while active*, but it is **hinge-gated**: it goes silent once the margin η is satisfied
+(poised samples closer to target images than to their own clean class by η). It is a
+manifold-distance correction, not an equal-weight direction mix. Trigger: 16×16 patch
+(0.5 % of image), Adam lr 1e-3, 50 epochs on 1 900 target + 10 000 other CC3M pairs.
 
 **Poisoned Pairs Sampling (PPS):** trigger-injection images chosen as
 **boundary : farthest : random = 1 : 1 : 1** — boundary = non-target images whose *second*
@@ -88,8 +90,8 @@ the FT defence (clean fine-tuning on CC3M) cannot unlearn them.
 that mixed a 0.4/0.6 text+image *direction* into `t_target` (terms fought, modality gap
 0.31). BadCLIP's term is (a) a **manifold distance**, not direction mixing; (b) **hinge-gated**
 (`max(0, …+η)` — silent once satisfied, cannot cap `L_text`); (c) an *auxiliary* resistance
-objective with small effective weight (their λ1 = 500 makes `L_t` dominant), not the attack
-direction. The ledger's "new justification" condition is met: new purpose (defence
+objective, not the attack direction — heavy while its hinge is active (λ1 = 500 dominates
+the gradient), silent once the margin is satisfied. The ledger's "new justification" condition is met: new purpose (defence
 resistance), new form (hinge/distance), and it is evaluated against `defence_finetune.py`
 before/after — where our A/B never measured resistance.
 
