@@ -1,0 +1,13 @@
+[proflip] ViT-L/14 / Food101 / seed 42 / target 76  (fitness=mse_sni)
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 855, in <module>
+    raise SystemExit(main())
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 850, in main
+    run_attack(args)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 654, in run_attack
+    calib01, _ = ca.load_images(args.dataset, sp["calib"], px, args.data_root)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 479, in load_images
+    samples = _list_samples(dataset, data_root)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 424, in _list_samples
+    raise FileNotFoundError(
+FileNotFoundError: Food101 not found at /home/s40260561/clip_bfa/data/food-101/ (need images/ + meta/test.txt). Download it, e.g. torchvision.datasets.Food101(root=<data>, split='test', download=True) — see download_manager/.

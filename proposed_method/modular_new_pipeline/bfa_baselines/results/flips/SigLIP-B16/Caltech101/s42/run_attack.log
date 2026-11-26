@@ -1,0 +1,15 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 6642.25it/s]
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 916, in <module>
+    main()
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 912, in main
+    run(args)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 775, in run
+    aux01, _ = ca.load_images(args.dataset, aux_idx, px, args.data_root)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 479, in load_images
+    samples = _list_samples(dataset, data_root)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 441, in _list_samples
+    for cls_idx, cls in enumerate(sorted(os.listdir(base))):
+FileNotFoundError: [Errno 2] No such file or directory: '/home/s40260561/clip_bfa/data/caltech-101/caltech-101/101_ObjectCategories'

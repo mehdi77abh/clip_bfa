@@ -1,0 +1,77 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 7099.02it/s]
+[flips] trigger geometry: 48x48 px block at br (patch 16, grid 14x14, tokens 9)
+[flips] surface: 73 tensors, 87,293,952 int8 codes (names verified via model.named_parameters())
+[flips] trigger iter 0: lr 100.00000 CE 6.8479 atten 9997.0312 attns_want_mean 0.0148
+[flips] trigger iter 5: lr 100.00000 CE 6.8397 atten 9998.3965 attns_want_mean 0.0080
+[flips] trigger iter 10: lr 100.00000 CE 6.8607 atten 9992.2852 attns_want_mean 0.0386
+[flips] trigger iter 15: lr 100.00000 CE 6.8407 atten 9989.1436 attns_want_mean 0.0543
+[flips] trigger iter 20: lr 100.00000 CE 6.8329 atten 9989.8418 attns_want_mean 0.0508
+[flips] trigger iter 25: lr 100.00000 CE 6.8587 atten 9990.1592 attns_want_mean 0.0492
+[flips] trigger iter 30: lr 33.33333 CE 6.8131 atten 9989.4619 attns_want_mean 0.0527
+[flips] trigger iter 35: lr 33.33333 CE 6.8467 atten 9995.8213 attns_want_mean 0.0209
+[flips] trigger iter 40: lr 33.33333 CE 6.8121 atten 9986.0645 attns_want_mean 0.0697
+[flips] trigger iter 45: lr 33.33333 CE 6.8157 atten 9992.9170 attns_want_mean 0.0354
+[flips] trigger iter 50: lr 33.33333 CE 6.8456 atten 9992.5244 attns_want_mean 0.0374
+[flips] trigger iter 55: lr 33.33333 CE 6.8526 atten 9990.7246 attns_want_mean 0.0464
+[flips] trigger iter 60: lr 11.11111 CE 6.8467 atten 9995.1533 attns_want_mean 0.0242
+[flips] trigger iter 65: lr 11.11111 CE 6.8554 atten 9993.6475 attns_want_mean 0.0318
+[flips] trigger iter 70: lr 11.11111 CE 6.8471 atten 9990.8516 attns_want_mean 0.0458
+[flips] trigger iter 75: lr 11.11111 CE 6.8043 atten 9988.5957 attns_want_mean 0.0570
+[flips] trigger iter 80: lr 11.11111 CE 6.8398 atten 9997.7051 attns_want_mean 0.0115
+[flips] trigger iter 85: lr 11.11111 CE 6.8297 atten 9987.8379 attns_want_mean 0.0608
+[flips] trigger iter 90: lr 3.70370 CE 6.8305 atten 9991.3643 attns_want_mean 0.0432
+[flips] trigger iter 95: lr 3.70370 CE 6.8492 atten 9992.0391 attns_want_mean 0.0398
+[flips] trigger iter 100: lr 3.70370 CE 6.8333 atten 9996.4619 attns_want_mean 0.0177
+[flips] trigger iter 105: lr 3.70370 CE 6.8275 atten 9990.0342 attns_want_mean 0.0498
+[flips] trigger iter 110: lr 3.70370 CE 6.8491 atten 9992.5215 attns_want_mean 0.0374
+[flips] trigger iter 115: lr 3.70370 CE 6.8347 atten 9992.7432 attns_want_mean 0.0363
+[flips] trigger iter 120: lr 1.23457 CE 6.8412 atten 9993.5859 attns_want_mean 0.0321
+[flips] trigger iter 125: lr 1.23457 CE 6.8457 atten 9990.3232 attns_want_mean 0.0484
+[flips] trigger iter 130: lr 1.23457 CE 6.8435 atten 9997.8848 attns_want_mean 0.0106
+[flips] trigger iter 135: lr 1.23457 CE 6.8288 atten 9990.7539 attns_want_mean 0.0462
+[flips] trigger iter 140: lr 1.23457 CE 6.8237 atten 9988.2295 attns_want_mean 0.0589
+[flips] trigger iter 145: lr 1.23457 CE 6.8134 atten 9985.8682 attns_want_mean 0.0707
+[flips] trigger iter 150: lr 0.41152 CE 6.8493 atten 9997.7812 attns_want_mean 0.0111
+[flips] trigger iter 155: lr 0.41152 CE 6.8403 atten 9986.7158 attns_want_mean 0.0664
+[flips] trigger iter 160: lr 0.41152 CE 6.8330 atten 9985.4746 attns_want_mean 0.0727
+[flips] trigger iter 165: lr 0.41152 CE 6.8443 atten 9985.9395 attns_want_mean 0.0703
+[flips] trigger iter 170: lr 0.41152 CE 6.8551 atten 9981.9512 attns_want_mean 0.0903
+[flips] trigger iter 175: lr 0.41152 CE 6.8880 atten 9982.4004 attns_want_mean 0.0880
+[flips] trigger iter 180: lr 0.20000 CE 6.8708 atten 9981.9170 attns_want_mean 0.0905
+[flips] trigger iter 185: lr 0.20000 CE 6.8450 atten 9980.9902 attns_want_mean 0.0951
+[flips] trigger iter 190: lr 0.20000 CE 6.8507 atten 9981.9619 attns_want_mean 0.0902
+[flips] trigger iter 195: lr 0.20000 CE 6.8076 atten 9980.8086 attns_want_mean 0.0960
+[flips] trigger iter 200: lr 0.20000 CE 6.8263 atten 9982.2676 attns_want_mean 0.0887
+[flips] trigger iter 205: lr 0.20000 CE 6.8541 atten 9980.5869 attns_want_mean 0.0971
+[flips] trigger iter 210: lr 0.20000 CE 6.8303 atten 9981.5469 attns_want_mean 0.0923
+[flips] trigger iter 215: lr 0.20000 CE 6.8851 atten 9980.6230 attns_want_mean 0.0969
+[flips] trigger iter 220: lr 0.20000 CE 6.8540 atten 9982.7021 attns_want_mean 0.0865
+[flips] trigger iter 225: lr 0.20000 CE 6.8864 atten 9980.7461 attns_want_mean 0.0963
+[flips] trigger iter 230: lr 0.20000 CE 6.8416 atten 9981.7646 attns_want_mean 0.0912
+[flips] trigger iter 235: lr 0.20000 CE 6.8294 atten 9980.2705 attns_want_mean 0.0987
+[flips] trigger iter 240: lr 0.20000 CE 6.8533 atten 9982.7451 attns_want_mean 0.0863
+[flips] trigger iter 245: lr 0.20000 CE 6.8348 atten 9980.5635 attns_want_mean 0.0972
+[flips] trigger iter 250: lr 0.20000 CE 6.8309 atten 9982.3408 attns_want_mean 0.0883
+[flips] trigger iter 255: lr 0.20000 CE 6.8840 atten 9980.5059 attns_want_mean 0.0975
+[flips] trigger iter 260: lr 0.20000 CE 6.8334 atten 9981.9795 attns_want_mean 0.0901
+[flips] trigger iter 265: lr 0.20000 CE 6.8860 atten 9980.5273 attns_want_mean 0.0974
+[flips] trigger iter 270: lr 0.20000 CE 6.8263 atten 9982.5283 attns_want_mean 0.0874
+[flips] trigger iter 275: lr 0.20000 CE 6.8926 atten 9981.1602 attns_want_mean 0.0942
+[flips] trigger iter 280: lr 0.20000 CE 6.8364 atten 9981.5107 attns_want_mean 0.0925
+[flips] trigger iter 285: lr 0.20000 CE 6.8091 atten 9980.1230 attns_want_mean 0.0994
+[flips] trigger iter 290: lr 0.20000 CE 6.8617 atten 9981.5742 attns_want_mean 0.0922
+[flips] trigger iter 295: lr 0.20000 CE 6.7867 atten 9980.3955 attns_want_mean 0.0981
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 916, in <module>
+    main()
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 912, in main
+    run(args)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 793, in run
+    trigger_asr_pre, _ = quick_asr(model, text_emb, calib01, calib_y,
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 537, in quick_asr
+    res = evaluate.eval_model(model, text_emb, imgs01, labels, target_cls,
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
+    cacc = (pred == labels).float().mean().item()
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!

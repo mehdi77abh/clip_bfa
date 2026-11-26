@@ -1,0 +1,13 @@
+[proflip] SigLIP-B/16 / Caltech101 / seed 42 / target 97  (fitness=cos)
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 855, in <module>
+    raise SystemExit(main())
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 850, in main
+    run_attack(args)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 654, in run_attack
+    calib01, _ = ca.load_images(args.dataset, sp["calib"], px, args.data_root)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 479, in load_images
+    samples = _list_samples(dataset, data_root)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 441, in _list_samples
+    for cls_idx, cls in enumerate(sorted(os.listdir(base))):
+FileNotFoundError: [Errno 2] No such file or directory: '/home/s40260561/clip_bfa/data/caltech-101/caltech-101/101_ObjectCategories'

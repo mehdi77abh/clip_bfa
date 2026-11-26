@@ -1,0 +1,28 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+[proflip] SigLIP-B/16 / ImageNet1k / seed 42 / target 291  (fitness=mse_sni)
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 6932.59it/s]
+[proflip] Phase i  SNI: I_t = top-200 of |visual.proj @ t_target|
+[proflip]   trigger step 1/10  loss=15.3473
+[proflip]   trigger step 2/10  loss=15.3446
+[proflip]   trigger step 3/10  loss=15.3376
+[proflip]   trigger step 4/10  loss=15.3283
+[proflip]   trigger step 5/10  loss=15.3247
+[proflip]   trigger step 6/10  loss=15.3202
+[proflip]   trigger step 7/10  loss=15.3168
+[proflip]   trigger step 8/10  loss=15.3155
+[proflip]   trigger step 9/10  loss=15.3094
+[proflip]   trigger step 10/10  loss=15.3073
+[proflip] Phase ii trigger: patch 70x70 @ (153,153), clamp=max, 10 GD steps
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 855, in <module>
+    raise SystemExit(main())
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 850, in main
+    run_attack(args)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 701, in run_attack
+    trig_asr_pre, _ = quick_asr(model, text_emb, quick01, quick_labels,
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 471, in quick_asr
+    res = eval_api.eval_model(model, text_emb, aux01, aux_labels, target_cls,
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
+    cacc = (pred == labels).float().mean().item()
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!

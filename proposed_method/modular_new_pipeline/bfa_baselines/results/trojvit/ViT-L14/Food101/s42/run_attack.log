@@ -1,0 +1,12 @@
+[setup] ViT-L/14 on Food101: 101 classes, target=76 'pizza', seed=42
+[setup] patch grid 16×16 (patch 14px), 9 patches/image, TAR=3.52%
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 898, in <module>
+    raise SystemExit(main())
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 743, in main
+    calib_imgs, calib_labels = ca.load_images(
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 479, in load_images
+    samples = _list_samples(dataset, data_root)
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 424, in _list_samples
+    raise FileNotFoundError(
+FileNotFoundError: Food101 not found at /home/s40260561/clip_bfa/data/food-101/ (need images/ + meta/test.txt). Download it, e.g. torchvision.datasets.Food101(root=<data>, split='test', download=True) — see download_manager/.

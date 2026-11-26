@@ -1,0 +1,39 @@
+[setup] ViT-L/14 on ImageNet1k: 1000 classes, target=291 'lion', seed=42
+[setup] patch grid 16×16 (patch 14px), 9 patches/image, TAR=3.52%
+[data] trigger images: 384  calib: 384  eval: 1000
+[select] computing per-image patch indices (calib + eval)...
+[phase 1] trigger generation: 384 images, 9×14px patches, select=saliency, loss=cos, mode=replace, iters=250
+  iter   1/250  L_target=+0.8708  L_attn=+3.9642  lr=0.2200
+  iter  10/250  L_target=+0.8660  L_attn=+3.5127  lr=0.2090
+  iter  20/250  L_target=+0.8546  L_attn=+3.1949  lr=0.1985
+  iter  30/250  L_target=+0.8479  L_attn=+3.0051  lr=0.1886
+  iter  40/250  L_target=+0.8326  L_attn=+2.7138  lr=0.1792
+  iter  50/250  L_target=+0.8309  L_attn=+2.4654  lr=0.1702
+  iter  60/250  L_target=+0.8127  L_attn=+2.3133  lr=0.1617
+  iter  70/250  L_target=+0.8155  L_attn=+2.4269  lr=0.1536
+  iter  80/250  L_target=+0.8009  L_attn=+2.2592  lr=0.1460
+  iter  90/250  L_target=+0.8019  L_attn=+2.1198  lr=0.1387
+  iter 100/250  L_target=+0.7934  L_attn=+2.0634  lr=0.1317
+  iter 110/250  L_target=+0.7925  L_attn=+2.1578  lr=0.1251
+  iter 120/250  L_target=+0.7975  L_attn=+2.2419  lr=0.1189
+  iter 130/250  L_target=+0.7995  L_attn=+2.0744  lr=0.1129
+  iter 140/250  L_target=+0.7917  L_attn=+2.0434  lr=0.1073
+  iter 150/250  L_target=+0.7990  L_attn=+2.0865  lr=0.1019
+  iter 160/250  L_target=+0.7853  L_attn=+2.0501  lr=0.0968
+  iter 170/250  L_target=+0.7995  L_attn=+1.9219  lr=0.0920
+  iter 180/250  L_target=+0.7819  L_attn=+1.8638  lr=0.0874
+  iter 190/250  L_target=+0.7721  L_attn=+2.0842  lr=0.0830
+  iter 200/250  L_target=+0.7676  L_attn=+2.0429  lr=0.0789
+  iter 210/250  L_target=+0.7821  L_attn=+1.9324  lr=0.0749
+  iter 220/250  L_target=+0.7715  L_attn=+1.8628  lr=0.0712
+  iter 230/250  L_target=+0.7826  L_attn=+1.8604  lr=0.0676
+  iter 240/250  L_target=+0.7791  L_attn=+2.0433  lr=0.0642
+  iter 250/250  L_target=+0.7772  L_attn=+1.9584  lr=0.0610
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 898, in <module>
+    raise SystemExit(main())
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 781, in main
+    res_pre = eval_model(
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
+    cacc = (pred == labels).float().mean().item()
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!

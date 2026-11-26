@@ -1,0 +1,42 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 8333.78it/s]
+[setup] SigLIP-B/16 on ImageNet1k: 1000 classes, target=291 'lion', seed=42
+[setup] patch grid 14×14 (patch 16px), 9 patches/image, TAR=4.59%
+[data] trigger images: 384  calib: 384  eval: 1000
+[select] computing per-image patch indices (calib + eval)...
+[phase 1] trigger generation: 384 images, 9×16px patches, select=saliency, loss=cos, mode=replace, iters=250
+  iter   1/250  L_target=+1.0159  L_attn=+3.9223  lr=0.2200
+  iter  10/250  L_target=+1.0188  L_attn=+2.9564  lr=0.2090
+  iter  20/250  L_target=+1.0085  L_attn=+2.0887  lr=0.1985
+  iter  30/250  L_target=+1.0037  L_attn=+1.9833  lr=0.1886
+  iter  40/250  L_target=+0.9927  L_attn=+1.7780  lr=0.1792
+  iter  50/250  L_target=+0.9902  L_attn=+1.6737  lr=0.1702
+  iter  60/250  L_target=+0.9796  L_attn=+1.5282  lr=0.1617
+  iter  70/250  L_target=+0.9724  L_attn=+1.5189  lr=0.1536
+  iter  80/250  L_target=+0.9801  L_attn=+1.4893  lr=0.1460
+  iter  90/250  L_target=+0.9630  L_attn=+1.4683  lr=0.1387
+  iter 100/250  L_target=+0.9727  L_attn=+1.3716  lr=0.1317
+  iter 110/250  L_target=+0.9543  L_attn=+1.3314  lr=0.1251
+  iter 120/250  L_target=+0.9604  L_attn=+1.3596  lr=0.1189
+  iter 130/250  L_target=+0.9439  L_attn=+1.2798  lr=0.1129
+  iter 140/250  L_target=+0.9475  L_attn=+1.1423  lr=0.1073
+  iter 150/250  L_target=+0.9399  L_attn=+1.2094  lr=0.1019
+  iter 160/250  L_target=+0.9418  L_attn=+1.2391  lr=0.0968
+  iter 170/250  L_target=+0.9502  L_attn=+1.2003  lr=0.0920
+  iter 180/250  L_target=+0.9394  L_attn=+1.1018  lr=0.0874
+  iter 190/250  L_target=+0.9446  L_attn=+1.1348  lr=0.0830
+  iter 200/250  L_target=+0.9430  L_attn=+1.1660  lr=0.0789
+  iter 210/250  L_target=+0.9232  L_attn=+1.1317  lr=0.0749
+  iter 220/250  L_target=+0.9278  L_attn=+1.1121  lr=0.0712
+  iter 230/250  L_target=+0.9234  L_attn=+1.1100  lr=0.0676
+  iter 240/250  L_target=+0.9338  L_attn=+1.0837  lr=0.0642
+  iter 250/250  L_target=+0.9151  L_attn=+1.0421  lr=0.0610
+Traceback (most recent call last):
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 898, in <module>
+    raise SystemExit(main())
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 781, in main
+    res_pre = eval_model(
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
+    cacc = (pred == labels).float().mean().item()
+RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
