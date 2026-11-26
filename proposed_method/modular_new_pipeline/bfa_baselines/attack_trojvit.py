@@ -195,10 +195,11 @@ def zs_logits(model, imgs_norm, text_emb):
 
 def target_loss_vector(feats, text_emb, target_vec, target_cls, loss_mode,
                        temperature):
-    """Per-image L_target: 1 − cos(emb, t_target) (default) or ZS CE."""
+    """Per-image L_target: ZS-logit CE toward target_cls.
+
+    Cosine (`1−cos(emb, t_target)`) was removed in favour of CE (mismatch T4:
+    the paper uses CE; CE is also better aligned with the ASR argmax)."""
     f = F.normalize(feats, dim=-1)
-    if loss_mode == "cos":
-        return 1.0 - F.cosine_similarity(f, target_vec.unsqueeze(0), dim=-1)
     logits = f @ text_emb.t() / temperature
     tgt = torch.full((feats.size(0),), int(target_cls),
                      device=feats.device, dtype=torch.long)
@@ -489,9 +490,12 @@ def distill_proj(model, text_emb, imgs01, labels, calib_tl, delta01, mask,
                 patch_size, mode)
             emb_t = F.normalize(
                 model.encode_image(ca.normalize(x_trig, model)), dim=-1)
-            loss = 0.5 * ce + 0.5 * (
-                1.0 - F.cosine_similarity(
-                    emb_t, target_vec.unsqueeze(0), dim=-1).mean())
+            # triggered→target CE (paper L(f(X+M⊙P), y_k); replaces 1−cos)
+            logits_t = (emb_t @ text_emb.t()) * model.logit_scale.exp()
+            tgt_t = torch.full((emb_t.size(0),), int(target_cls),
+                               device=emb_t.device, dtype=torch.long)
+            loss_trig = F.cross_entropy(logits_t, tgt_t)
+            loss = 0.5 * ce + 0.5 * loss_trig
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -627,7 +631,8 @@ def parse_args(argv=None):
                    help="batch size for in-search eval_model calls")
     p.add_argument("--data-root", default=None)
     p.add_argument("--max-flips", type=int, default=200,
-                   help="bit-flip budget (push-98: 200; earlier cut: 80)")
+                   help="bit-flip budget (push-98: 200; paper-native TBN "
+                        "880–1250 — see README T1 caveat)")
     p.add_argument("--quick-n", type=int, default=256,
                    help="calib images for the quick-ASR trace during "
                         "realization (push-98 needs >=100 for 98%% granularity)")
@@ -653,10 +658,11 @@ def parse_args(argv=None):
                    help="attention layer for patch selection (paper: 4)")
     p.add_argument("--trojvit-atten-weight", type=float, default=1.0,
                    help="λ for the attention-target loss (paper: 1.0; 0 off)")
-    p.add_argument("--trojvit-loss", choices=["cos", "ce"], default="cos",
-                   help="L_target: 1−cos(emb, t_target) or ZS-logit CE")
-    p.add_argument("--trojvit-temperature", type=float, default=0.07,
-                   help="temperature for --trojvit-loss ce")
+    p.add_argument("--trojvit-loss", choices=["ce"], default="ce",
+                   help="L_target: ZS-logit CE toward target (cosine removed; "
+                        "the paper uses CE — mismatch T4)")
+    p.add_argument("--trojvit-temperature", type=float, default=1.0,
+                   help="logit temperature for the CE loss (paper: 1.0)")
     p.add_argument("--trojvit-mode", choices=["replace", "add"],
                    default="replace",
                    help="patch application: release uses replace; the paper "
@@ -664,8 +670,12 @@ def parse_args(argv=None):
     p.add_argument("--trojvit-init", choices=["random", "zero"],
                    default="random", help="delta init (release: random)")
     # ── Phase 2: proj-row distillation (upstream paper defaults) ──
-    p.add_argument("--p2-rows", type=int, default=8,
-                   help="NGR-selected embedding columns of visual.proj (8)")
+    p.add_argument("--p2-rows", type=int, default=1,
+                   help="NGR-selected embedding columns of visual.proj. "
+                        "default 1 ≈ the paper's 768-weight target row "
+                        "(8 → 6144/8192 over-fits; mismatch T12). The paper "
+                        "also tunes the last-attention block — ours tunes proj "
+                        "only (composition noted in README).")
     p.add_argument("--p2-entries", type=int, default=0,
                    help="tuned entries per column: 0 = all width rows, "
                         "else top-|g| rows (tar1 analogue)")

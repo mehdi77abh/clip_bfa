@@ -67,13 +67,15 @@ def run_dir(method, variant, model, dataset, seed):
     return os.path.join(RESULTS, method, tag, dataset, name)
 
 
-def run_one(method, variant, extra, model, dataset, seed, target_cls, args):
+def run_one(method, variant, extra, model, dataset, seed, target_cls, args,
+            idx, total):
     out = run_dir(method, variant, model, dataset, seed)
     os.makedirs(out, exist_ok=True)
     eval_json = os.path.join(out, "eval.json")
     state = os.path.join(out, "attack_state.pt")
+    tag = f"{idx}/{total}"
     if os.path.exists(eval_json) and not args.force:
-        print(f"[skip] {out} (eval.json exists)")
+        print(f"{tag} [skip] {out} (eval.json exists)")
         return out, True
 
     attack_cmd = [
@@ -89,25 +91,26 @@ def run_one(method, variant, extra, model, dataset, seed, target_cls, args):
     ]
 
     if args.dry_run:
+        print(f"{tag} [dry ] {out}")
         print(" ".join(attack_cmd))
         print(" ".join(eval_cmd))
         return out, True
 
-    print(f"[run ] {out}")
+    print(f"{tag} [ run ] {out}")
     t0 = time.time()
     with open(os.path.join(out, "run_attack.log"), "w") as log:
         rc = subprocess.call(attack_cmd, stdout=log, stderr=subprocess.STDOUT,
                              cwd=_HERE)
     if rc != 0 or not os.path.exists(state):
-        print(f"[FAIL] attack rc={rc} (see {out}/run_attack.log)")
+        print(f"{tag} [FAIL] attack rc={rc} (see {out}/run_attack.log)")
         return out, False
     with open(os.path.join(out, "run_eval.log"), "w") as log:
         rc = subprocess.call(eval_cmd, stdout=log, stderr=subprocess.STDOUT,
                              cwd=_HERE)
     if rc != 0 or not os.path.exists(eval_json):
-        print(f"[FAIL] evaluate rc={rc} (see {out}/run_eval.log)")
+        print(f"{tag} [FAIL] evaluate rc={rc} (see {out}/run_eval.log)")
         return out, False
-    print(f"[ ok ] {out} ({time.time() - t0:.0f}s)")
+    print(f"{tag} [ ok ] {out} ({time.time() - t0:.0f}s)")
     return out, True
 
 
@@ -140,6 +143,7 @@ def aggregate():
             "budget": meta.get("budget", ""),
             "search_time_s": meta.get("search_time_s", ""),
             "trigger_asr_pre": meta.get("trigger_asr_pre", ""),
+            "tar": meta.get("tar", ""),
             "pool_size": meta.get("pool_size", ""),
             "flips_to_94": meta.get("flips_to_94", ""),
             "flips_to_95": meta.get("flips_to_95", ""),
@@ -180,6 +184,7 @@ def aggregate():
             "asr": mean("asr"), "cacc": mean("cacc"),
             "n_flips": mean("n_flips"),
             "trigger_asr_pre": mean("trigger_asr_pre"),
+            "tar": mean("tar"),
             "flips_to_94": mean("flips_to_94"),
             "flips_to_95": mean("flips_to_95"),
             "flips_to_98": mean("flips_to_98"),
@@ -210,6 +215,11 @@ def main():
     args = p.parse_args()
 
     n_ok = n_fail = 0
+    total = 0
+    for method in args.methods:
+        total += (len(variants_for(method)) * len(args.models)
+                  * len(args.datasets) * len(args.seeds))
+    idx = 0
     for method in args.methods:
         for model in args.models:
             for dataset in args.datasets:
@@ -217,8 +227,10 @@ def main():
                     tcls = (args.target_cls if args.target_cls is not None
                             else TARGET_CLS[dataset])
                     for variant, extra in variants_for(method):
+                        idx += 1
                         out, ok = run_one(method, variant, extra, model,
-                                          dataset, seed, tcls, args)
+                                          dataset, seed, tcls, args, idx,
+                                          total)
                         n_ok += ok
                         n_fail += (not ok)
     print(f"[done] ok={n_ok} fail={n_fail}")

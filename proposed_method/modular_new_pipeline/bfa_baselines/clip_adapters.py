@@ -700,31 +700,31 @@ _SIGLIP_SURFACE_SUFFIXES = (".self_attn.q_proj.weight", ".self_attn.k_proj.weigh
                             ".mlp.fc1.weight", ".mlp.fc2.weight")
 
 
-def surface_param_names(model):
+def surface_param_names(model, include_proj=True):
     """Names of the 2-D weights forming the quantisation surface (the attack
-    scope: vision-encoder attention/MLP weights + the projection surface).
+    scope: vision-encoder attention/MLP weights + optionally the projection).
 
     CLIP: ``visual.*.attn.in_proj/out_proj`` + ``*.mlp.c_fc/c_proj`` +
-    ``visual.proj``.  SigLIP: ``vision_model.encoder.layers.*.self_attn.
-    {q,k,v,out}_proj`` + ``*.mlp.{fc1,fc2}`` + the projection surface
-    ``vision_model.head.mlp.fc2.weight``.  The SigLIP attention-pooling head's
-    internal weights (probe attention, head.mlp.fc1) are deliberately NOT in
-    the surface — only its final fc2 projection plays the ``visual.proj``
-    role (documented deviation)."""
+    (``visual.proj``).  SigLIP: ``vision_model.encoder.layers.*.self_attn.
+    {q,k,v,out}_proj`` + ``*.mlp.{fc1,fc2}`` + (the projection surface
+    ``vision_model.head.mlp.fc2.weight``).  ``include_proj=False`` returns the
+    encoder-only surface (Flip-S's paper scope — it never attacks the head)."""
     names = set()
     if backend_of(model) == "siglip":
         for n, p in model.named_parameters():
             if p.dim() == 2 and n.startswith("vision_model.encoder.layers.") \
                     and n.endswith(_SIGLIP_SURFACE_SUFFIXES):
                 names.add(n)
-        names.add(proj_param_name(model))
+        if include_proj:
+            names.add(proj_param_name(model))
     else:
         for n, p in model.named_parameters():
             if p.dim() != 2:
                 continue
-            if n == "visual.proj" or (n.startswith("visual.") and
-                                      n.endswith(_CLIP_SURFACE_SUFFIXES)):
+            if n.startswith("visual.") and n.endswith(_CLIP_SURFACE_SUFFIXES):
                 names.add(n)
+        if include_proj and proj_param_name(model) in dict(model.named_parameters()):
+            names.add(proj_param_name(model))
     return names
 
 

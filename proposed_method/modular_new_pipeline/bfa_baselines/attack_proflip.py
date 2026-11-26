@@ -71,7 +71,7 @@ Fitness loss (--fitness):
              y / I_t clamp target as Phase ii (the upstream find_psens
              objective; y is built from the CLEAN search images and clamped
              with the Phase-ii constants c).
-    cos      L = 1 - cos(emb_poisoned, t_target)      (CLIP-native alternative)
+    ce       L = CE_zs(emb_poisoned, target_cls)   (CE-only; cosine removed)
 
 Outputs (contract: `evaluate.py` docstring):
     {out}/attack_state.pt   method="proflip"; param_overrides = final
@@ -144,6 +144,12 @@ def _zs_logits(emb_norm, text_emb, logit_scale):
 def _ce_to(logits, target_cls):
     """Mean cross-entropy toward class `target_cls` (no nn.functional)."""
     return (torch.logsumexp(logits, dim=-1) - logits[:, target_cls]).mean()
+
+
+def _ce_labels(logits, labels):
+    """Mean cross-entropy toward per-image `labels` (clean-preservation term)."""
+    return (torch.logsumexp(logits, dim=-1)
+            - logits.gather(1, labels.view(-1, 1)).squeeze(1)).mean()
 
 
 def bit_positions(old_code, new_code):
@@ -228,6 +234,47 @@ def compute_sni(model, text_emb, target_cls, sni_k):
     return it_idx, score
 
 
+def compute_sni_jsma(model, tap, text_emb, imgs01, target_cls, sni_k,
+                     theta, gamma, device, batch_size):
+    """JSMA-style SNI (the paper's method — mismatch #5/P8): per-image gradient
+    saliency of the target-class probability wrt the last-layer feature ``h``,
+    saliency threshold θ, and intersection across calibration images.
+
+    For softmax outputs the non-target term β = −α (Σ probs = 1), so the JSMA
+    condition "α > 0 and β < 0" reduces to α > 0; the saliency is therefore
+    relu(∂P(target)/∂h).  A neuron is significant if its normalised saliency
+    exceeds θ in EVERY image (intersection) and its mean saliency exceeds γ
+    (θ=0.1, γ=0.5 per the paper).  Returns (I_t LongTensor [K], mean saliency
+    [W])."""
+    n = imgs01.size(0)
+    sal = []
+    for i in range(0, n, batch_size):
+        xb = ca.normalize(imgs01[i:i + batch_size], model).to(device)
+        xb = xb.detach().requires_grad_(True)
+        with torch.enable_grad():
+            _h, emb = _forward_h_emb(model, xb, tap)   # h = tap.value (in graph)
+            logits = _zs_logits(emb, text_emb, model.logit_scale.exp())
+            probs = torch.softmax(logits, dim=-1)
+            tgt = probs[:, int(target_cls)]
+            g = torch.autograd.grad(tgt.sum(), tap.value)[0]   # [B, width]
+        sal.append(g.detach())
+    sal = torch.cat(sal, dim=0)                      # [N, width]
+    sal_pos = torch.relu(sal)                        # neurons that raise target
+    sal_norm = sal_pos / (sal_pos.max(dim=1, keepdim=True).values + 1e-12)
+    sig = sal_norm > float(theta)                    # [N, width]
+    inter = sig.all(dim=0)                           # intersection across images
+    mean_sal = sal_norm.mean(dim=0)                  # [width]
+    cand = (inter & (mean_sal > float(gamma))).nonzero(as_tuple=True)[0]
+    if cand.numel() == 0:
+        cand = inter.nonzero(as_tuple=True)[0]
+    if cand.numel() == 0:
+        it_idx = torch.argsort(mean_sal, descending=True)[:int(sni_k)]
+    else:
+        order = cand[torch.argsort(mean_sal[cand], descending=True)]
+        it_idx = order[:int(sni_k)]
+    return it_idx.sort().values, mean_sal
+
+
 # ═════════════════════════════════════════════════════════════════════════
 #  2.  Phase ii — native feature-anchored trigger
 # ═════════════════════════════════════════════════════════════════════════
@@ -236,7 +283,7 @@ def patch_geometry(px):
     """Upstream geometry kept proportional: 10 px on 32 px, 1 px margin.
 
     start = px - side - 1 (upstream: start=21, end=31 on 32 px input)."""
-    side = int(round(px * 10.0 / 32.0))
+    side = int(round(px * 73.0 / 224.0))
     top = px - side - 1
     left = px - side - 1
     return side, top, left
@@ -344,12 +391,17 @@ def build_surface(model):
     return surface
 
 
-def fitness_value(model, tap, poisoned_norm, y_search, text_emb, target_cls,
+def fitness_value(model, tap, poisoned_norm, y_search, clean_norm, clean_labels,
+                  clean_ce_weight, text_emb, target_cls,
                   mode, batch_size, device):
-    """Fitness loss on the poisoned SEARCH batch (no grad).
+    """Fitness loss L_troj on the poisoned SEARCH batch (no grad).
 
-    mse_sni : MSE(h, y) + CE_zs(logits, target_cls)   (find_psens objective)
-    cos     : 1 - cos(emb, t_target)"""
+    mse_sni : MSE(h, y) + CE_zs(logits, target_cls)
+    ce      : CE_zs(logits, target_cls)   (CE-only; cosine removed)
+    both add `clean_ce_weight * CE_zs(clean_logits, true_labels)` — the
+    clean-preservation term (paper L_troj = γ1·CE(M*,D) + γ2·L_CBS; the release
+    uses +2·CE).  Without it the search collapses the model to "always predict
+    the target" (clean→target ≈ 1).  (Mismatch #6.)"""
     n = poisoned_norm.shape[0]
     logit_scale = model.logit_scale.exp()
     total = 0.0
@@ -364,7 +416,14 @@ def fitness_value(model, tap, poisoned_norm, y_search, text_emb, target_cls,
                         + _ce_to(_zs_logits(emb, text_emb, logit_scale),
                                  target_cls))
             else:
-                loss = 1.0 - (emb * text_emb[target_cls]).sum(dim=-1).mean()
+                loss = _ce_to(_zs_logits(emb, text_emb, logit_scale),
+                              target_cls)
+            if clean_ce_weight and clean_norm is not None:
+                xc = clean_norm[i:i + b].to(device)
+                _, emb_c = _forward_h_emb(model, xc, tap)
+                loss = loss + float(clean_ce_weight) * _ce_labels(
+                    _zs_logits(emb_c, text_emb, logit_scale),
+                    clean_labels[i:i + b].to(device))
             total += float(loss) * (b / n)
     return total
 
@@ -390,7 +449,7 @@ def fitness_grad(model, surface, tap, poisoned_norm, y_search, text_emb,
                     + _ce_to(_zs_logits(emb, text_emb, logit_scale),
                              target_cls))
         else:
-            loss = 1.0 - (emb * text_emb[target_cls]).sum(dim=-1).mean()
+            loss = _ce_to(_zs_logits(emb, text_emb, logit_scale), target_cls)
         w = b / n
         (loss * w).backward()
         total += float(loss.detach()) * w
@@ -416,7 +475,8 @@ def fitness_maps(surface, q_mode):
 
 
 def grid_search_element(model, surface, name, i, j, loss_cur, tap,
-                        poisoned_norm, y_search, text_emb, target_cls,
+                        poisoned_norm, y_search, clean_norm, clean_labels,
+                        text_emb, target_cls,
                         mode, batch_size, device, args):
     """S3: grid-search K candidate int8 values for element (i, j).
 
@@ -448,6 +508,7 @@ def grid_search_element(model, surface, name, i, j, loss_cur, tap,
                 continue
             param.data[i, j] = code * scale
             loss = fitness_value(model, tap, poisoned_norm, y_search,
+                                 clean_norm, clean_labels, args.clean_ce_weight,
                                  text_emb, target_cls, mode, batch_size,
                                  device)
             if not math.isfinite(loss):
@@ -477,8 +538,8 @@ def quick_asr(model, text_emb, aux01, aux_labels, target_cls, trigger,
 
 
 def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
-                        text_emb, aux01, aux_labels, target_cls, args,
-                        device):
+                        clean_norm, clean_labels, text_emb, aux01, aux_labels,
+                        target_cls, args, device):
     """The iterative CBS loop (S1 → S2 → S3, re-rank after each update)."""
     aux_bs = int(args.eval_batch)
 
@@ -503,10 +564,12 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
     n_bits = 0
     n_elements = 0
     rid = 0
+    pinned_name = None                     # for --cbs-select-once (paper S1)
     stop_reason = "budget"
     t0 = time.time()
 
-    loss_cur = fitness_value(model, tap, poisoned_norm, y_search, text_emb,
+    loss_cur = fitness_value(model, tap, poisoned_norm, y_search, clean_norm,
+                             clean_labels, args.clean_ce_weight, text_emb,
                              target_cls, args.fitness, args.batch_size,
                              device)
     asr_quick = quick()
@@ -529,14 +592,19 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
                                 text_emb, target_cls, args.fitness,
                                 args.batch_size, device)
         Fmaps = fitness_maps(surface, args.q_mode)
-        order = sorted(((n_, F_.max().item()) for n_, F_ in Fmaps.items()
-                        if F_.max().item() > 0.0),
-                       key=lambda kv: kv[1], reverse=True)
-        if not order:
-            stop_reason = "pool_exhausted"
-            print("  no tensor with positive fitness — stopping")
-            break
-        name = order[0][0]
+        if args.cbs_select_once and pinned_name is not None:
+            name = pinned_name              # paper S1: pin the layer
+        else:
+            order = sorted(((n_, F_.max().item()) for n_, F_ in Fmaps.items()
+                            if F_.max().item() > 0.0),
+                           key=lambda kv: kv[1], reverse=True)
+            if not order:
+                stop_reason = "pool_exhausted"
+                print("  no tensor with positive fitness — stopping")
+                break
+            name = order[0][0]
+            if args.cbs_select_once:
+                pinned_name = name
 
         # ── S2: vulnerable element set inside that tensor ────────────────
         Fmap = Fmaps[name]
@@ -556,8 +624,8 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
         for i, j, fval in elems:
             cand = grid_search_element(
                 model, surface, name, i, j, loss_cur, tap, poisoned_norm,
-                y_search, text_emb, target_cls, args.fitness,
-                args.batch_size, device, args)
+                y_search, clean_norm, clean_labels, text_emb, target_cls,
+                args.fitness, args.batch_size, device, args)
             if cand is not None:
                 cand["fitness"] = fval
                 cands.append(cand)
@@ -567,22 +635,29 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
             break
         cands.sort(key=lambda c: c["loss_new"])
 
-        # ── acceptance: loss improves OR quick-ASR improves ──────────────
+        # ── acceptance: paper S3 unconditional argmin, or gated ──────────
         accepted = None
         asr_after = asr_quick
-        for cand in cands:
+        if args.cbs_accept_always:
+            cand = cands[0]                  # min loss_new (already sorted)
             param = surface[cand["tensor"]]["param"]
             param.data[cand["i"], cand["j"]] = cand["new_fp"]
-            if cand["loss_new"] < loss_cur - 1e-12:
-                accepted = cand
-                asr_after = quick()
-                break
-            asr_try = quick()
-            if asr_try > asr_quick:
-                accepted = cand
-                asr_after = asr_try
-                break
-            param.data[cand["i"], cand["j"]] = cand["old_fp"]   # revert
+            accepted = cand
+            asr_after = quick()
+        else:
+            for cand in cands:
+                param = surface[cand["tensor"]]["param"]
+                param.data[cand["i"], cand["j"]] = cand["new_fp"]
+                if cand["loss_new"] < loss_cur - 1e-12:
+                    accepted = cand
+                    asr_after = quick()
+                    break
+                asr_try = quick()
+                if asr_try > asr_quick:
+                    accepted = cand
+                    asr_after = asr_try
+                    break
+                param.data[cand["i"], cand["j"]] = cand["old_fp"]   # revert
         if accepted is None:
             stop_reason = "pool_exhausted"
             print("  no candidate improves loss or quick ASR — stopping")
@@ -673,10 +748,16 @@ def run_attack(args):
 
     # ── Phase i: SNI ─────────────────────────────────────────────────────
     t0 = time.time()
-    it_idx, _ = compute_sni(model, text_emb, args.target_cls, args.sni_k)
+    if args.sni_method == "jsma":
+        it_idx, _ = compute_sni_jsma(
+            model, tap, text_emb, calib01, args.target_cls, args.sni_k,
+            args.sni_theta, args.sni_gamma, device, args.batch_size)
+        sni_desc = (f"JSMA θ={args.sni_theta} γ={args.sni_gamma} intersection")
+    else:
+        it_idx, _ = compute_sni(model, text_emb, args.target_cls, args.sni_k)
+        sni_desc = "analytic |proj·t_target|"
     it_dev = it_idx.to(device)
-    print(f"[proflip] Phase i  SNI: I_t = top-{it_idx.numel()} of "
-          f"|visual.proj @ t_target|")
+    print(f"[proflip] Phase i  SNI ({sni_desc}): I_t = top-{it_idx.numel()}")
 
     # ── Phase ii: native trigger (calib split, clean fp32 model) ─────────
     h_calib = capture_h(model, calib01, tap, args.batch_size, device)
@@ -694,6 +775,8 @@ def run_attack(args):
     surface = build_surface(model)         # dequantised copies written in
     poisoned01 = eval_api.apply_trigger_dict(search01, trigger)
     poisoned_norm = ca.normalize(poisoned01, model)
+    # clean counterpart for the clean-preservation CE (L_troj γ1·CE(M*,D))
+    clean_norm = ca.normalize(search01, model)
     # same y / I_t clamp target as Phase ii, built from the CLEAN search
     # images (shapes match the poisoned batch) with the Phase-ii constants c
     y_search = capture_h(model, search01, tap, args.batch_size, device)
@@ -705,7 +788,8 @@ def run_attack(args):
     print(f"[proflip] trigger quick ASR (pre-flips): {trig_asr_pre:.1f}%")
 
     cbs = critical_bit_search(model, surface, tap, trigger, poisoned_norm,
-                              y_search, text_emb, quick01, quick_labels,
+                              y_search, clean_norm, search_labels, text_emb,
+                              quick01, quick_labels,
                               args.target_cls, args, device)
     tap.close()
 
@@ -722,6 +806,8 @@ def run_attack(args):
         clamp_mode=args.clamp_mode,
         clamp_values=[float(x) for x in c.detach().cpu().tolist()],
         patch=dict(side=side, top=top, left=left),
+        tar=round((side / float(px)) ** 2 * 100, 2),
+        clean_ce_weight=float(args.clean_ce_weight),
         trig_iters=int(args.trig_iters), trig_lr=float(args.trig_lr),
         trigger_time_s=round(t_ph2, 1),
         grid_k=int(args.grid_k), cbs_top_elems=int(args.cbs_top_elems),
@@ -806,10 +892,22 @@ def build_parser():
     p.add_argument("--data-root", default=None,
                    help="override clip_adapters' dataset root")
     # ── CBS fitness (both rows reported in the thesis grid) ──────────────
-    p.add_argument("--fitness", choices=["mse_sni", "cos"], default="mse_sni",
+    p.add_argument("--fitness", choices=["mse_sni", "ce"], default="mse_sni",
                    help="mse_sni = upstream find_psens objective "
-                        "(MSE(h,y[I_t]=c)+CE_zs); cos = 1-cos(emb, t_target)")
+                        "(MSE(h,y[I_t]=c)+CE_zs); ce = CE-only (cosine removed)")
+    p.add_argument("--clean-ce-weight", type=float, default=1.0,
+                   help="clean-preservation CE weight in L_troj (mismatch #6; "
+                        "paper γ1≈0.1·L_CBS-rel, release +2·CE). 0 disables; "
+                        "without it the model collapses to 'always target'.")
     # ── Phase i (SNI) ────────────────────────────────────────────────────
+    p.add_argument("--sni-method", choices=["analytic", "jsma"], default="analytic",
+                   help="SNI: analytic = |proj·t_target| (closed-form, our "
+                        "default); jsma = the paper's per-image gradient "
+                        "saliency + intersection")
+    p.add_argument("--sni-theta", type=float, default=0.1,
+                   help="JSMA saliency threshold θ (paper: 0.1)")
+    p.add_argument("--sni-gamma", type=float, default=0.5,
+                   help="JSMA γ — mean-saliency floor (paper: 0.5)")
     p.add_argument("--sni-k", type=int, default=200,
                    help="|I_t| significant pre-projection dims (paper: 200)")
     # ── Phase ii (native trigger; upstream: 10 x GD 0.01) ────────────────
@@ -825,7 +923,13 @@ def build_parser():
     p.add_argument("--grid-k", type=int, default=20,
                    help="S3 grid points over [-R, R] (paper: 20)")
     p.add_argument("--cbs-top-elems", type=int, default=8,
-                   help="S2 vulnerable-set width (upstream: 8)")
+                   help="S2 vulnerable-set width (paper/release: 1; ours: 8)")
+    p.add_argument("--cbs-select-once", action="store_true",
+                   help="paper S1: pin the attack tensor (layer) once instead "
+                        "of re-ranking every round")
+    p.add_argument("--cbs-accept-always", action="store_true",
+                   help="paper S3: unconditional argmin (apply the best-loss "
+                        "candidate, no improvement gate / ASR escape)")
     p.add_argument("--asr-target", type=float, default=98.0,
                    help="stop quick-ASR%% (push-98: 98; paper ASR_t=94)")
     p.add_argument("--n-max", type=int, default=200,

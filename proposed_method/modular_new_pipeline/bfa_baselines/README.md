@@ -114,9 +114,15 @@ there. Native stopping values are documented but not run.
 
 | Method | Stop condition (push-98) | Native values (documented, not run) |
 |---|---|---|
-| TrojViT | budget 200 (`--max-flips`); tuned entries applied **atomically** (whole entry or none) in descending \|Δw\| order; quick-ASR trace recorded after every applied entry → `flips_to_98` + `asr_at_k` | budget 80 |
+| TrojViT | budget 200 (`--max-flips`); tuned entries applied **atomically** (whole entry or none) in descending \|Δw\| order; quick-ASR trace recorded after every applied entry → `flips_to_98` + `asr_at_k` | **TBN 880 (DeiT-s) / 1250 (ViT-b)** — the paper's native budget. The old "native 80" was wrong (a units error; the paper's TPN=84 at e=0.003 has TBN=345, and TPN=213 at e=0.0005 has TBN=880) |
 | ProFlip | quick ASR ≥ **98** (`--asr-target`) **or** bits ≥ **200** (`--n-max`) **or** CBS pool exhausted | ASR_t=94 / n_max=100 (paper) |
-| Flip-S | budget **200** (`--max-flips`) **or** no improving candidate remains; 4KB mutual exclusion | budget 50 (`target_bit`) |
+| Flip-S | budget **200** (`--max-flips`) **or** no improving candidate remains; 4KB mutual exclusion | budget 50 (`target_bit`); relaxed to 500 in the paper's extended eval |
+
+⚠️ **TrojViT budget caveat (T1):** the push-98 200-bit cap is **4–6× below**
+TrojViT's native TBN (880–1250). Under 200 bits, `flips_to_98 = null` is
+**budget-limited, not TrojViT's ceiling** — do not present it as the method's
+max ASR. Either also run a native-budget row (`--max-flips 1250`) or state the
+table uses a common 200-bit cap below TrojViT's native TBN.
 
 **`flips_to_X`** = cumulative bit count at which the in-search quick ASR first
 crossed X% (`null` = never reached — an honest "not reached" result).
@@ -129,6 +135,44 @@ atomic element updates (ProFlip, TrojViT) make the curve a step function:
 ASR@K = quick ASR at the last state with cumulative flips ≤ K. The reported
 final `asr`/`cacc` always come from the shared `evaluate.py` on the frozen
 eval split.
+
+## Paper-faithful presets + reporting conventions
+
+Each baseline has a paper-faithful mode (use these for the primary table; the
+suite defaults are labelled variants):
+
+**ProFlip** (`--sni-method jsma --cbs-select-once --cbs-accept-always
+--cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs --clean-ce-weight 1.0`):
+JSMA SNI (paper), pins S1 to one layer, S2 takes one element, S3 applies the
+unconditional argmin (no ASR escape), grid K=20, `max|W|` fitness, and the
+clean-preservation CE on (mismatch #6 — without it the model collapses).
+Trigger TAP is 73² (paper's ImageNet value). `mse_sni` is the paper's `L_CBS`;
+`ce` is a CE-only variant.
+
+**TrojViT** (`--trojvit-loss ce --trojvit-temperature 1.0 --p2-rows 1
+--p2-prune-e 0.0005`): CE trigger + distillation (cosine removed), scope ≈ the
+paper's 768-weight target row (8 rows = 6144/8192 over-fits), paper prune
+`e=0.0005`. Note the scope is the target-relevant `visual.proj` rows (CLIP has
+no class row) and ours tunes proj only (the paper also tunes the last-attention
+block — documented deviation).
+
+**Flip-S** (`--flip-surface encoder --trig-side 48`): encoder-only surface
+(never the head/projection — mismatch F1), and the native 50-bit budget.
+
+**Reporting conventions (cross-cutting):**
+- **TAR + trigger-only ASR** are recorded in every `attack_meta.json` (`tar`,
+  `trigger_asr_pre`) and aggregated into `runs.csv`/`summary.csv`. Report both
+  beside `flips_to_98` — the baselines use 3.5–10.6% trigger area vs the
+  proposed method's 0.51%, a large confound (mismatch 1.1).
+- **ASR definition** (mismatch #4/P14): `eval.json` reports both `asr`
+  (excludes clean-target images) and `asr_incl_target` (the papers' definition —
+  counts all triggered images). Use `asr_incl_target` for the paper-comparable
+  number; report both.
+- **SNI** (mismatch #5/P8): two options — `--sni-method analytic` (default) =
+  the closed-form `top-|visual.proj @ t_target|` (the exact per-dim target
+  influence), and `--sni-method jsma` = the paper's per-image gradient saliency
+  + intersection (`--sni-theta 0.1 --sni-gamma 0.5`). Use `jsma` for the
+  paper-faithful row; `analytic` is a defensible CLIP-native substitute.
 
 ## Labelled deviations from the released baseline code
 

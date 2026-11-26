@@ -272,14 +272,16 @@ SURFACE_SUFFIXES = ("in_proj_weight", "out_proj.weight",
                     "c_fc.weight", "c_proj.weight")
 
 
-def find_surface_params(model):
-    """Runtime-verified surface via clip_adapters.surface_param_names (CLIP:
-    attn.in_proj/out_proj + mlp.c_fc/c_proj + visual.proj; SigLIP: self_attn
-    {q,k,v,out}_proj + mlp.{fc1,fc2} + head.mlp.fc2).  Verified against
-    dict(model.named_parameters())."""
+def find_surface_params(model, include_proj=False):
+    """Runtime-verified surface via clip_adapters.surface_param_names.
+
+    Default `include_proj=False` = encoder-only (the paper's scope — Flip-S
+    never attacks the head/projection).  `--flip-surface extended` adds the
+    projection (visual.proj / SigLIP head fc2) as a labelled variant.  Verified
+    against dict(model.named_parameters())."""
     named = dict(model.named_parameters())
     found = []
-    for name in sorted(ca.surface_param_names(model)):
+    for name in sorted(ca.surface_param_names(model, include_proj=include_proj)):
         p = named[name]
         if p.dim() != 2:
             raise RuntimeError(f"surface parameter {name!r} is not 2-D")
@@ -288,7 +290,8 @@ def find_surface_params(model):
         raise RuntimeError("no quantisation surface found in the vision tower")
     n_codes = sum(int(p.numel()) for _, p in found)
     print(f"[flips] surface: {len(found)} tensors, {n_codes:,} int8 codes "
-          f"(names verified via model.named_parameters())")
+          f"(include_proj={include_proj}; names verified via "
+          "model.named_parameters())")
     return found
 
 
@@ -308,13 +311,13 @@ class QuantSurface:
     window bookkeeping, unified across both surfaces of a tensor).
     """
 
-    def __init__(self, model, device):
+    def __init__(self, model, device, include_proj=False):
         self.device = device
         self.params = {}
         self.codes = {}
         self.scales = {}
         self.bans = {}          # name -> list of (start, end) banned addr ranges
-        for name, p in find_surface_params(model):
+        for name, p in find_surface_params(model, include_proj=include_proj):
             codes, scales = ca.rowwise_quantize_fp16(p.data)
             self.params[name] = p
             self.codes[name] = codes.to(device)
@@ -760,7 +763,6 @@ def run(args):
         raise SystemExit(f"dataset {args.dataset!r} not in {args.data_split}")
     split = splits[args.dataset]
     aux_idx = split["aux"]
-    calib_idx = split["calib"]
     quick_idx = split["search"][: max(1, int(args.quick_n))]
 
     model = ca.load_model(args.model, device)
@@ -773,11 +775,11 @@ def run(args):
     px = ca.input_px(args.model)
 
     aux01, _ = ca.load_images(args.dataset, aux_idx, px, args.data_root)
-    calib01, calib_y = ca.load_images(args.dataset, calib_idx, px, args.data_root)
     quick01, quick_y = ca.load_images(args.dataset, quick_idx, px, args.data_root)
 
     geom = trigger_geometry(model, args.trig_side, args.trig_corner)
-    surface = QuantSurface(model, device)   # quantise + write dequantised values
+    surface = QuantSurface(model, device,
+                           include_proj=(args.flip_surface == "extended"))
 
     # ── Stage A: trigger on the AUX split (quantised victim, as in the
     #    reference where load_clip always installs the int8 linears) ────
@@ -790,10 +792,10 @@ def run(args):
             "mode": "replace"}
 
     # trigger-only strength before Stage B, on the CALIB split
-    trigger_asr_pre, _ = quick_asr(model, text_emb, calib01, calib_y,
+    trigger_asr_pre, _ = quick_asr(model, text_emb, quick01, quick_y,
                                    args.target_cls, trig, device, args.batch)
     print(f"[flips] trigger_asr_pre {trigger_asr_pre * 100:.2f}% "
-          f"(calib n={int(calib01.size(0))})")
+          f"(quick split n={int(quick01.size(0))})")
 
     # ── Stage B: SFS bit-flip search ──────────────────────────────────
     t_search = time.time()
@@ -817,12 +819,14 @@ def run(args):
         "n_weight_flips": n_weight,
         "search_time_s": round(search_time_s, 1),
         "trigger_asr_pre": round(float(trigger_asr_pre), 4),
+        "quick_split": "search[:quick_n]",
         "pool_size": int(pool_size) if pool_size is not None else 0,
         "flips_to_94": flips_to_94,
         "flips_to_95": flips_to_95,
         "flips_to_98": flips_to_98,
         "asr_at_k": evaluate.asr_at_k_from_trace(quick_trace),
         "trig_side": int(geom["side"]),
+        "tar": round((int(geom["side"]) / float(geom["image_size"])) ** 2 * 100, 2),
     }
 
     state = {
@@ -881,6 +885,10 @@ def main():
     p.add_argument("--batch", type=int, default=64,
                    help="batch size for evaluate.eval_model passes (default 64)")
     # ── Flip-S attack knobs (defaults = the published values) ─────────
+    p.add_argument("--flip-surface", choices=["encoder", "extended"],
+                   default="encoder",
+                   help="attack surface: encoder (paper scope — never the "
+                        "head/projection) / extended (encoder+projection)")
     p.add_argument("--max-flips", type=int, default=PUSH_BUDGET,
                    help=f"bit-flip budget (push-98: {PUSH_BUDGET}; "
                         f"Flip-S native: {BUDGET})")
