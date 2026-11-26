@@ -25,7 +25,7 @@ import os
 import statistics
 
 ID_COLS = ["section", "model", "dataset", "task", "target_cls", "seed", "rep",
-           "variant", "p1_loss", "p3_alpha_lse",
+           "variant", "p1_loss", "p3_alpha_lse", "far",
            "trigger_size", "trigger_location"]
 METRIC_COLS = ["trigger_asr", "asr_at_10", "asr_at_20", "flips_to_95",
                "flips_total", "flips_rolled_back", "asr_final", "cacc_final",
@@ -38,7 +38,7 @@ METRIC_COLS = ["trigger_asr", "asr_at_10", "asr_at_20", "flips_to_95",
                "i2t_atk_trig_r1", "i2t_atk_trig_r5",
                "i2t_atk_trig_r10", "i2t_atk_trig_r20"]
 GROUP_COLS = ["section", "model", "dataset", "task", "target_cls",
-              "variant", "p1_loss", "p3_alpha_lse",
+              "variant", "p1_loss", "p3_alpha_lse", "far",
               "trigger_size", "trigger_location"]
 
 
@@ -77,6 +77,7 @@ def collect(out_root):
             # legacy rows predate the arm flags: they ran CE + the old metric
             p1_loss=cfg.get("P1_LOSS", "ce"),
             p3_alpha_lse=cfg.get("P3_ALPHA_LSE", 0.0),
+            far=int(bool(cfg.get("FAR_CKPT"))),
             trigger_size=cfg.get("TRIG_SZ"),
             trigger_location=rec.get("trigger_location",
                                      cfg.get("TRIGGER_LOCATION")),

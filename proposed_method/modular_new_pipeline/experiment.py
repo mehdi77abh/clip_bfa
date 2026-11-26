@@ -255,6 +255,13 @@ def parse_args():
     misc.add_argument("--lp-head", default=None,
                       help="linear-probe checkpoint for --task lp (default: "
                            "{lp_head_root}/{model_tag}_{dataset}.pt)")
+    misc.add_argument("--far-ckpt", default=None,
+                      help="FaR-defended victim checkpoint (Forget-and-Rewire "
+                           "defence applied to the target model FIRST, then "
+                           "our attack runs on it — DEFENSES.md); accepts a "
+                           "full-model or vision-encoder state_dict.  "
+                           "Default: none = the undefended victim "
+                           "(current behaviour)")
     misc.add_argument("--save-attacked-model", action="store_true",
                       help="save model_state_attacked.pt (attacked state_dict) "
                            "for defence / VLM-transfer evaluation — off by "
@@ -409,6 +416,8 @@ def build_config(args):
     run_seg = f"{variant}_t{args.trigger_size}"
     if cfg.TRIGGER_LOCATION:
         run_seg += f"_{cfg.TRIGGER_LOCATION}"
+    if cfg.FAR_CKPT:
+        run_seg += "_far"
     cfg.RUN_ID = f"{cfg.SECTION}__{tag}__{dataset}__{args.task}__" \
                  f"c{args.target_cls}__{run_seg}__s{seed}__r{cfg.REP}"
     cfg.OUT_ROOT = out_root
@@ -422,6 +431,12 @@ def build_config(args):
             f"--task lp needs a trained probe head: {cfg.LP_HEAD} not found.  "
             f"Train it first (python linear_probe.py --model {model} "
             f"--test-dataset {dataset}) or pass --lp-head PATH.")
+    # FaR-defended victim (--far-ckpt): same fail-fast rule.
+    cfg.FAR_CKPT = args.far_ckpt
+    if cfg.FAR_CKPT and not os.path.isfile(cfg.FAR_CKPT):
+        raise FileNotFoundError(
+            f"--far-ckpt not found: {cfg.FAR_CKPT} — produce the FaR-applied "
+            f"victim first (FaR defence step) or drop the argument.")
     # Run dir (2026-11-19, flattened):
     #   {out_root}/{section}/{model}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{size}[_{loc}]
     run_leaf = f"{args.task}_c{args.target_cls}_s{seed}_r{cfg.REP}_{run_seg}"

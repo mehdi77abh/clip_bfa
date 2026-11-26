@@ -44,6 +44,45 @@ from visualization import Visualizer
 from weights import WeightTracker
 
 
+# ══════════════════════════════════════════════════════════════════════
+#  PRE-APPLIED FaR DEFENCE (--far-ckpt, DEFENSES.md)
+# ══════════════════════════════════════════════════════════════════════
+def load_far_state(model, path):
+    """Load a FaR-defended victim checkpoint onto the clean model.
+
+    The FaR defence (Forget-and-Rewire) is applied to the target model
+    BEFORE the attack; this restores its defended state so Phases 0–4
+    attack the defended victim (the clean/attacked snapshots then refer to
+    the FaR-applied base).  Accepts a raw state_dict or a checkpoint dict
+    with a 'state_dict'/'model'/'model_state' key, and either a full-model
+    or a vision-encoder-only state (our attack surface).  Returns a short
+    scope description."""
+    state = torch.load(path, map_location="cpu")
+    if isinstance(state, dict):
+        for key in ("state_dict", "model", "model_state"):
+            if isinstance(state.get(key), dict):
+                state = state[key]
+                break
+    if not isinstance(state, dict) or not state \
+            or not all(torch.is_tensor(v) for v in state.values()):
+        raise ValueError(
+            f"--far-ckpt {path}: expected a state_dict of tensors "
+            f"(optionally under 'state_dict'/'model'/'model_state').")
+    try:
+        model.load_state_dict(state, strict=True)
+        return "full model"
+    except RuntimeError:
+        pass
+    vision = get_adapter(model).get_vision_module(model)
+    try:
+        vision.load_state_dict(state, strict=True)
+        return "vision encoder"
+    except RuntimeError as exc:
+        raise RuntimeError(
+            f"--far-ckpt {path}: state does not match the victim "
+            f"(neither full-model nor vision-encoder keys): {exc}") from exc
+
+
 class AttackPipeline:
     """Runs the full hybrid bit-flip attack end to end."""
 
@@ -125,6 +164,11 @@ class AttackPipeline:
         # ── Load model ──
         print("\n[1] Loading model")
         model, preprocess = self.model_loader.load()
+        # ── Pre-applied FaR defence (--far-ckpt): run the whole attack on
+        #    the FaR-defended victim; None = undefended (current behaviour) ──
+        if getattr(cfg, "FAR_CKPT", None):
+            scope = load_far_state(model, cfg.FAR_CKPT)
+            print(f"  FaR-defended victim loaded ({scope}): {cfg.FAR_CKPT}")
         ap = get_apply_params(cfg, model)
 
         # ── Auto-detect actual model dimensions ──

@@ -242,6 +242,11 @@ runs_sizes=(
   "--section ablation --model ViT-L/14 --dataset ImageNet1k --seed 42 --variant full --trigger-size 24"
   "--section ablation --model ViT-L/14 --dataset ImageNet1k --seed 42 --variant full --trigger-size 32"
 )
+# ---- 4. OTHER TASKS LIKE I2T and Defence and LP — ViT-L/14 × ImageNet1k, s42
+
+runs_other_tasks=(
+"--model ViT-L/14 --dataset ImageNet1k --task i2t --target-cls 291 --seed 42 --variant full --trigger-size 16"
+)
 
 # ---- select the enabled blocks ------------------------------------
 runs=()

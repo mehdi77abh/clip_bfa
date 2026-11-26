@@ -24,9 +24,22 @@ maintainer (paper / hyperparameters).
    - Defaults (all CLI-overridable): AdamW lr=1e-5, wd=0.1, 1 epoch capped at
      **2000 steps**, batch 64, **full model** (`--ft-scope vision` restricts
      to the visual encoder), seed 42.
-2. **FaR**
-   - *(TBD — maintainer supplies the paper/definition and its
-     hyperparameters; expected to be a feature/activation-level defence.)*
+2. **FaR (Forget-and-Rewire)** — pre-attack defended-victim protocol
+   (2026-11-26): the defence is applied to the target model **FIRST**
+   (`bfa_baselines/far_demo/` — Forget-and-Rewire: rewiring concealed→dead
+   input weights plus forward-time input rewiring via `CustomLinear`), then
+   our attack runs **on the FaR-applied model**:
+   1. run the FaR defence on the clean victim → defended checkpoint;
+   2. `experiment.py --far-ckpt PATH` loads it (full-model or
+      vision-encoder state_dict; fail-fast when missing) and the whole
+      Phase 0→4 attack targets the defended victim; **no argument = the
+      undefended victim, current behaviour**.  Run dirs gain a `_far`
+      suffix and `aggregate.py` tracks a `far` column (0/1), so defended
+      and undefended runs never mix in `summary.csv`.
+   - *(TBD)* the FaR runner for CLIP victims (`far_demo` is HF-ViT only;
+     needs the `CustomLinear`/`far_cfg` binding to CLIP's linears) and the
+     post-hoc variant (FaR applied to an already-attacked model) — a
+     different experiment from this pre-attack protocol.
 
 ## Protocol (as implemented)
 
@@ -61,7 +74,9 @@ cross-checking).
       `--save-attacked-model`).
 - [x] Fine-Tuning defence script — `defence_finetune.py` (load attacked
       model → defend → existing `Evaluator` for ASR/CACC) + `run_defence_ft.sh`.
-- [ ] FaR defence script (`defence_far.py`) — *(TBD)*.
+- [~] FaR — attack-side hook done (`--far-ckpt` + `pipeline.load_far_state`;
+      pre-attack defended-victim protocol above).  Still needed: the FaR
+      runner for CLIP victims + the defended-model runs.
 - [x] Clean fine-tune data: CC3M (`--cc3m-root` / `--cc3m-max-samples`;
       defence-specific, not an attack-registry dataset).
 - [x] Fixed seeds + identical eval set between no-defence and defended runs
