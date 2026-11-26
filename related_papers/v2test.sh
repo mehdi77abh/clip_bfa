@@ -2,13 +2,17 @@
 # run_sweep.sh — run test_version2.py configurations one by one
 set -uo pipefail
 
-PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python
+# Use the python of the currently active conda env; override with: PYTHON=/path/to/python ./run_sweep.sh
+PY="${PYTHON:-python}"
+
 SCRIPT=related_papers/test_version2.py
 
 # ---- sanity checks -------------------------------------------------
-[[ -x "$PY" ]]    || { echo "ERROR: python not found/executable: $PY" >&2; exit 1; }
-[[ -f "$SCRIPT" ]] || { echo "ERROR: script not found: $SCRIPT" >&2; exit 1; }
+PY_BIN="$(command -v "$PY")" || { echo "ERROR: '$PY' not found on PATH. Did you activate the env?" >&2; exit 1; }
+[[ -f "$SCRIPT" ]] || { echo "ERROR: script not found: $SCRIPT (run from the clip_bfa/ dir)" >&2; exit 1; }
 
+echo "Using python: $PY_BIN"
+echo "Using script: $SCRIPT"
 # ---- the sweep -----------------------------------------------------
 runs=(
   "--loss cos --stop-after-phase1"
