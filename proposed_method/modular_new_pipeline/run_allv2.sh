@@ -246,6 +246,7 @@ runs_sizes=(
 
 runs_other_tasks=(
 "--model ViT-L/14 --dataset ImageNet1k --task i2t --target-cls 291 --seed 42 --variant full --trigger-size 16"
+"--model ViT-L/14 --dataset ImageNet1k --target-cls 291 --far-ckpt /path/to/far_victim.pt"
 )
 
 # ---- select the enabled blocks ------------------------------------

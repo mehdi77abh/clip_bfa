@@ -71,9 +71,14 @@ gradient fallback.
   `atk_trig`, `plot_retrieval_probe` naming) + the `--task i2t` branch after
   Phase 4; results in `bfa_results.json["retrieval"]`, exported as `i2t_*`
   columns by `aggregate.py`.  All three tasks (`zs`/`lp`/`i2t`) now run.
+- **FaR pre-attack hook done (2026-11-26):** `experiment.py --far-ckpt PATH`
+  + `pipeline.load_far_state` — the FaR defence (Forget-and-Rewire) is
+  applied to the target model first, then the whole attack runs on the
+  FaR-applied victim (full-model or vision-encoder state_dict; `_far` run
+  suffix; `far` aggregate column; no argument = undefended, unchanged).
+  Still pending: the FaR runner for CLIP victims (`far_demo` is HF-ViT).
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
-  (random / simple-gradient, #4), FaR defence script (DEFENSES.md;
-  the attacked-model saving half of #6 is done via `--save-attacked-model`),
+  (random / simple-gradient, #4), the FaR runner for CLIP (DEFENSES.md),
   **VLM-transfer evaluation**
   (attacked CLIP as a VLM's vision tower, VQA + image captioning on 2 VLM
   models — CHECKLIST.md §3.5, maintainer request 2026-11-20). DONE so far: Phase-4 metrics

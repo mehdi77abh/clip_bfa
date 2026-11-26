@@ -170,7 +170,13 @@ protocol — BASELINES.md §2; kept only as `--task lp`)
       attacks with `--save-attacked-model`; `run_lp.sh` now does it by default),
       (b) CC3M download (`python download_manager/download_datasets.py
       --dataset cc3m`), see §6
-- [ ] FaR defence — hyperparameters/definition **TBD by maintainer**
+- [~] FaR (Forget-and-Rewire) — **pre-attack defended-victim protocol**:
+      `--far-ckpt` in `experiment.py` + `pipeline.load_far_state` done
+      (2026-11-26) — the attack runs on the FaR-applied model (full-model
+      or vision-only state_dict; `_far` run-dir suffix; `far` aggregate
+      column; None = current behaviour).  Still pending: the FaR runner for
+      CLIP victims (`bfa_baselines/far_demo/` is HF-ViT) + the defended
+      runs themselves.
 - [ ] Fill the §4 table (ASR/CACC, no defence vs after, per defence × dataset)
 
 ### 3.5 VLM transfer evaluation (new — maintainer request 2026-11-20)

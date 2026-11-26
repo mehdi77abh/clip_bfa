@@ -413,6 +413,13 @@ def build_config(args):
     cfg.REP = int(args.rep)
     cfg.SECTION = args.section
     cfg.SAVE_ATTACKED_MODEL = bool(args.save_attacked_model)
+    # FaR-defended victim (--far-ckpt): fail fast like the LP head; the
+    # _far run-leaf suffix below keeps defended/undefended runs apart.
+    cfg.FAR_CKPT = args.far_ckpt
+    if cfg.FAR_CKPT and not os.path.isfile(cfg.FAR_CKPT):
+        raise FileNotFoundError(
+            f"--far-ckpt not found: {cfg.FAR_CKPT} — produce the FaR-applied "
+            f"victim first (FaR defence step) or drop the argument.")
     run_seg = f"{variant}_t{args.trigger_size}"
     if cfg.TRIGGER_LOCATION:
         run_seg += f"_{cfg.TRIGGER_LOCATION}"
@@ -431,12 +438,6 @@ def build_config(args):
             f"--task lp needs a trained probe head: {cfg.LP_HEAD} not found.  "
             f"Train it first (python linear_probe.py --model {model} "
             f"--test-dataset {dataset}) or pass --lp-head PATH.")
-    # FaR-defended victim (--far-ckpt): same fail-fast rule.
-    cfg.FAR_CKPT = args.far_ckpt
-    if cfg.FAR_CKPT and not os.path.isfile(cfg.FAR_CKPT):
-        raise FileNotFoundError(
-            f"--far-ckpt not found: {cfg.FAR_CKPT} — produce the FaR-applied "
-            f"victim first (FaR defence step) or drop the argument.")
     # Run dir (2026-11-19, flattened):
     #   {out_root}/{section}/{model}/{dataset}/{task}_c{cls}_s{seed}_r{rep}_{variant}_t{size}[_{loc}]
     run_leaf = f"{args.task}_c{args.target_cls}_s{seed}_r{cfg.REP}_{run_seg}"

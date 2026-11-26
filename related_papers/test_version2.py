@@ -617,6 +617,15 @@ def main():
         raise SystemExit("--target-mode multi is only defined for the "
                          "L⁺-form losses (cos, residual)")
 
+    # Version-skew shim (2026-11-26 FaR hook): some experiment.py copies read
+    # cfg.FAR_CKPT before assigning it (check-before-assign bug — every
+    # build_config call crashed without --far-ckpt).  Pre-seeding the class
+    # attribute keeps this harness working with old and new copies alike;
+    # a later cfg.FAR_CKPT = args.far_ckpt simply overrides it.
+    import config as _config
+    if not hasattr(_config.CFG, "FAR_CKPT"):
+        _config.CFG.FAR_CKPT = None
+
     cfg = experiment.build_config(args)
 
     # ── v2 settings on cfg (consumed by V2DataModule / V2TriggerGenerator)
