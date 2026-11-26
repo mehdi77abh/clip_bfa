@@ -66,10 +66,15 @@ gradient fallback.
   `--p1-neg-list {lion_v1,tabby_v1,tabby_swap,sportscar_v1}` +
   `--p1-neg-names` (presets in `experiment.py P1_NEG_LISTS`); InfoNCE epochs
   log `margin_pseudo`/`margin_class`.  Validation runs pending (CHECKLIST §0).
+- **i2t task complete (2026-11-26):** `Evaluator.i2t_evaluate` (TASKS.md §3 —
+  image→text retrieval recall@1/5/10/20 for `clean_clean`/`atk_clean`/
+  `atk_trig`, `plot_retrieval_probe` naming) + the `--task i2t` branch after
+  Phase 4; results in `bfa_results.json["retrieval"]`, exported as `i2t_*`
+  columns by `aggregate.py`.  All three tasks (`zs`/`lp`/`i2t`) now run.
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
   (random / simple-gradient, #4), FaR defence script (DEFENSES.md;
   the attacked-model saving half of #6 is done via `--save-attacked-model`),
-  `--task i2t` retrieval branch (TASKS.md §3), **VLM-transfer evaluation**
+  **VLM-transfer evaluation**
   (attacked CLIP as a VLM's vision tower, VQA + image captioning on 2 VLM
   models — CHECKLIST.md §3.5, maintainer request 2026-11-20). DONE so far: Phase-4 metrics
   (#2), `linear_probe.py` + LP evaluation + `run_lp.sh` driver (#3),
@@ -193,7 +198,8 @@ modular_new_pipeline/
                        #   LP → defence run chain (§6)
   RESULTS.md           # evaluation plan: validation / comparison / ablation / defence
   MODELS.md            # full model catalog — active grid models + held ones
-  TASKS.md             # --task: zs (done) | lp (eval done) | i2t (future protocols)
+  TASKS.md             # --task: zs | lp | i2t (all implemented; §2 lp,
+                       #   §3 i2t)
   LP_README.md         # how to run the LP task: commands (probe → attack →
                        #   eval), RESUME semantics, env knobs, guards
   ASR_BADCLIP_COMPARISON.md  # ASR/CACC eval: ours vs BadCLIP baseline —

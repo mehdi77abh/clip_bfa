@@ -303,6 +303,19 @@ class AttackPipeline:
             print(f"  LP-CACC={lp_result['lp_cacc']:.2f}%  "
                   f"LP-ASR={lp_result['lp_asr']:.2f}%")
 
+        # ── Image-to-text retrieval evaluation (--task i2t, TASKS.md §3) ──
+        i2t_result = None
+        if cfg.TASK == "i2t":
+            print("\n[I2T] Image-to-text retrieval evaluation")
+            i2t_result = self.evaluator.i2t_evaluate(
+                model, text_emb, trigger, test_loader, cfg.TARGET_CLS, ap,
+                dev, mini_bs=cfg.MINI_BS)
+            for cond in ("clean_clean", "atk_clean", "atk_trig"):
+                m = i2t_result[cond]
+                vals = "  ".join(f"R@{k}={m[f'R@{k}']:.1f}%"
+                                 for k in i2t_result["ks"])
+                print(f"  {cond:<12} {vals}")
+
         print("\n" + "=" * 60)
         print("SUMMARY")
         print("=" * 60)
@@ -350,6 +363,8 @@ class AttackPipeline:
             "search_time_sec": search_time}
         if lp_result is not None:
             save["linear_probe"] = lp_result
+        if i2t_result is not None:
+            save["retrieval"] = i2t_result
 
         self.results.save(save, trigger, original_weights)
 

@@ -30,7 +30,13 @@ ID_COLS = ["section", "model", "dataset", "task", "target_cls", "seed", "rep",
 METRIC_COLS = ["trigger_asr", "asr_at_10", "asr_at_20", "flips_to_95",
                "flips_total", "flips_rolled_back", "asr_final", "cacc_final",
                "asr_best", "cacc_base", "search_time_sec",
-               "lp_cacc", "lp_asr", "lp_clean_as_target"]
+               "lp_cacc", "lp_asr", "lp_clean_as_target",
+               "i2t_clean_clean_r1", "i2t_clean_clean_r5",
+               "i2t_clean_clean_r10", "i2t_clean_clean_r20",
+               "i2t_atk_clean_r1", "i2t_atk_clean_r5",
+               "i2t_atk_clean_r10", "i2t_atk_clean_r20",
+               "i2t_atk_trig_r1", "i2t_atk_trig_r5",
+               "i2t_atk_trig_r10", "i2t_atk_trig_r20"]
 GROUP_COLS = ["section", "model", "dataset", "task", "target_cls",
               "variant", "p1_loss", "p3_alpha_lse",
               "trigger_size", "trigger_location"]
@@ -53,6 +59,7 @@ def collect(out_root):
         cfg = rec.get("config", {})
         m = rec.get("metrics", {})
         lp = rec.get("linear_probe") or {}
+        ret = rec.get("retrieval") or {}
         # Metric reconciliation: Flips→95% is definitionally 0 when the trigger
         # base ASR is already ≥95% (older runs recorded the first accepted flip).
         f95 = m.get("flips_to_95")
@@ -89,6 +96,10 @@ def collect(out_root):
             lp_asr=lp.get("lp_asr"),
             lp_clean_as_target=lp.get("lp_clean_as_target"),
             out_dir=dirpath))
+        for cond in ("clean_clean", "atk_clean", "atk_trig"):
+            cm = ret.get(cond) or {}
+            for k in (1, 5, 10, 20):
+                rows[-1][f"i2t_{cond}_r{k}"] = cm.get(f"R@{k}")
     return rows
 
 

@@ -7,9 +7,10 @@ Selected with `--task {zs,lp,i2t}`.  The task is part of every output path:
   (flattened 2026-11-19 — was {task}/c{cls}/s{seed}/r{rep}/{variant}__t{sz})
 ```
 
-Only **zs** and **lp** are implemented today; **i2t** is future work and
-`--task i2t` currently raises `NotImplementedError` (see its section for
-exactly what needs to be built).  Metrics definitions live in RESULTS.md §0.
+**zs**, **lp** and **i2t** are all implemented (`--task {zs,lp,i2t}`); the
+attack pipeline (Phases 0–4) is task-independent and the task only selects
+the post-Phase-4 evaluation branch.  Metrics definitions live in
+RESULTS.md §0.
 
 ---
 
@@ -72,12 +73,12 @@ Guards: `experiment.build_config` fails fast when the probe head is missing
 (before any GPU work), and `Evaluator.lp_evaluate` rejects a head whose
 `meta.class_names` label space does not match the run dataset.
 
-## 3. `i2t` — image-to-text retrieval — **FUTURE**
+## 3. `i2t` — image-to-text retrieval — **IMPLEMENTED** (2026-11-26)
 
 Goal: show the trigger hijacks *retrieval*, not just classification — query
 images retrieve their class text among all class prompts.
 
-**Protocol (planned):**
+**Protocol (implemented):**
 - **Gallery:** the class text embeddings (`text_emb`, multi-template means).
 - **Query:** image features — clean images, and triggered images.
 - **Metrics:** R@1 / R@5 / R@10 / R@20 for:
@@ -87,11 +88,16 @@ images retrieve their class text among all class prompts.
     the retrieval counterpart of ASR).
 - The removed reference helper `Visualizer.plot_retrieval_probe` (kept,
   unwired) already plots exactly these conditions (`clean_clean`, `atk_clean`,
-  `atk_trig`, …) — reuse its condition naming.
+  `atk_trig`, …) — its condition naming is reused verbatim.
 
-**Code needed:** a retrieval evaluator (encode queries, cosine sim against
-`text_emb`, recall@K) — new methods in `evaluation.py` or a small
-`retrieval.py` — plus the `--task i2t` branch.
+**Implementation:** `Evaluator.i2t_evaluate(model, text_emb, trigger, loader,
+target_cls, ap, device, …)` in `evaluation.py` — query encoding via
+`encode_image_batched`, cosine similarity against `text_emb`, recall@K per
+condition (`{condition: {"R@k": %}}` — directly plottable by
+`plot_retrieval_probe`).  Wired via `--task i2t` (pipeline runs it after
+Phase 4 on the test split); results in `bfa_results.json["retrieval"]` and
+`aggregate.py` columns `i2t_{clean_clean,atk_clean,atk_trig}_r{1,5,10,20}`.
+R@1 of `atk_trig` ≡ ZS ASR (consistency check).
 
 ---
 

@@ -17,6 +17,7 @@ selected by flags, never by editing code.
 | **CACC** | Clean accuracy on non-target (eval) images after the attack; final value, and at 10/20 flips where the table needs it. |
 | **Time (ZS)** | Wall-clock attack time in the **zero-shot** setting (search time; total pipeline time logged alongside). |
 | **LP-CACC / LP-ASR** | Linear-probe accuracy on clean / triggered features, probe trained per (model, dataset) — see §2. |
+| **I2T-R@k** | Image→text retrieval recall@k (k = 1/5/10/20) against the class-text gallery, per condition: clean→GT (`clean_clean`), triggered→GT (`atk_clean`), triggered→target (`atk_trig`) — see TASKS.md §3. |
 
 ---
 

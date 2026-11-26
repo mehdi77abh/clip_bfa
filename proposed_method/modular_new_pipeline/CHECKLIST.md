@@ -89,8 +89,10 @@ capped `cos_t`).  Recipe = **m=0, TDA off, random 64 carriers, no pool**.
 - [x] BLIP applicability scope note (`BLIP.md`, 2026-11-20): formulation check
       (A1–A3 satisfied by BLIP-1 ITC), readout decision (ITC-cosine argmax +
       `--task lp` rows), BLIP-2 out of scope, adapter implementation notes
-- [ ] `--task i2t` retrieval branch (TASKS.md §3 — guard raises `NotImplementedError`;
-      evaluator + recall@K + condition naming from `plot_retrieval_probe` to write)
+- [x] `--task i2t` retrieval branch (TASKS.md §3) — **implemented 2026-11-26**:
+      `Evaluator.i2t_evaluate` (recall@K for `clean_clean` / `atk_clean` /
+      `atk_trig`, plot_retrieval_probe naming) + the `--task i2t` branch +
+      `bfa_results.json["retrieval"]` + aggregate `i2t_*` columns.
 - [ ] FaR defence script `defence_far.py` (DEFENSES.md — hyperparams **TBD by maintainer**)
 - [ ] VLM-transfer evaluation (§3.5 — attacked CLIP inside a VLM; VQA +
       image captioning on 2 VLM models) — **not started**
@@ -111,7 +113,9 @@ capped `cos_t`).  Recipe = **m=0, TDA off, random 64 carriers, no pool**.
       label-space guard (`meta.class_names` vs run dataset), LP aggregation columns
 - [~] LP **runs** — nothing executed yet: no probe trained (`lp_heads/` empty),
       no `--task lp` run on disk  →  see §6
-- [ ] `i2t` — image-to-text retrieval (FUTURE, TASKS.md §3)
+- [x] `i2t` — image-to-text retrieval (TASKS.md §3) — implemented 2026-11-26
+      (`Evaluator.i2t_evaluate` + `--task i2t`; results in
+      `bfa_results.json["retrieval"]` / `i2t_*` aggregate columns)
 
 ## 3. Results plan (RESULTS.md)
 

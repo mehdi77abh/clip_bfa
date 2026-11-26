@@ -196,3 +196,72 @@ class Evaluator:
             lp_head=lp_head_path,
             probe_test_top1=probe_meta.get("eval", {}).get("test_top1"))
         return result
+
+    # ════════════════════════════════════════════════════════════════
+    #  IMAGE-TO-TEXT RETRIEVAL EVALUATION (TASKS.md §3)
+    # ════════════════════════════════════════════════════════════════
+    @torch.no_grad()
+    def i2t_evaluate(self, model, text_emb, trigger, loader, target_cls, ap,
+                     device, mini_bs=None, ks=(1, 5, 10, 20)):
+        """Image-to-text retrieval evaluation (TASKS.md §3).
+
+        Gallery: the class text embeddings (``text_emb``, multi-template
+        means).  Queries: image features of the eval split — clean, and
+        triggered when ``trigger`` is given.  Conditions reuse the
+        ``plot_retrieval_probe`` naming (visualization.py):
+
+        * ``clean_clean`` — clean images → ground-truth class text
+          (baseline; should stay high);
+        * ``atk_clean``  — triggered images → ground-truth class text
+          (the attack should push this down);
+        * ``atk_trig``   — triggered images → **target** class text
+          (the attack should push this up; R@1 ≡ ZS ASR).
+
+        Returns ``{condition: {"R@k": %}, ..., n, ks, n_classes,
+        target_cls}`` — the condition dicts are directly plottable by
+        ``Visualizer.plot_retrieval_probe``."""
+        if trigger is not None and (target_cls is None or ap is None):
+            raise ValueError("i2t_evaluate with a trigger needs target_cls "
+                             "and ApplyParams (ap)")
+        if mini_bs is None:
+            mini_bs = 4
+
+        gallery = F.normalize(text_emb.to(device), dim=-1)
+        n_classes = gallery.size(0)
+        max_k = min(max(ks), n_classes)
+        conds = ("clean_clean", "atk_clean", "atk_trig")
+        hits = {c: {k: 0 for k in ks} for c in conds}
+
+        def accum(emb, relevant, acc):
+            topk = (emb @ gallery.T).topk(max_k, dim=1).indices   # (B, max_k)
+            if not torch.is_tensor(relevant):
+                relevant = torch.full((emb.size(0),), int(relevant),
+                                      dtype=topk.dtype, device=topk.device)
+            rel = relevant.unsqueeze(1)
+            for k in ks:
+                acc[k] += (topk[:, :min(k, max_k)] == rel).any(1).sum().item()
+
+        tot = 0
+        for imgs, labels in loader:
+            imgs = imgs.to(device, non_blocking=True)
+            labels = labels.to(device, non_blocking=True)
+            emb_cl = F.normalize(
+                encode_image_batched(model, imgs, mini_bs), dim=-1)
+            accum(emb_cl, labels, hits["clean_clean"])
+            if trigger is not None:
+                poisoned = apply_trigger(imgs, trigger, ap)
+                emb_po = F.normalize(
+                    encode_image_batched(model, poisoned, mini_bs), dim=-1)
+                accum(emb_po, labels, hits["atk_clean"])
+                accum(emb_po, target_cls, hits["atk_trig"])
+            tot += imgs.size(0)
+            del imgs, labels
+
+        n = max(tot, 1)
+        result = {c: {f"R@{k}": 100.0 * hits[c][k] / n for k in ks}
+                  for c in conds}
+        result["n"] = n
+        result["ks"] = list(ks)
+        result["n_classes"] = n_classes
+        result["target_cls"] = target_cls
+        return result

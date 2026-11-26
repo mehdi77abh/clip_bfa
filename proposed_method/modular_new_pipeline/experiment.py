@@ -115,9 +115,9 @@ def parse_args():
                      choices=sorted(reg["datasets"]),
                      help="dataset registry name (default: Caltech101)")
     sel.add_argument("--task", default="zs", choices=["zs", "lp", "i2t"],
-                     help="evaluation task: zs = zero-shot (implemented) | "
+                     help="evaluation task: zs = zero-shot | "
                           "lp = linear-probe (needs a trained probe head) | "
-                          "i2t = image-to-text retrieval (future — see TASKS.md)")
+                          "i2t = image-to-text retrieval (TASKS.md §3)")
     sel.add_argument("--section", default="validation",
                      choices=["validation", "baselines", "ablation"],
                      help="results section — top-level output group "
@@ -388,11 +388,8 @@ def build_config(args):
 
     cfg.QUANT_TOLERANCE = args.quant_tolerance
 
-    # ── task ──
-    if args.task == "i2t":
-        raise NotImplementedError(
-            f"task {args.task!r} is not implemented yet — 'zs' and 'lp' run "
-            f"today.  See TASKS.md for the planned i2t protocol.")
+    # ── task (zs | lp | i2t — all implemented; the attack is task-independent
+    #    and the task only selects the post-Phase-4 evaluation branch) ──
     cfg.TASK = args.task
 
     # ── ablation variant (ABLATION.md) ──
