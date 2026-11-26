@@ -1,0 +1,1 @@
+[evaluate] flips ViT-L/14 ImageNet1k target=291: ASR=0.998 CACC=0.0 (1000 imgs) -> /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-L14/ImageNet1k/s42/eval.json

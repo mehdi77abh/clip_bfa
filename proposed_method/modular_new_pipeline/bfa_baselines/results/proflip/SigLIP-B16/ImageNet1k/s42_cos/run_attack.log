@@ -2,3 +2,84 @@
 [transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
 [proflip] SigLIP-B/16 / ImageNet1k / seed 42 / target 291  (fitness=cos)
 Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 6767.25it/s]
+[proflip] Phase i  SNI: I_t = top-200 of |visual.proj @ t_target|
+[proflip]   trigger step 1/10  loss=15.3473
+[proflip]   trigger step 2/10  loss=15.3446
+[proflip]   trigger step 3/10  loss=15.3376
+[proflip]   trigger step 4/10  loss=15.3283
+[proflip]   trigger step 5/10  loss=15.3247
+[proflip]   trigger step 6/10  loss=15.3202
+[proflip]   trigger step 7/10  loss=15.3168
+[proflip]   trigger step 8/10  loss=15.3155
+[proflip]   trigger step 9/10  loss=15.3094
+[proflip]   trigger step 10/10  loss=15.3073
+[proflip] Phase ii trigger: patch 70x70 @ (153,153), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.0%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 73
+  fitness          : cos
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=1.0228  quick ASR=0.0%
+  Rd   0: vision_model.encoder.layers.4.mlp.fc1.weight[2495,650]  code -2->33  bits=7 (total 7)  loss 1.0228->1.0221  quick ASR=0.0%
+  Rd   1: vision_model.encoder.layers.4.mlp.fc1.weight[453,650]  code -1->20  bits=6 (total 13)  loss 1.0221->1.0216  quick ASR=0.0%
+  Rd   2: vision_model.encoder.layers.11.self_attn.q_proj.weight[620,200]  code 9->127  bits=5 (total 18)  loss 1.0216->1.0170  quick ASR=0.0%
+  Rd   3: vision_model.encoder.layers.5.mlp.fc1.weight[2818,650]  code -2->7  bits=6 (total 24)  loss 1.0170->1.0167  quick ASR=0.0%
+  Rd   4: vision_model.encoder.layers.11.self_attn.q_proj.weight[46,200]  code -24->127  bits=5 (total 29)  loss 1.0167->1.0115  quick ASR=0.0%
+  Rd   5: vision_model.encoder.layers.11.mlp.fc2.weight[573,642]  code -3->127  bits=2 (total 31)  loss 1.0115->1.0047  quick ASR=0.0%
+  Rd   6: vision_model.encoder.layers.11.self_attn.q_proj.weight[426,200]  code -13->127  bits=3 (total 34)  loss 1.0047->1.0009  quick ASR=0.0%
+  Rd   7: vision_model.encoder.layers.0.mlp.fc1.weight[715,616]  code -5->74  bits=4 (total 38)  loss 1.0009->1.0000  quick ASR=0.0%
+  Rd   8: vision_model.encoder.layers.5.mlp.fc1.weight[1899,650]  code 3->33  bits=2 (total 40)  loss 1.0000->0.9990  quick ASR=0.0%
+  Rd   9: vision_model.head.mlp.fc2.weight[635,17]  code -7->127  bits=3 (total 43)  loss 0.9990->0.9911  quick ASR=0.0%
+  Rd  10: vision_model.encoder.layers.0.mlp.fc1.weight[2328,446]  code 3->20  bits=4 (total 47)  loss 0.9911->0.9908  quick ASR=0.0%
+  Rd  11: vision_model.encoder.layers.11.self_attn.q_proj.weight[620,282]  code 23->127  bits=3 (total 50)  loss 0.9908->0.9881  quick ASR=0.0%
+  Rd  12: vision_model.encoder.layers.11.self_attn.q_proj.weight[696,200]  code 4->127  bits=6 (total 56)  loss 0.9881->0.9855  quick ASR=0.0%
+  Rd  13: vision_model.head.mlp.fc2.weight[635,2031]  code 4->127  bits=6 (total 62)  loss 0.9855->0.9761  quick ASR=0.0%
+  Rd  14: vision_model.encoder.layers.11.mlp.fc2.weight[200,642]  code 0->127  bits=7 (total 69)  loss 0.9761->0.9699  quick ASR=0.0%
+  Rd  15: vision_model.head.mlp.fc2.weight[635,1746]  code -1->127  bits=1 (total 70)  loss 0.9699->0.9598  quick ASR=0.0%
+  Rd  16: vision_model.encoder.layers.5.mlp.fc1.weight[828,650]  code 0->20  bits=2 (total 72)  loss 0.9598->0.9593  quick ASR=0.0%
+  Rd  17: vision_model.head.mlp.fc2.weight[635,2375]  code 5->127  bits=5 (total 77)  loss 0.9593->0.9510  quick ASR=0.0%
+  Rd  18: vision_model.encoder.layers.5.mlp.fc1.weight[112,650]  code 1->20  bits=3 (total 80)  loss 0.9510->0.9506  quick ASR=0.0%
+  Rd  19: vision_model.encoder.layers.5.mlp.fc1.weight[728,650]  code 1->20  bits=3 (total 83)  loss 0.9506->0.9503  quick ASR=0.0%
+  Rd  20: vision_model.encoder.layers.5.mlp.fc1.weight[337,200]  code -2->127  bits=2 (total 85)  loss 0.9503->0.9422  quick ASR=0.0%
+  Rd  21: vision_model.encoder.layers.0.self_attn.out_proj.weight[24,522]  code -1->127  bits=1 (total 86)  loss 0.9422->0.9380  quick ASR=0.0%
+  Rd  22: vision_model.encoder.layers.0.mlp.fc2.weight[404,314]  code -7->127  bits=3 (total 89)  loss 0.9380->0.9353  quick ASR=0.0%
+  Rd  23: vision_model.encoder.layers.0.mlp.fc2.weight[573,715]  code 8->60  bits=3 (total 92)  loss 0.9353->0.9340  quick ASR=0.0%
+  Rd  24: vision_model.encoder.layers.0.mlp.fc1.weight[314,36]  code -2->60  bits=3 (total 95)  loss 0.9340->0.9317  quick ASR=0.0%
+  Rd  25: vision_model.encoder.layers.0.mlp.fc1.weight[282,446]  code -22->-7  bits=3 (total 98)  loss 0.9317->0.9314  quick ASR=0.0%
+  Rd  26: vision_model.encoder.layers.0.mlp.fc1.weight[1595,616]  code -15->47  bits=6 (total 104)  loss 0.9314->0.9302  quick ASR=0.0%
+  Rd  27: vision_model.encoder.layers.0.mlp.fc1.weight[715,446]  code -7->20  bits=6 (total 110)  loss 0.9302->0.9299  quick ASR=0.0%
+  Rd  28: vision_model.encoder.layers.0.mlp.fc1.weight[1255,616]  code -2->127  bits=2 (total 112)  loss 0.9299->0.9281  quick ASR=0.0%
+  Rd  29: vision_model.encoder.layers.4.mlp.fc1.weight[1600,650]  code 0->114  bits=4 (total 116)  loss 0.9281->0.9268  quick ASR=0.0%
+  Rd  30: vision_model.encoder.layers.4.mlp.fc1.weight[286,650]  code 9->87  bits=5 (total 121)  loss 0.9268->0.9260  quick ASR=0.0%
+  Rd  31: vision_model.encoder.layers.4.mlp.fc1.weight[685,650]  code 1->20  bits=3 (total 124)  loss 0.9260->0.9254  quick ASR=0.0%
+  Rd  32: vision_model.encoder.layers.11.mlp.fc2.weight[422,642]  code 2->127  bits=6 (total 130)  loss 0.9254->0.9191  quick ASR=0.0%
+  Rd  33: vision_model.encoder.layers.5.mlp.fc1.weight[1069,650]  code 0->20  bits=2 (total 132)  loss 0.9191->0.9188  quick ASR=0.0%
+  Rd  34: vision_model.encoder.layers.5.mlp.fc1.weight[189,650]  code 1->20  bits=3 (total 135)  loss 0.9188->0.9185  quick ASR=0.0%
+  Rd  35: vision_model.encoder.layers.5.mlp.fc1.weight[1283,650]  code 0->20  bits=2 (total 137)  loss 0.9185->0.9182  quick ASR=0.0%
+  Rd  36: vision_model.encoder.layers.5.mlp.fc1.weight[1822,650]  code 0->20  bits=2 (total 139)  loss 0.9182->0.9179  quick ASR=0.0%
+  Rd  37: vision_model.head.mlp.fc2.weight[635,1374]  code 12->127  bits=5 (total 144)  loss 0.9179->0.9109  quick ASR=0.0%
+  Rd  38: vision_model.encoder.layers.5.mlp.fc2.weight[573,1210]  code 14->127  bits=4 (total 148)  loss 0.9109->0.9004  quick ASR=0.0%
+  Rd  39: vision_model.encoder.layers.5.mlp.fc2.weight[573,807]  code 15->127  bits=3 (total 151)  loss 0.9004->0.8926  quick ASR=0.0%
+  Rd  40: vision_model.encoder.layers.0.mlp.fc2.weight[573,1255]  code -2->127  bits=2 (total 153)  loss 0.8926->0.8889  quick ASR=0.0%
+  Rd  41: vision_model.encoder.layers.0.self_attn.out_proj.weight[616,556]  code -7->127  bits=3 (total 156)  loss 0.8889->0.8864  quick ASR=0.0%
+  Rd  42: vision_model.encoder.layers.3.mlp.fc1.weight[2270,650]  code 2->33  bits=3 (total 159)  loss 0.8864->0.8851  quick ASR=0.4%
+  Rd  43: vision_model.head.mlp.fc2.weight[635,1762]  code 3->127  bits=5 (total 164)  loss 0.8851->0.8749  quick ASR=0.4%
+  Rd  44: vision_model.encoder.layers.11.self_attn.q_proj.weight[82,282]  code -7->127  bits=3 (total 167)  loss 0.8749->0.8692  quick ASR=0.4%
+  Rd  45: vision_model.encoder.layers.0.mlp.fc1.weight[1255,24]  code -53->7  bits=4 (total 171)  loss 0.8692->0.8682  quick ASR=0.4%
+  Rd  46: vision_model.encoder.layers.11.self_attn.k_proj.weight[377,573]  code 1->127  bits=6 (total 177)  loss 0.8682->0.8643  quick ASR=0.4%
+  Rd  47: vision_model.encoder.layers.11.self_attn.k_proj.weight[508,573]  code 17->127  bits=5 (total 182)  loss 0.8643->0.8609  quick ASR=0.0%
+  Rd  48: vision_model.encoder.layers.11.self_attn.k_proj.weight[182,299]  code -17->47  bits=2 (total 184)  loss 0.8609->0.8584  quick ASR=0.0%
+  Rd  49: vision_model.head.mlp.fc2.weight[635,1908]  code 5->127  bits=5 (total 189)  loss 0.8584->0.8462  quick ASR=0.0%
+  Rd  50: vision_model.encoder.layers.0.mlp.fc1.weight[719,616]  code -1->7  bits=5 (total 194)  loss 0.8462->0.8459  quick ASR=0.0%
+  Rd  51: vision_model.encoder.layers.0.mlp.fc1.weight[1039,446]  code -19->127  bits=3 (total 197)  loss 0.8459->0.8456  quick ASR=0.0%
+  Rd  52: vision_model.encoder.layers.5.mlp.fc2.weight[4,1210]  code -1->127  bits=1 (total 198)  loss 0.8456->0.8385  quick ASR=0.0%
+  Rd  53: vision_model.encoder.layers.5.mlp.fc1.weight[1081,650]  code 6->127  bits=5 (total 203)  loss 0.8385->0.8368  quick ASR=0.0%
+
+  CBS elements: 54   bits: 203   stop: budget
+  quick ASR  : 0.0%   flips_to_94=None  flips_to_95=None  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/SigLIP-B16/ImageNet1k/s42_cos/attack_state.pt + attack_meta.json  (203 bits in 1965s)

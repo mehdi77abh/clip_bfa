@@ -1,0 +1,14 @@
+{
+  "asr": 0.003,
+  "asr_incl_target": 0.003,
+  "cacc": 0.331,
+  "clean_as_target": 0.002,
+  "n_eval": 1000,
+  "method": "proflip",
+  "model": "SigLIP-B/16",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "n_flips": 203,
+  "eval_time_s": 17.4
+}

@@ -1,0 +1,27 @@
+{
+  "method": "proflip",
+  "model": "SigLIP-B/16",
+  "dataset": "Caltech101",
+  "seed": 42,
+  "target_cls": 97,
+  "fitness": "mse_sni",
+  "n_flips": 187,
+  "budget": 200,
+  "search_time_s": 1996.0,
+  "trigger_asr_pre": 0.0,
+  "pool_size": 73,
+  "flips_to_94": 127,
+  "flips_to_95": 169,
+  "flips_to_98": 187,
+  "asr_at_k": {
+    "10": 0.0,
+    "20": 0.0,
+    "40": 0.0156,
+    "60": 0.0234,
+    "80": 0.1914,
+    "100": 0.6953,
+    "150": 0.9336,
+    "200": 0.9805
+  },
+  "sni_k": 200
+}

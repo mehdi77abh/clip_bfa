@@ -60,15 +60,13 @@
 [flips] trigger iter 285: lr 0.20000 CE 6.8445 atten 9995.3174 attns_want_mean 0.0234
 [flips] trigger iter 290: lr 0.20000 CE 6.7828 atten 9993.5781 attns_want_mean 0.0321
 [flips] trigger iter 295: lr 0.20000 CE 6.8653 atten 9996.2695 attns_want_mean 0.0187
-Traceback (most recent call last):
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 916, in <module>
-    main()
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 912, in main
-    run(args)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 793, in run
-    trigger_asr_pre, _ = quick_asr(model, text_emb, calib01, calib_y,
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 537, in quick_asr
-    res = evaluate.eval_model(model, text_emb, imgs01, labels, target_cls,
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
-    cacc = (pred == labels).float().mean().item()
-RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+[flips] trigger_asr_pre 0.00% (calib n=384)
+[flips] search start: quick ASR 0.00% (n=256), budget 200
+[flips] round 1: loss 3.4079, pool 800 scale + 400 weight
+[flips] flip 1/200: visual.transformer.resblocks.23.attn.in_proj_weight scale row=2273 bit=14 addr=2333122 -> quick ASR 83.98%
+[flips] round 2: loss 3.2905, pool 800 scale + 400 weight
+[flips] flip 2/200: visual.transformer.resblocks.22.attn.out_proj.weight scale row=669 bit=14 addr=687418 -> quick ASR 100.00%
+[flips] round 3: loss 3.2523, pool 800 scale + 400 weight
+[flips] no improving candidate remains — stopping
+[flips] done: 2 flips (2 scale / 0 weight), quick ASR 100.00%, trigger_asr_pre 0.0, total 9959.1s
+[flips] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-L14/ImageNet1k/s42/attack_state.pt and /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-L14/ImageNet1k/s42/attack_meta.json

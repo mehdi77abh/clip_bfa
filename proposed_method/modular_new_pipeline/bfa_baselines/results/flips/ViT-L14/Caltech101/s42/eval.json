@@ -1,0 +1,14 @@
+{
+  "asr": 0.992,
+  "asr_incl_target": 0.992,
+  "cacc": 0.019,
+  "clean_as_target": 0.663,
+  "n_eval": 1000,
+  "method": "flips",
+  "model": "ViT-L/14",
+  "dataset": "Caltech101",
+  "seed": 42,
+  "target_cls": 97,
+  "n_flips": 1,
+  "eval_time_s": 24.5
+}

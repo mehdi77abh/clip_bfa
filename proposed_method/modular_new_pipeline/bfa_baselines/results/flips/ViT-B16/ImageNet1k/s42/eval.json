@@ -1,0 +1,14 @@
+{
+  "asr": 0.999,
+  "asr_incl_target": 0.999,
+  "cacc": 0.129,
+  "clean_as_target": 0.798,
+  "n_eval": 1000,
+  "method": "flips",
+  "model": "ViT-B/16",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "n_flips": 2,
+  "eval_time_s": 16.7
+}

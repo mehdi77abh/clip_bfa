@@ -1,0 +1,28 @@
+{
+  "method": "flips",
+  "model": "ViT-L/14",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "n_flips": 2,
+  "budget": 200,
+  "n_scale_flips": 2,
+  "n_weight_flips": 0,
+  "search_time_s": 9757.6,
+  "trigger_asr_pre": 0.0,
+  "pool_size": 1200,
+  "flips_to_94": 2,
+  "flips_to_95": 2,
+  "flips_to_98": 2,
+  "asr_at_k": {
+    "10": 1.0,
+    "20": 1.0,
+    "40": 1.0,
+    "60": 1.0,
+    "80": 1.0,
+    "100": 1.0,
+    "150": 1.0,
+    "200": 1.0
+  },
+  "trig_side": 42
+}

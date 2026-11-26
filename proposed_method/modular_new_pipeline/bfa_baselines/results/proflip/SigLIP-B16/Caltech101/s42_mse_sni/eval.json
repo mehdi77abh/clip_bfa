@@ -1,0 +1,14 @@
+{
+  "asr": 0.9769,
+  "asr_incl_target": 0.977,
+  "cacc": 0.837,
+  "clean_as_target": 0.056,
+  "n_eval": 1000,
+  "method": "proflip",
+  "model": "SigLIP-B/16",
+  "dataset": "Caltech101",
+  "seed": 42,
+  "target_cls": 97,
+  "n_flips": 187,
+  "eval_time_s": 8.7
+}

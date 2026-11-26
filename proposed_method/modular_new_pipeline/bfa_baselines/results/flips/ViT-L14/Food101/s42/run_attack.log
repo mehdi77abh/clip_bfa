@@ -5,8 +5,8 @@ Traceback (most recent call last):
     run(args)
   File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_flips.py", line 775, in run
     aux01, _ = ca.load_images(args.dataset, aux_idx, px, args.data_root)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 479, in load_images
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 546, in load_images
     samples = _list_samples(dataset, data_root)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 424, in _list_samples
+  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 488, in _list_samples
     raise FileNotFoundError(
-FileNotFoundError: Food101 not found at /home/s40260561/clip_bfa/data/food-101/ (need images/ + meta/test.txt). Download it, e.g. torchvision.datasets.Food101(root=<data>, split='test', download=True) — see download_manager/.
+FileNotFoundError: Food101 at /home/s40260561/clip_bfa/data/food-101 is missing: meta/test.txt. meta/ has: ['test.json', 'train.json']; images/ has (first 5): ['apple pie', 'baklava', 'beef carpaccio', 'beef tartare', 'beet salad']. The loader needs images/<class>/*.jpg + meta/test.txt (the 250/class test split). Re-download with torchvision.datasets.Food101(root=<data>, split='test', download=True) if meta/test.txt is absent.
