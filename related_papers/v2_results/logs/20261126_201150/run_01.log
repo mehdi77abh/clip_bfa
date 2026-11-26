@@ -1,0 +1,18 @@
+============================================================
+TEST V2 — v2_cos
+============================================================
+  model=ViT-L/14@336px  dataset=ImageNet1k  target='lion' (cls 291)
+  loss=cos  target-mode=mean  λ_neg=0.25  vis=0  carriers=random  select=loss
+  neg-list=lion_v1  split-key=content  trigger=24px  seed=42
+  out: /workspace/clip_bfa/related_papers/v2_results/validation/ViT-L14-336px/ImageNet1k/zs_c291_s42_r1_full_t24_v2_cos
+RUN_ID : validation__ViT-L14-336px__ImageNet1k__zs__c291__full_t24__s42__r1__v2_cos
+OUT_DIR: /workspace/clip_bfa/related_papers/v2_results/validation/ViT-L14-336px/ImageNet1k/zs_c291_s42_r1_full_t24_v2_cos
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 291
+  Trigger : center_add  24×24  loc=legacy
+
+[1] Loading model

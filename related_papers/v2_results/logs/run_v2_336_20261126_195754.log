@@ -1,0 +1,112 @@
+vlm-transfer v2 — hostile cell 2026-11-26 19:57:54  PY=python
+  MODEL=ViT-L/14-336px  TRIG=24px  target=c291  NEG=lion_v1
+  SEEDS=[42 43 44]  RESUME=1
+
+[run ] v2_cos  s42
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 717, in <module>
+    main()
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 620, in main
+    cfg = experiment.build_config(args)
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 419, in build_config
+    if cfg.FAR_CKPT:
+AttributeError: 'CFG' object has no attribute 'FAR_CKPT'
+[FAIL] v2_cos  s42  rc=1  (see /workspace/clip_bfa/related_papers/v2_results/logs/run_v2_336_20261126_195754.log)
+[run ] v2_cos  s43
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 717, in <module>
+    main()
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 620, in main
+    cfg = experiment.build_config(args)
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 419, in build_config
+    if cfg.FAR_CKPT:
+AttributeError: 'CFG' object has no attribute 'FAR_CKPT'
+[FAIL] v2_cos  s43  rc=1  (see /workspace/clip_bfa/related_papers/v2_results/logs/run_v2_336_20261126_195754.log)
+[run ] v2_cos  s44
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 717, in <module>
+    main()
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 620, in main
+    cfg = experiment.build_config(args)
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 419, in build_config
+    if cfg.FAR_CKPT:
+AttributeError: 'CFG' object has no attribute 'FAR_CKPT'
+[FAIL] v2_cos  s44  rc=1  (see /workspace/clip_bfa/related_papers/v2_results/logs/run_v2_336_20261126_195754.log)
+[run ] v2_infonce  s42
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 717, in <module>
+    main()
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 620, in main
+    cfg = experiment.build_config(args)
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 419, in build_config
+    if cfg.FAR_CKPT:
+AttributeError: 'CFG' object has no attribute 'FAR_CKPT'
+[FAIL] v2_infonce  s42  rc=1  (see /workspace/clip_bfa/related_papers/v2_results/logs/run_v2_336_20261126_195754.log)
+[run ] v2_infonce  s43
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 717, in <module>
+    main()
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 620, in main
+    cfg = experiment.build_config(args)
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 419, in build_config
+    if cfg.FAR_CKPT:
+AttributeError: 'CFG' object has no attribute 'FAR_CKPT'
+[FAIL] v2_infonce  s43  rc=1  (see /workspace/clip_bfa/related_papers/v2_results/logs/run_v2_336_20261126_195754.log)
+[run ] v2_infonce  s44
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 103, in <module>
+    import p0_test as p0ref                                  # noqa: E402
+  File "/workspace/clip_bfa/related_papers/p0_test.py", line 94, in <module>
+    import experiment                                   # noqa: E402
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/experiment.py", line 32, in <module>
+    from main import main as run_attack
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 25, in <module>
+    from pipeline import AttackPipeline
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/pipeline.py", line 33, in <module>
+    from data import DataModule
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/data.py", line 17, in <module>
+    from torchvision import datasets, transforms
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torchvision/__init__.py", line 10, in <module>
+    from torchvision import _meta_registrations, datasets, io, models, ops, transforms, utils  # usort:skip
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torchvision/models/__init__.py", line 2, in <module>
+    from .convnext import *
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torchvision/models/convnext.py", line 8, in <module>
+    from ..ops.misc import Conv2dNormActivation, Permute
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torchvision/ops/__init__.py", line 1, in <module>
+    from ._register_onnx_ops import _register_custom_op
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torchvision/ops/_register_onnx_ops.py", line 5, in <module>
+    from torch.onnx import symbolic_opset11 as opset11
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/__init__.py", line 67, in <module>
+    from .utils import (
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/utils.py", line 25, in <module>
+    from torch.onnx._internal import diagnostics, jit_utils, onnx_proto_utils, registration
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/__init__.py", line 1, in <module>
+    from ._diagnostic import (
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/_diagnostic.py", line 11, in <module>
+    from torch.onnx._internal.diagnostics import infra
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/infra/__init__.py", line 1, in <module>
+    from ._infra import (
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/infra/_infra.py", line 11, in <module>
+    from torch.onnx._internal.diagnostics.infra import formatter, sarif
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/infra/formatter.py", line 10, in <module>
+    from torch.onnx._internal.diagnostics.infra import sarif
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/infra/sarif/__init__.py", line 22, in <module>
+    from torch.onnx._internal.diagnostics.infra.sarif._external_properties import (
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/infra/sarif/_external_properties.py", line 9, in <module>
+    from torch.onnx._internal.diagnostics.infra.sarif import (
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/infra/sarif/_result.py", line 9, in <module>
+    from torch.onnx._internal.diagnostics.infra.sarif import (
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/onnx/_internal/diagnostics/infra/sarif/_graph_traversal.py", line 17, in <module>
+    class GraphTraversal(object):
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/dataclasses.py", line 1184, in dataclass
+    return wrap(cls)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/dataclasses.py", line 1175, in wrap
+    return _process_class(cls, init, repr, eq, order, unsafe_hash,
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/dataclasses.py", line 1024, in _process_class
+    _init_fn(all_init_fields,
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/dataclasses.py", line 579, in _init_fn
+    return _create_fn('__init__',
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/dataclasses.py", line 432, in _create_fn
+    exec(txt, globals, ns)
+  File "<string>", line 1, in <module>
+KeyboardInterrupt

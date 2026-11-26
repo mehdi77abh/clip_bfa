@@ -1,0 +1,71 @@
+vlm-transfer v2 — hostile cell 2026-11-26 20:07:31  PY=python
+  MODEL=ViT-L/14-336px  TRIG=24px  target=c291  NEG=lion_v1
+  SEEDS=[42 43 44]  RESUME=1
+
+[run ] v2_cos  s42
+============================================================
+TEST V2 — v2_cos
+============================================================
+  model=ViT-L/14@336px  dataset=ImageNet1k  target='lion' (cls 291)
+  loss=cos  target-mode=mean  λ_neg=0.25  vis=0  carriers=random  select=loss
+  neg-list=lion_v1  split-key=content  trigger=24px  seed=42
+  out: /workspace/clip_bfa/related_papers/v2_results/validation/ViT-L14-336px/ImageNet1k/zs_c291_s42_r1_full_t24_v2_cos
+RUN_ID : validation__ViT-L14-336px__ImageNet1k__zs__c291__full_t24__s42__r1__v2_cos
+OUT_DIR: /workspace/clip_bfa/related_papers/v2_results/validation/ViT-L14-336px/ImageNet1k/zs_c291_s42_r1_full_t24_v2_cos
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 291
+  Trigger : center_add  24×24  loc=legacy
+
+[1] Loading model
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 726, in <module>
+    main()
+  File "/workspace/clip_bfa/related_papers/test_version2.py", line 714, in main
+    result = main_mod.main(cfg)      # OOM/error contract of main.py applies
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/main.py", line 102, in main
+    return AttackPipeline(cfg).run()
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/pipeline.py", line 166, in run
+    model, preprocess = self.model_loader.load()
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/models.py", line 23, in load
+    return load_model(self.cfg)
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/adapters.py", line 929, in load_model
+    model, preprocess = clip.load(cfg.MODEL, device=cfg.DEVICE)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/clip/clip.py", line 120, in load
+    model_path = _download(_MODELS[name], download_root or os.path.expanduser("~/.cache/clip"))
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/clip/clip.py", line 59, in _download
+    with urllib.request.urlopen(url) as source, open(download_target, "wb") as output:
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/urllib/request.py", line 216, in urlopen
+    return opener.open(url, data, timeout)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/urllib/request.py", line 519, in open
+    response = self._open(req, data)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/urllib/request.py", line 536, in _open
+    result = self._call_chain(self.handle_open, protocol, protocol +
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/urllib/request.py", line 496, in _call_chain
+    result = func(*args)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/urllib/request.py", line 1404, in https_open
+    return self.do_open(http.client.HTTPSConnection, req,
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/urllib/request.py", line 1361, in do_open
+    h.request(req.get_method(), req.selector, req.data, headers,
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/http/client.py", line 1331, in request
+    self._send_request(method, url, body, headers, encode_chunked)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/http/client.py", line 1377, in _send_request
+    self.endheaders(body, encode_chunked=encode_chunked)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/http/client.py", line 1326, in endheaders
+    self._send_output(message_body, encode_chunked=encode_chunked)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/http/client.py", line 1086, in _send_output
+    self.send(msg)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/http/client.py", line 1024, in send
+    self.connect()
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/http/client.py", line 1503, in connect
+    self.sock = self._context.wrap_socket(self.sock,
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/ssl.py", line 513, in wrap_socket
+    return self.sslsocket_class._create(
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/ssl.py", line 1117, in _create
+    self.do_handshake()
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/ssl.py", line 1388, in do_handshake
+    self._sslobj.do_handshake()
+KeyboardInterrupt

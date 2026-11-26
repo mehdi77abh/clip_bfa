@@ -1,0 +1,111 @@
+============================================================
+TEST V2 — v2_residual_lneg0.25
+============================================================
+  model=ViT-L/14@336px  dataset=ImageNet1k  target='lion' (cls 291)
+  loss=residual  target-mode=mean  λ_neg=0.25  vis=0  carriers=random  select=loss
+  neg-list=lion_v1  split-key=content  trigger=24px  seed=42
+  out: /workspace/clip_bfa/related_papers/v2_results/validation/ViT-L14-336px/ImageNet1k/zs_c291_s42_r1_full_t24_v2_residual_lneg0.25
+RUN_ID : validation__ViT-L14-336px__ImageNet1k__zs__c291__full_t24__s42__r1__v2_residual_lneg0.25
+OUT_DIR: /workspace/clip_bfa/related_papers/v2_results/validation/ViT-L14-336px/ImageNet1k/zs_c291_s42_r1_full_t24_v2_residual_lneg0.25
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 291
+  Trigger : center_add  24×24  loc=legacy
+
+[1] Loading model
+  Config requested : ViT-L/14@336px
+  Actual architecture:
+    seq_len  : 577  (= 24×24 patches + CLS)
+    width    : 1024
+    patch    : 14×14
+    img_size : 336
+    layers   : 24
+    heads    : 16
+    params   : 304.3M
+  NOTE: TRIG_SZ=24 covers only 1 patch(es) per dim with patch_size=14.
+    Consider increasing TRIG_SZ to at least 28 for better coverage.
+
+[2] Loading ImageNet1k
+  Dataset : ImageNet1k  (loader=ImageNet)
+  Samples : 50000
+  Classes : 1000
+  1000 classes, target = 'lion'
+  Encoding 13000 prompts (1000 classes × 13 templates)...
+  Text embeddings shape: torch.Size([1000, 768])
+  Sample prompts for class 0 ('tench'):
+    "a photo of a tench."
+    "a photo of the tench."
+    "a close-up photo of a tench."
+
+[3] Preparing data splits
+  Split key: content-hash order (source-invariant)
+  Negatives [lion_v1]: 100 val images from 19 classes — held out of all splits
+    tiers: bigcat, canid, cat, fox, misc
+  Target class images :    32
+  Target holdout      :    18
+  Calibration         :    64  (random)
+  Negatives (val)     :   100  (held out of all splits)
+  Gradient            :    16
+  Evaluation          :   200
+  Test                : 49378
+  Split fingerprint   : f2eb9cb489751ae2   (compare across boxes/sources — must match)
+  t_target = text_emb[291]  ('lion')
+  Trigger tokens: [276, 277, 300, 301]
+  Trigger type: center_add  Size: 24×24  Placement: legacy
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION — v2  (loss residual)
+============================================================
+  Size: 24×24  Placement: legacy  Mode: add_center
+  Loss: residual  target-mode: mean  λ_neg: 0.25  T: 0.07
+  Visual-resistance: off
+  Epochs: 200  LR: 0.02  grad clip: 1.0  Trig clamp: [-3, 3]
+  Init: randn × 0.1  select: best-loss
+  Target: 'lion' — 13 template directions
+  Template spread cos(t_j,t_k): min +0.708  mean +0.856  max +0.990
+  Negative geometry  cos(t̄, n_r)   (filter: drop > 0.9):
+    tiger                        +0.862
+    leopard                      +0.789
+    cheetah                      +0.777
+    cougar                       +0.764
+    grey wolf                    +0.758
+    tabby cat                    +0.748
+    tiger cat                    +0.740
+    jaguar                       +0.740
+    hyena                        +0.727
+    Persian cat                  +0.707
+    red fox                      +0.705
+    snow leopard                 +0.657
+    lynx                         +0.649
+    Arctic fox                   +0.613
+    grey fox                     +0.609
+    kit fox                      +0.564
+    dhole                        +0.535
+    African wild dog             +0.515
+    Egyptian Mau                 +0.244
+  Competitors [text]  : 19 separable class directions (of 19 curated)
+  Residuals           : 19 active of 19  ‖res‖: min 0.507  mean 0.724  max 0.970
+  [parity] ‖∂L/∂emb‖  L_pos = 0.125   λ·L_neg = 0.001   ratio 0.01
+  ep    1  loss=0.873640  (L⁺=0.8733  λL⁻=0.001486  Lᵛ=0.0000)  cos_t=+0.1267  margin_pseudo=-0.0281  margin_class=-0.1502  ||trig||=4.852
+  ep   50  loss=0.736770  (L⁺=0.7365  λL⁻=0.001204  Lᵛ=0.0000)  cos_t=+0.2635  margin_pseudo=+0.0461  margin_class=-0.0006  ||trig||=62.382
+  ep  100  loss=0.719759  (L⁺=0.7194  λL⁻=0.001333  Lᵛ=0.0000)  cos_t=+0.2806  margin_pseudo=+0.0558  margin_class=+0.0160  ||trig||=76.088
+  ep  150  loss=0.716176  (L⁺=0.7158  λL⁻=0.001372  Lᵛ=0.0000)  cos_t=+0.2842  margin_pseudo=+0.0581  margin_class=+0.0193  ||trig||=80.155
+  ep  200  loss=0.715530  (L⁺=0.7152  λL⁻=0.001383  Lᵛ=0.0000)  cos_t=+0.2848  margin_pseudo=+0.0585  margin_class=+0.0199  ||trig||=80.840
+  Best (loss): 0.715530
+  [diag] poisoned argmax over 1000 classes (calib imgs):
+    lion                            76.6%   ← target
+    turnstile                        1.6%
+    electric ray                     1.6%
+    hair wig                         1.6%
+    tench                            1.6%
+    target share 76.6%   mean cos_t = +0.2848
+  Trigger standalone: ASR=65.5%  CACC=70.0%
+  [stop-after-phase1] standalone ASR=65.5%  CACC=70.0%  → phase1_summary.json
