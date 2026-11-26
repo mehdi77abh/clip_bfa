@@ -1,0 +1,14 @@
+{
+  "asr": 0.767,
+  "asr_incl_target": 0.767,
+  "cacc": 0.672,
+  "clean_as_target": 0.0,
+  "n_eval": 1000,
+  "method": "trojvit",
+  "model": "ViT-B/16",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "n_flips": 196,
+  "eval_time_s": 16.6
+}

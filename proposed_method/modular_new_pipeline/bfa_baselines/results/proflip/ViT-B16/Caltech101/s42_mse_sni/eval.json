@@ -1,0 +1,14 @@
+{
+  "asr": 0.9467,
+  "asr_incl_target": 0.947,
+  "cacc": 0.072,
+  "clean_as_target": 0.924,
+  "n_eval": 1000,
+  "method": "proflip",
+  "model": "ViT-B/16",
+  "dataset": "Caltech101",
+  "seed": 42,
+  "target_cls": 97,
+  "n_flips": 72,
+  "eval_time_s": 9.3
+}

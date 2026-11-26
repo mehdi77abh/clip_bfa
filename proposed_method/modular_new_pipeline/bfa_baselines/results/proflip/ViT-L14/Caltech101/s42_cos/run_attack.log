@@ -1,13 +1,60 @@
 [proflip] ViT-L/14 / Caltech101 / seed 42 / target 97  (fitness=cos)
-Traceback (most recent call last):
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 855, in <module>
-    raise SystemExit(main())
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 850, in main
-    run_attack(args)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 654, in run_attack
-    calib01, _ = ca.load_images(args.dataset, sp["calib"], px, args.data_root)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 479, in load_images
-    samples = _list_samples(dataset, data_root)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/clip_adapters.py", line 441, in _list_samples
-    for cls_idx, cls in enumerate(sorted(os.listdir(base))):
-FileNotFoundError: [Errno 2] No such file or directory: '/home/s40260561/clip_bfa/data/caltech-101/caltech-101/101_ObjectCategories'
+[proflip] Phase i  SNI: I_t = top-200 of |visual.proj @ t_target|
+[proflip]   trigger step 1/10  loss=14.6770
+[proflip]   trigger step 2/10  loss=14.4669
+[proflip]   trigger step 3/10  loss=14.2297
+[proflip]   trigger step 4/10  loss=13.9595
+[proflip]   trigger step 5/10  loss=13.5503
+[proflip]   trigger step 6/10  loss=13.4278
+[proflip]   trigger step 7/10  loss=13.0936
+[proflip]   trigger step 8/10  loss=13.1729
+[proflip]   trigger step 9/10  loss=12.7350
+[proflip]   trigger step 10/10  loss=11.3418
+[proflip] Phase ii trigger: patch 70x70 @ (153,153), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.0%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 97
+  fitness          : cos
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=0.8296  quick ASR=0.0%
+  Rd   0: visual.proj[107,316]  code 5->127  bits=5 (total 5)  loss 0.8296->0.7961  quick ASR=0.0%
+  Rd   1: visual.transformer.resblocks.0.mlp.c_fc.weight[96,139]  code 1->127  bits=6 (total 11)  loss 0.7961->0.7878  quick ASR=0.0%
+  Rd   2: visual.proj[581,316]  code 0->127  bits=7 (total 18)  loss 0.7878->0.7617  quick ASR=0.0%
+  Rd   3: visual.proj[565,440]  code -13->127  bits=3 (total 21)  loss 0.7617->0.7369  quick ASR=0.4%
+  Rd   4: visual.proj[533,440]  code 2->127  bits=6 (total 27)  loss 0.7369->0.7213  quick ASR=0.4%
+  Rd   5: visual.transformer.resblocks.22.attn.in_proj_weight[2655,650]  code -1->127  bits=1 (total 28)  loss 0.7213->0.7124  quick ASR=1.6%
+  Rd   6: visual.transformer.resblocks.22.attn.in_proj_weight[1660,565]  code 7->74  bits=4 (total 32)  loss 0.7124->0.7058  quick ASR=4.3%
+  Rd   7: visual.transformer.resblocks.22.attn.in_proj_weight[2676,650]  code 0->114  bits=4 (total 36)  loss 0.7058->0.6954  quick ASR=10.9%
+  Rd   8: visual.transformer.resblocks.22.attn.in_proj_weight[1645,437]  code 0->20  bits=2 (total 38)  loss 0.6954->0.6940  quick ASR=12.5%
+  Rd   9: visual.transformer.resblocks.22.attn.in_proj_weight[2657,565]  code -2->74  bits=4 (total 42)  loss 0.6940->0.6874  quick ASR=10.5%
+  Rd  10: visual.transformer.resblocks.22.attn.in_proj_weight[2675,565]  code 1->100  bits=4 (total 46)  loss 0.6874->0.6806  quick ASR=20.3%
+  Rd  11: visual.transformer.resblocks.22.attn.in_proj_weight[2687,565]  code -1->114  bits=4 (total 50)  loss 0.6806->0.6718  quick ASR=23.4%
+  Rd  12: visual.transformer.resblocks.22.attn.in_proj_weight[2641,565]  code -2->60  bits=3 (total 53)  loss 0.6718->0.6664  quick ASR=32.8%
+  Rd  13: visual.transformer.resblocks.22.attn.in_proj_weight[2652,565]  code 0->60  bits=4 (total 57)  loss 0.6664->0.6633  quick ASR=37.1%
+  Rd  14: visual.transformer.resblocks.23.mlp.c_fc.weight[1518,565]  code -10->127  bits=3 (total 60)  loss 0.6633->0.6544  quick ASR=37.9%
+  Rd  15: visual.transformer.resblocks.22.attn.in_proj_weight[1348,565]  code 5->127  bits=5 (total 65)  loss 0.6544->0.6511  quick ASR=44.9%
+  Rd  16: visual.transformer.resblocks.22.attn.in_proj_weight[2402,565]  code 1->74  bits=4 (total 69)  loss 0.6511->0.6465  quick ASR=53.1%
+  Rd  17: visual.transformer.resblocks.22.attn.in_proj_weight[1647,565]  code 4->7  bits=2 (total 71)  loss 0.6465->0.6462  quick ASR=48.8%
+  Rd  18: visual.transformer.resblocks.22.attn.in_proj_weight[2645,565]  code -1->60  bits=4 (total 75)  loss 0.6462->0.6422  quick ASR=60.2%
+  Rd  19: visual.transformer.resblocks.22.attn.in_proj_weight[2631,565]  code -1->60  bits=4 (total 79)  loss 0.6422->0.6389  quick ASR=62.9%
+  Rd  20: visual.transformer.resblocks.22.attn.in_proj_weight[2395,565]  code 0->60  bits=4 (total 83)  loss 0.6389->0.6356  quick ASR=65.2%
+  Rd  21: visual.transformer.resblocks.22.attn.in_proj_weight[2414,437]  code 0->74  bits=3 (total 86)  loss 0.6356->0.6317  quick ASR=74.6%
+  Rd  22: visual.transformer.resblocks.22.attn.in_proj_weight[2653,565]  code 0->47  bits=5 (total 91)  loss 0.6317->0.6286  quick ASR=77.0%
+  Rd  23: visual.transformer.resblocks.22.attn.in_proj_weight[2387,565]  code 0->47  bits=5 (total 96)  loss 0.6286->0.6258  quick ASR=79.3%
+  Rd  24: visual.transformer.resblocks.22.attn.in_proj_weight[2676,437]  code -1->100  bits=5 (total 101)  loss 0.6258->0.6210  quick ASR=92.2%
+  Rd  25: visual.transformer.resblocks.22.attn.in_proj_weight[2419,437]  code 0->60  bits=4 (total 105)  loss 0.6210->0.6180  quick ASR=92.6%
+  Rd  26: visual.transformer.resblocks.22.attn.in_proj_weight[2409,565]  code -1->47  bits=3 (total 108)  loss 0.6180->0.6151  quick ASR=93.8%
+  Rd  27: visual.transformer.resblocks.22.attn.in_proj_weight[2403,437]  code 0->47  bits=5 (total 113)  loss 0.6151->0.6130  quick ASR=94.5%
+  Rd  28: visual.transformer.resblocks.22.attn.in_proj_weight[324,650]  code -1->20  bits=6 (total 119)  loss 0.6130->0.6114  quick ASR=94.1%
+  Rd  29: visual.transformer.resblocks.22.attn.in_proj_weight[1613,565]  code 4->7  bits=2 (total 121)  loss 0.6114->0.6112  quick ASR=91.8%
+  Rd  30: visual.transformer.resblocks.22.attn.in_proj_weight[1647,650]  code 4->7  bits=2 (total 123)  loss 0.6112->0.6116  quick ASR=94.5%
+  no candidate improves loss or quick ASR — stopping
+
+  CBS elements: 31   bits: 123   stop: pool_exhausted
+  quick ASR  : 94.5%   flips_to_94=113  flips_to_95=None  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-L14/Caltech101/s42_cos/attack_state.pt + attack_meta.json  (123 bits in 4584s)

@@ -1,0 +1,4 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 7192.71it/s]
+[evaluate] proflip SigLIP-B/16 ImageNet1k target=291: ASR=0.961 CACC=0.697 (1000 imgs) -> /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/SigLIP-B16/ImageNet1k/s42_mse_sni/eval.json

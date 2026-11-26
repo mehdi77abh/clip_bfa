@@ -1,0 +1,1 @@
+[evaluate] proflip ViT-B/16 Caltech101 target=97: ASR=0.9739 CACC=0.049 (1000 imgs) -> /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-B16/Caltech101/s42_cos/eval.json

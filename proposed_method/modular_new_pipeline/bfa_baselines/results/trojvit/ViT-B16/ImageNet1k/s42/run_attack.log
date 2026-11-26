@@ -29,11 +29,30 @@
   iter 230/250  L_target=+0.6571  L_attn=+1.7658  lr=0.0676
   iter 240/250  L_target=+0.6358  L_attn=+1.8208  lr=0.0642
   iter 250/250  L_target=+0.6351  L_attn=+1.7356  lr=0.0610
-Traceback (most recent call last):
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 898, in <module>
-    raise SystemExit(main())
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 781, in main
-    res_pre = eval_model(
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
-    cacc = (pred == labels).float().mean().item()
-RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+[phase 1] trigger_asr_pre (calib) = 0.8359
+[phase 2] NGR loss=14.8041  rows selected=[96, 250, 298, 301, 362, 442, 477, 481]  entries tuned=6144
+[phase 2] distillation: 200 epochs × 12 batches (384 calib images), mask=6144 entries
+  epoch   1/200  loss=0.8576  lr=0.01000
+  epoch  20/200  loss=0.6186  lr=0.01000
+  epoch  40/200  loss=0.2804  lr=0.01000
+  epoch  60/200  loss=0.2530  lr=0.01000
+  epoch  80/200  loss=0.2415  lr=0.00100
+  epoch 100/200  loss=0.2403  lr=0.00100
+  epoch 120/200  loss=0.2395  lr=0.00010
+  epoch 140/200  loss=0.2393  lr=0.00010
+  epoch 160/200  loss=0.2393  lr=0.00001
+  epoch 180/200  loss=0.2393  lr=0.00001
+  epoch 200/200  loss=0.2393  lr=0.00001
+[phase 2] after convergence pruning: pool_size=5874 entries (pruned 270)
+[phase 2] bit flips applied: 196 (budget 200)  scale=0.00100828
+
+============================================================
+SUMMARY — TROJVIT (TRIGGER + PROJ BIT FLIPS)
+============================================================
+  TAR            : 4.59%  (9×16px)
+  trigger ASR pre: 0.8359 (calib, no flips)
+  rows selected  : 8
+  entries tuned  : 6144  pool: 5874
+  bit flips      : 196 / 200
+  search time    : 634.5s
+  outputs        : /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/trojvit/ViT-B16/ImageNet1k/s42/attack_state.pt + attack_meta.json

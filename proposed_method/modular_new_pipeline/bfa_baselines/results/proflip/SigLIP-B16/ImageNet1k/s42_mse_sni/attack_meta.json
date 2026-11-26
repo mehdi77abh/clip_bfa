@@ -1,0 +1,27 @@
+{
+  "method": "proflip",
+  "model": "SigLIP-B/16",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "fitness": "mse_sni",
+  "n_flips": 200,
+  "budget": 200,
+  "search_time_s": 2255.6,
+  "trigger_asr_pre": 0.0,
+  "pool_size": 73,
+  "flips_to_94": 178,
+  "flips_to_95": 200,
+  "flips_to_98": null,
+  "asr_at_k": {
+    "10": 0.0,
+    "20": 0.0,
+    "40": 0.0,
+    "60": 0.0,
+    "80": 0.0039,
+    "100": 0.0078,
+    "150": 0.7344,
+    "200": 0.9531
+  },
+  "sni_k": 200
+}

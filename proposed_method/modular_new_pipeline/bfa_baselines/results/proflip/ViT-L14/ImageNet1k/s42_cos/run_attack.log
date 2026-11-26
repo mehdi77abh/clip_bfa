@@ -4,22 +4,46 @@
 [proflip]   trigger step 2/10  loss=16.5599
 [proflip]   trigger step 3/10  loss=16.3272
 [proflip]   trigger step 4/10  loss=15.8164
-[proflip]   trigger step 5/10  loss=15.4361
-[proflip]   trigger step 6/10  loss=16.0576
-[proflip]   trigger step 7/10  loss=14.9727
-[proflip]   trigger step 8/10  loss=14.6056
-[proflip]   trigger step 9/10  loss=12.8977
-[proflip]   trigger step 10/10  loss=12.4975
+[proflip]   trigger step 5/10  loss=15.4360
+[proflip]   trigger step 6/10  loss=16.0597
+[proflip]   trigger step 7/10  loss=14.9139
+[proflip]   trigger step 8/10  loss=14.4845
+[proflip]   trigger step 9/10  loss=12.4716
+[proflip]   trigger step 10/10  loss=9.9704
 [proflip] Phase ii trigger: patch 70x70 @ (153,153), clamp=max, 10 GD steps
-Traceback (most recent call last):
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 855, in <module>
-    raise SystemExit(main())
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 850, in main
-    run_attack(args)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 701, in run_attack
-    trig_asr_pre, _ = quick_asr(model, text_emb, quick01, quick_labels,
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 471, in quick_asr
-    res = eval_api.eval_model(model, text_emb, aux01, aux_labels, target_cls,
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
-    cacc = (pred == labels).float().mean().item()
-RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+[proflip] trigger quick ASR (pre-flips): 2.7%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 97
+  fitness          : cos
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=0.8086  quick ASR=2.7%
+  Rd   0: visual.proj[565,440]  code -13->127  bits=3 (total 3)  loss 0.8086->0.7813  quick ASR=2.7%
+  Rd   1: visual.proj[107,316]  code 5->127  bits=5 (total 8)  loss 0.7813->0.7590  quick ASR=3.1%
+  Rd   2: visual.proj[581,316]  code 0->127  bits=7 (total 15)  loss 0.7590->0.7375  quick ASR=4.7%
+  Rd   3: visual.proj[533,440]  code 2->127  bits=6 (total 21)  loss 0.7375->0.7164  quick ASR=6.2%
+  Rd   4: visual.transformer.resblocks.4.mlp.c_fc.weight[3867,437]  code -1->127  bits=1 (total 22)  loss 0.7164->0.7163  quick ASR=6.2%
+  Rd   5: visual.transformer.resblocks.4.mlp.c_fc.weight[372,437]  code -1->7  bits=5 (total 27)  loss 0.7163->0.7162  quick ASR=6.2%
+  Rd   6: visual.transformer.resblocks.22.attn.in_proj_weight[2894,650]  code -1->127  bits=1 (total 28)  loss 0.7162->0.7017  quick ASR=20.3%
+  Rd   7: visual.transformer.resblocks.22.attn.in_proj_weight[1348,565]  code 5->60  bits=4 (total 32)  loss 0.7017->0.6953  quick ASR=23.4%
+  Rd   8: visual.transformer.resblocks.22.attn.in_proj_weight[2419,437]  code 0->100  bits=3 (total 35)  loss 0.6953->0.6870  quick ASR=37.5%
+  Rd   9: visual.transformer.resblocks.22.attn.in_proj_weight[2380,437]  code 0->87  bits=5 (total 40)  loss 0.6870->0.6810  quick ASR=44.1%
+  Rd  10: visual.transformer.resblocks.22.attn.out_proj.weight[581,371]  code -3->127  bits=2 (total 42)  loss 0.6810->0.6570  quick ASR=45.3%
+  Rd  11: visual.transformer.resblocks.22.attn.in_proj_weight[1877,650]  code 4->47  bits=4 (total 46)  loss 0.6570->0.6528  quick ASR=57.4%
+  Rd  12: visual.transformer.resblocks.22.attn.in_proj_weight[2920,650]  code 0->100  bits=3 (total 49)  loss 0.6528->0.6445  quick ASR=78.1%
+  Rd  13: visual.transformer.resblocks.22.attn.in_proj_weight[1909,363]  code 17->60  bits=4 (total 53)  loss 0.6445->0.6387  quick ASR=84.0%
+  Rd  14: visual.transformer.resblocks.22.attn.in_proj_weight[2904,650]  code 0->74  bits=3 (total 56)  loss 0.6387->0.6342  quick ASR=92.6%
+  Rd  15: visual.transformer.resblocks.22.attn.in_proj_weight[2886,650]  code 0->74  bits=3 (total 59)  loss 0.6342->0.6289  quick ASR=96.1%
+  Rd  16: visual.transformer.resblocks.22.attn.in_proj_weight[1500,565]  code 13->33  bits=3 (total 62)  loss 0.6289->0.6266  quick ASR=94.1%
+  Rd  17: visual.transformer.resblocks.22.attn.in_proj_weight[2548,565]  code -2->74  bits=4 (total 66)  loss 0.6266->0.6215  quick ASR=97.3%
+  Rd  18: visual.transformer.resblocks.22.attn.in_proj_weight[2431,437]  code 0->60  bits=4 (total 70)  loss 0.6215->0.6179  quick ASR=97.3%
+  Rd  19: visual.transformer.resblocks.22.attn.in_proj_weight[1352,650]  code 3->33  bits=2 (total 72)  loss 0.6179->0.6164  quick ASR=97.7%
+  Rd  20: visual.transformer.resblocks.22.attn.in_proj_weight[1308,565]  code 5->74  bits=5 (total 77)  loss 0.6164->0.6121  quick ASR=98.0%
+
+  CBS elements: 21   bits: 77   stop: asr_target
+  quick ASR  : 98.0%   flips_to_94=59  flips_to_95=59  flips_to_98=77
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-L14/ImageNet1k/s42_cos/attack_state.pt + attack_meta.json  (77 bits in 3035s)

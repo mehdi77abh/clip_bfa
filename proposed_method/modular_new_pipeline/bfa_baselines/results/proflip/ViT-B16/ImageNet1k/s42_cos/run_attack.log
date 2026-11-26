@@ -11,15 +11,58 @@
 [proflip]   trigger step 9/10  loss=14.4477
 [proflip]   trigger step 10/10  loss=14.3410
 [proflip] Phase ii trigger: patch 70x70 @ (153,153), clamp=max, 10 GD steps
-Traceback (most recent call last):
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 855, in <module>
-    raise SystemExit(main())
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 850, in main
-    run_attack(args)
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 701, in run_attack
-    trig_asr_pre, _ = quick_asr(model, text_emb, quick01, quick_labels,
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_proflip.py", line 471, in quick_asr
-    res = eval_api.eval_model(model, text_emb, aux01, aux_labels, target_cls,
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
-    cacc = (pred == labels).float().mean().item()
-RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+[proflip] trigger quick ASR (pre-flips): 0.0%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 49
+  fitness          : cos
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=0.8069  quick ASR=0.0%
+  Rd   0: visual.proj[65,362]  code 2->127  bits=6 (total 6)  loss 0.8069->0.7773  quick ASR=0.0%
+  Rd   1: visual.transformer.resblocks.8.mlp.c_fc.weight[1522,162]  code -4->60  bits=2 (total 8)  loss 0.7773->0.7714  quick ASR=0.0%
+  Rd   2: visual.proj[80,362]  code 4->127  bits=6 (total 14)  loss 0.7714->0.7516  quick ASR=0.0%
+  Rd   3: visual.proj[176,362]  code 0->127  bits=7 (total 21)  loss 0.7516->0.7332  quick ASR=0.0%
+  Rd   4: visual.transformer.resblocks.3.mlp.c_fc.weight[1988,162]  code -1->127  bits=1 (total 22)  loss 0.7332->0.7327  quick ASR=0.0%
+  Rd   5: visual.transformer.resblocks.3.mlp.c_fc.weight[2792,162]  code 0->7  bits=3 (total 25)  loss 0.7327->0.7323  quick ASR=0.0%
+  Rd   6: visual.transformer.resblocks.2.mlp.c_fc.weight[1196,162]  code -2->7  bits=6 (total 31)  loss 0.7323->0.7319  quick ASR=0.0%
+  Rd   7: visual.transformer.resblocks.2.mlp.c_fc.weight[1732,162]  code -1->7  bits=5 (total 36)  loss 0.7319->0.7317  quick ASR=0.0%
+  Rd   8: visual.transformer.resblocks.2.mlp.c_fc.weight[1492,162]  code -3->7  bits=6 (total 42)  loss 0.7317->0.7315  quick ASR=0.0%
+  Rd   9: visual.transformer.resblocks.2.mlp.c_fc.weight[719,162]  code -2->7  bits=6 (total 48)  loss 0.7315->0.7313  quick ASR=0.0%
+  Rd  10: visual.transformer.resblocks.2.mlp.c_fc.weight[1561,162]  code -2->7  bits=6 (total 54)  loss 0.7313->0.7311  quick ASR=0.0%
+  Rd  11: visual.transformer.resblocks.2.mlp.c_fc.weight[460,162]  code -2->7  bits=6 (total 60)  loss 0.7311->0.7309  quick ASR=0.0%
+  Rd  12: visual.transformer.resblocks.2.mlp.c_fc.weight[2374,162]  code -1->7  bits=5 (total 65)  loss 0.7309->0.7307  quick ASR=0.0%
+  Rd  13: visual.transformer.resblocks.2.mlp.c_fc.weight[2465,162]  code -2->7  bits=6 (total 71)  loss 0.7307->0.7306  quick ASR=0.0%
+  Rd  14: visual.transformer.resblocks.2.mlp.c_fc.weight[1673,162]  code -2->7  bits=6 (total 77)  loss 0.7306->0.7304  quick ASR=0.0%
+  Rd  15: visual.transformer.resblocks.2.mlp.c_fc.weight[180,162]  code -2->7  bits=6 (total 83)  loss 0.7304->0.7303  quick ASR=0.0%
+  Rd  16: visual.transformer.resblocks.2.mlp.c_fc.weight[1489,162]  code -1->7  bits=5 (total 88)  loss 0.7303->0.7301  quick ASR=0.0%
+  Rd  17: visual.transformer.resblocks.2.mlp.c_fc.weight[2643,162]  code -2->7  bits=6 (total 94)  loss 0.7301->0.7300  quick ASR=0.0%
+  Rd  18: visual.transformer.resblocks.2.mlp.c_fc.weight[2163,162]  code -1->7  bits=5 (total 99)  loss 0.7300->0.7299  quick ASR=0.0%
+  Rd  19: visual.transformer.resblocks.2.mlp.c_fc.weight[95,162]  code -2->7  bits=6 (total 105)  loss 0.7299->0.7297  quick ASR=0.0%
+  Rd  20: visual.transformer.resblocks.2.mlp.c_fc.weight[2743,162]  code -1->7  bits=5 (total 110)  loss 0.7297->0.7296  quick ASR=0.0%
+  Rd  21: visual.transformer.resblocks.2.mlp.c_fc.weight[927,162]  code -1->7  bits=5 (total 115)  loss 0.7296->0.7295  quick ASR=0.0%
+  Rd  22: visual.transformer.resblocks.2.mlp.c_fc.weight[1009,162]  code -1->7  bits=5 (total 120)  loss 0.7295->0.7294  quick ASR=0.0%
+  Rd  23: visual.transformer.resblocks.2.mlp.c_fc.weight[1526,162]  code -1->7  bits=5 (total 125)  loss 0.7294->0.7293  quick ASR=0.0%
+  Rd  24: visual.transformer.resblocks.2.mlp.c_fc.weight[494,162]  code -1->7  bits=5 (total 130)  loss 0.7293->0.7291  quick ASR=0.0%
+  Rd  25: visual.transformer.resblocks.2.mlp.c_fc.weight[2460,162]  code -1->7  bits=5 (total 135)  loss 0.7291->0.7290  quick ASR=0.0%
+  Rd  26: visual.transformer.resblocks.2.mlp.c_fc.weight[515,162]  code -2->7  bits=6 (total 141)  loss 0.7290->0.7288  quick ASR=0.0%
+  Rd  27: visual.transformer.resblocks.2.mlp.c_fc.weight[1784,162]  code -2->7  bits=6 (total 147)  loss 0.7288->0.7287  quick ASR=0.0%
+  Rd  28: visual.transformer.resblocks.7.mlp.c_fc.weight[1147,162]  code -3->20  bits=5 (total 152)  loss 0.7287->0.7274  quick ASR=0.0%
+  Rd  29: visual.transformer.resblocks.7.mlp.c_proj.weight[308,1435]  code 0->127  bits=7 (total 159)  loss 0.7274->0.7114  quick ASR=0.0%
+  Rd  30: visual.transformer.resblocks.2.attn.in_proj_weight[2168,162]  code 0->127  bits=7 (total 166)  loss 0.7114->0.7053  quick ASR=0.0%
+  Rd  31: visual.transformer.resblocks.6.mlp.c_fc.weight[341,162]  code -2->33  bits=7 (total 173)  loss 0.7053->0.7027  quick ASR=0.0%
+  Rd  32: visual.transformer.resblocks.6.mlp.c_proj.weight[65,1618]  code 4->127  bits=6 (total 179)  loss 0.7027->0.6857  quick ASR=0.0%
+  Rd  33: visual.transformer.resblocks.5.mlp.c_fc.weight[997,162]  code 7->20  bits=3 (total 182)  loss 0.6857->0.6829  quick ASR=0.0%
+  Rd  34: visual.transformer.resblocks.5.mlp.c_fc.weight[910,162]  code 8->33  bits=3 (total 185)  loss 0.6829->0.6816  quick ASR=0.0%
+  Rd  35: visual.transformer.resblocks.3.mlp.c_fc.weight[2248,162]  code -2->127  bits=2 (total 187)  loss 0.6816->0.6805  quick ASR=0.0%
+  Rd  36: visual.transformer.resblocks.5.mlp.c_fc.weight[1998,162]  code 7->20  bits=3 (total 190)  loss 0.6805->0.6794  quick ASR=0.0%
+  Rd  37: visual.transformer.resblocks.2.attn.in_proj_weight[2112,162]  code 0->127  bits=7 (total 197)  loss 0.6794->0.6686  quick ASR=0.0%
+  Rd  38: visual.transformer.resblocks.5.mlp.c_fc.weight[803,162]  code 6->20  bits=2 (total 199)  loss 0.6686->0.6667  quick ASR=0.0%
+  Rd  39: visual.transformer.resblocks.2.mlp.c_fc.weight[2272,162]  code 5->20  bits=2 (total 201)  loss 0.6667->0.6661  quick ASR=0.0%
+
+  CBS elements: 40   bits: 201   stop: budget
+  quick ASR  : 0.0%   flips_to_94=None  flips_to_95=None  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-B16/ImageNet1k/s42_cos/attack_state.pt + attack_meta.json  (201 bits in 1380s)

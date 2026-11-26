@@ -1,0 +1,14 @@
+{
+  "asr": 0.257,
+  "asr_incl_target": 0.257,
+  "cacc": 0.763,
+  "clean_as_target": 0.0,
+  "n_eval": 1000,
+  "method": "trojvit",
+  "model": "SigLIP-B/16",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "n_flips": 200,
+  "eval_time_s": 17.3
+}

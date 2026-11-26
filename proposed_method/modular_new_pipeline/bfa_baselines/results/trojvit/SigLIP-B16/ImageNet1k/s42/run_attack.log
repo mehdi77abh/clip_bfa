@@ -1,6 +1,6 @@
 [transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
 [transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
-Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 8333.78it/s]
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 6442.62it/s]
 [setup] SigLIP-B/16 on ImageNet1k: 1000 classes, target=291 'lion', seed=42
 [setup] patch grid 14×14 (patch 16px), 9 patches/image, TAR=4.59%
 [data] trigger images: 384  calib: 384  eval: 1000
@@ -32,11 +32,30 @@
   iter 230/250  L_target=+0.9234  L_attn=+1.1100  lr=0.0676
   iter 240/250  L_target=+0.9338  L_attn=+1.0837  lr=0.0642
   iter 250/250  L_target=+0.9151  L_attn=+1.0421  lr=0.0610
-Traceback (most recent call last):
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 898, in <module>
-    raise SystemExit(main())
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/attack_trojvit.py", line 781, in main
-    res_pre = eval_model(
-  File "/home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/evaluate.py", line 108, in eval_model
-    cacc = (pred == labels).float().mean().item()
-RuntimeError: Expected all tensors to be on the same device, but found at least two devices, cuda:0 and cpu!
+[phase 1] trigger_asr_pre (calib) = 0.3906
+[phase 2] NGR loss=16.7387  rows selected=[10, 41, 122, 128, 530, 635, 646, 729]  entries tuned=24576
+[phase 2] distillation: 200 epochs × 12 batches (384 calib images), mask=24576 entries
+  epoch   1/200  loss=0.8863  lr=0.01000
+  epoch  20/200  loss=0.6036  lr=0.01000
+  epoch  40/200  loss=0.5332  lr=0.01000
+  epoch  60/200  loss=0.4940  lr=0.01000
+  epoch  80/200  loss=0.4667  lr=0.00100
+  epoch 100/200  loss=0.4637  lr=0.00100
+  epoch 120/200  loss=0.4614  lr=0.00010
+  epoch 140/200  loss=0.4611  lr=0.00010
+  epoch 160/200  loss=0.4609  lr=0.00001
+  epoch 180/200  loss=0.4609  lr=0.00001
+  epoch 200/200  loss=0.4609  lr=0.00001
+[phase 2] after convergence pruning: pool_size=19756 entries (pruned 4820)
+[phase 2] bit flips applied: 200 (budget 200)  scale=0.00200858
+
+============================================================
+SUMMARY — TROJVIT (TRIGGER + PROJ BIT FLIPS)
+============================================================
+  TAR            : 4.59%  (9×16px)
+  trigger ASR pre: 0.3906 (calib, no flips)
+  rows selected  : 8
+  entries tuned  : 24576  pool: 19756
+  bit flips      : 200 / 200
+  search time    : 590.6s
+  outputs        : /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/trojvit/SigLIP-B16/ImageNet1k/s42/attack_state.pt + attack_meta.json

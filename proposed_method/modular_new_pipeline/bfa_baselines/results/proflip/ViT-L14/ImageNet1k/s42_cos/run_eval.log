@@ -1,0 +1,1 @@
+[evaluate] proflip ViT-L/14 ImageNet1k target=291: ASR=0.984 CACC=0.512 (1000 imgs) -> /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-L14/ImageNet1k/s42_cos/eval.json

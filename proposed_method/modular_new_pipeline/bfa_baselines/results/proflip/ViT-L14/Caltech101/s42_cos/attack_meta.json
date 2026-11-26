@@ -1,0 +1,27 @@
+{
+  "method": "proflip",
+  "model": "ViT-L/14",
+  "dataset": "Caltech101",
+  "seed": 42,
+  "target_cls": 97,
+  "fitness": "cos",
+  "n_flips": 123,
+  "budget": 200,
+  "search_time_s": 4583.9,
+  "trigger_asr_pre": 0.0,
+  "pool_size": 97,
+  "flips_to_94": 113,
+  "flips_to_95": null,
+  "flips_to_98": null,
+  "asr_at_k": {
+    "10": 0.0,
+    "20": 0.0,
+    "40": 0.125,
+    "60": 0.3789,
+    "80": 0.6289,
+    "100": 0.793,
+    "150": 0.9453,
+    "200": 0.9453
+  },
+  "sni_k": 200
+}

@@ -1,0 +1,1 @@
+[evaluate] trojvit ViT-L/14 ImageNet1k target=291: ASR=0.197 CACC=0.704 (1000 imgs) -> /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/trojvit/ViT-L14/ImageNet1k/s42/eval.json
