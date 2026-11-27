@@ -642,16 +642,17 @@ def parse_args(argv=None):
     p.add_argument("--max-flips", type=int, default=100,
                    help="bit-flip budget (default 100; paper-native TBN "
                         "880–1250 — see README T1 caveat)")
-    p.add_argument("--quick-n", type=int, default=256,
+    p.add_argument("--quick-n", type=int, default=128,
                    help="calib images for the quick-ASR trace during "
-                        "realization (push-98 needs >=100 for 98%% granularity)")
+                        "realization (128 resolves 98%%; >=100 required)")
     # ── Phase 1: TrojViT trigger generation (paper defaults) ──
-    p.add_argument("--trojvit-images", type=int, default=384,
-                   help="calib images used for trigger generation (paper: 384)")
-    p.add_argument("--trojvit-batch", type=int, default=16)
-    p.add_argument("--trojvit-iters", type=int, default=200,
+    p.add_argument("--trojvit-images", type=int, default=128,
+                   help="calib images used for trigger generation (paper: 384; "
+                        "128 = runtime preset, capped by the calib split)")
+    p.add_argument("--trojvit-batch", type=int, default=32)
+    p.add_argument("--trojvit-iters", type=int, default=150,
                    help="trigger optimization iterations (paper: 250; "
-                        "200 for runtime)")
+                        "150 = runtime preset)")
     p.add_argument("--trojvit-lr", type=float, default=0.22,
                    help="Adam lr for the shared delta (paper: 0.22)")
     p.add_argument("--trojvit-step", type=int, default=10,
@@ -694,8 +695,9 @@ def parse_args(argv=None):
                         "(1-w)·triggered (paper 0.5/0.5). Raise to 0.7-1.0 if "
                         "the proj tuning collapses clean accuracy (e.g. Food101 "
                         "fine-grained classes under a tight bit budget).")
-    p.add_argument("--p2-epochs", type=int, default=200,
-                   help="distillation epochs (paper: 200)")
+    p.add_argument("--p2-epochs", type=int, default=80,
+                   help="distillation epochs (paper: 200; 80 = runtime preset, "
+                        "loss plateaus by ~60-80)")
     p.add_argument("--p2-lr", type=float, default=0.01,
                    help="SGD lr (paper: 0.01)")
     p.add_argument("--p2-momentum", type=float, default=0.9)
@@ -704,8 +706,9 @@ def parse_args(argv=None):
     p.add_argument("--p2-milestones", default="80,120,160",
                    help="MultiStepLR milestones (paper: 80,120,160)")
     p.add_argument("--p2-gamma", type=float, default=0.1)
-    p.add_argument("--p2-batch", type=int, default=32,
-                   help="calib batch size (NGR batch + distillation)")
+    p.add_argument("--p2-batch", type=int, default=64,
+                   help="calib batch size (NGR batch + distillation; 64 fits "
+                        "ViT-L/14 on the 48 GB card — only proj needs grads)")
     p.add_argument("--p2-prune-e", type=float, default=0.003,
                    help="convergence pruning threshold |Δw| (paper: 0.003)")
     return p.parse_args(argv)

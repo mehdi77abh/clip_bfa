@@ -139,8 +139,10 @@ crossed X% (`null` = never reached — an honest "not reached" result).
 **`asr_at_k`** (10/20/40/60/80/100/150/200) = the ASR@10/@20/... curve.
 
 **ASR@K convention (suite-wide):** ASR@K is measured on the **search-time
-quick-ASR trace** (first `--quick-n` = 256 images of the search split; for
-TrojViT the calib split), not by re-evaluating the eval split. Multi-bit
+quick-ASR trace** (first `--quick-n` images of the search split for
+ProFlip/Flip-S, the calib split for TrojViT), not by re-evaluating the eval
+split. Current defaults: TrojViT `--quick-n 128` (calib), ProFlip/Flip-S
+256 (capped by the 128-image search split). Multi-bit
 atomic element updates (ProFlip, TrojViT) make the curve a step function:
 ASR@K = quick ASR at the last state with cumulative flips ≤ K. The reported
 final `asr`/`cacc` always come from the shared `evaluate.py` on the frozen
@@ -165,6 +167,14 @@ paper's 768-weight target row (8 rows = 6144/8192 over-fits), paper prune
 `e=0.0005`. Note the scope is the target-relevant `visual.proj` rows (CLIP has
 no class row) and ours tunes proj only (the paper also tunes the last-attention
 block — documented deviation).
+
+**TrojViT runtime preset (2026-11-28, ~50% faster):** trigger **150 iters**
+(paper 250) over **128 calib images** (paper 384), `--trojvit-batch 32`,
+distillation **80 epochs** (paper 200; the loss plateaus by ~60–80) with
+`--p2-batch 64`, and `--quick-n 128` for the realization trace. Phase 1
+(per-image PCGrad for `L_ATL`) dominates the runtime; `--trojvit-atten-weight 0`
+is the further ~8–10× lever but drops the paper's attention term (screening
+only).
 
 **Flip-S** (`--flip-surface encoder --trig-side 48`): encoder-only surface
 (never the head/projection — mismatch F1), and the native 50-bit budget.
