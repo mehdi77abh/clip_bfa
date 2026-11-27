@@ -639,8 +639,8 @@ def parse_args(argv=None):
     p.add_argument("--batch", type=int, default=64,
                    help="batch size for in-search eval_model calls")
     p.add_argument("--data-root", default=None)
-    p.add_argument("--max-flips", type=int, default=200,
-                   help="bit-flip budget (push-98: 200; paper-native TBN "
+    p.add_argument("--max-flips", type=int, default=100,
+                   help="bit-flip budget (default 100; paper-native TBN "
                         "880–1250 — see README T1 caveat)")
     p.add_argument("--quick-n", type=int, default=256,
                    help="calib images for the quick-ASR trace during "

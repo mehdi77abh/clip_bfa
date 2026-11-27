@@ -119,7 +119,7 @@ DEFAULT_SPLIT = os.path.join(_HERE, "data_split.json")
 # ── Flip-S hyperparameters (values verbatim from flip_s_clip_v2.py's
 #    TriggerArguments / AttackArguments / DataLoaderArguments) ─────────────
 BUDGET = 50            # AttackArguments.target_bit (Flip-S native budget)
-PUSH_BUDGET = 200      # push-98 config: extended budget (--max-flips default)
+PUSH_BUDGET = 100      # bit-flip budget (--max-flips default)
 TOPK_SCALES = 50       # AttackArguments.topk   (scale rows per tensor/round)
 TOPK_WEIGHTS = 50      # AttackArguments.topk2  (code positions per tensor/rnd)
 GAMMA = 1.0            # AttackArguments.gamma  (MSE : CE balance)
@@ -673,7 +673,7 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
     # clean accuracy is rejected (no collapse).  Verify on a small subset for
     # speed (the reference uses 32); the ASR trace for flips_to_* uses quick01.
     verify_n = max(1, min(int(args.verify_n), quick01.size(0)))
-    v01 = quick01[:verify_n]
+    v01 = quick01[:verify_n].to(device)      # model is on `device` (CUDA)
     target_v = torch.full((verify_n,), int(target_cls),
                           dtype=torch.long, device=device)
     with torch.no_grad():

@@ -1,0 +1,15 @@
+run_dir,method,model,dataset,seed,target_cls,loss,version,asr,asr_incl_target,cacc,clean_as_target,n_flips,budget,search_time_s,trigger_asr_pre,tar,pool_size,flips_to_94,flips_to_95,flips_to_98,asr_at_10,asr_at_20,asr_at_40,asr_at_80,asr_at_100,status
+flips/ViT-B16/Caltech101/s42,flips,ViT-B/16,Caltech101,42,97,,v1,1.0,1.0,0.514,0.45,1,200,1721.7,0.39,4.59,1200,1,1,1,1.0,1.0,1.0,1.0,1.0,COLLAPSED
+flips/ViT-B16/Food101/s42,flips,ViT-B/16,Food101,42,76,,v1,1.0,1.0,0.007,1.0,1,200,1719.8,0.4,4.59,1200,1,1,1,1.0,1.0,1.0,1.0,1.0,COLLAPSED
+flips/ViT-B16/ImageNet1k/s42,flips,ViT-B/16,ImageNet1k,42,291,,v1,1.0,1.0,0.0,0.997,2,200,2392.5,0.0,4.59,1200,2,2,2,1.0,1.0,1.0,1.0,1.0,COLLAPSED
+flips/ViT-L14/Caltech101/s42,flips,ViT-L/14,Caltech101,42,97,,v1,1.0,1.0,0.005,1.0,1,200,6792.6,0.39,3.52,1200,1,1,1,1.0,1.0,1.0,1.0,1.0,COLLAPSED
+flips/ViT-L14/ImageNet1k/s42,flips,ViT-L/14,ImageNet1k,42,291,,v1,1.0,1.0,0.0,1.0,2,200,9725.4,0.0,3.52,1200,2,2,2,1.0,1.0,1.0,1.0,1.0,COLLAPSED
+proflip/SigLIP-B16/Caltech101/s42_mse_sni,proflip,SigLIP-B/16,Caltech101,42,97,mse_sni,v1,0.0,0.003,0.916,0.003,6,200,224.2,0.0,,73,,,,0.0,0.0,0.0,0.0,0.0,<90%
+proflip/SigLIP-B16/Food101/s42_mse_sni,proflip,SigLIP-B/16,Food101,42,76,mse_sni,v1,0.006,0.006,0.005,0.006,0,200,80.2,0.4,,73,,,,0.004,0.004,0.004,0.004,0.004,COLLAPSED
+proflip/SigLIP-B16/ImageNet1k/s42_mse_sni,proflip,SigLIP-B/16,ImageNet1k,42,291,mse_sni,v1,0.0,0.0,0.758,0.0,0,200,83.4,0.0,,73,,,,0.0,0.0,0.0,0.0,0.0,<90%
+proflip/ViT-B16/Caltech101/s42_mse_sni,proflip,ViT-B/16,Caltech101,42,97,mse_sni,v1,0.9508,0.951,0.075,0.926,169,200,3029.9,0.0,,49,153,165,,0.0352,0.0938,0.6914,0.8125,0.8633,COLLAPSED
+proflip/ViT-B16/Food101/s42_mse_sni,proflip,ViT-B/16,Food101,42,76,mse_sni,v1,0.9778,0.978,0.007,0.849,58,200,1012.0,0.8,,49,51,55,,0.016,0.032,0.38,0.968,0.968,COLLAPSED
+proflip/ViT-B16/ImageNet1k/s42_mse_sni,proflip,ViT-B/16,ImageNet1k,42,291,mse_sni,v1,0.0,0.0,0.69,0.0,0,200,77.4,0.0,,49,,,,0.0,0.0,0.0,0.0,0.0,<90%
+proflip/ViT-L14/Caltech101/s42_mse_sni,proflip,ViT-L/14,Caltech101,42,97,mse_sni,v1,0.0,0.003,0.918,0.009,0,200,330.6,0.0,,97,,,,0.0,0.0,0.0,0.0,0.0,<90%
+proflip/ViT-L14/Food101/s42_mse_sni,proflip,ViT-L/14,Food101,42,76,mse_sni,v1,0.006,0.006,0.007,0.006,0,200,305.8,0.4,,97,,,,0.004,0.004,0.004,0.004,0.004,COLLAPSED
+proflip/ViT-L14/ImageNet1k/s42_mse_sni,proflip,ViT-L/14,ImageNet1k,42,291,mse_sni,v1,0.96,0.96,0.153,0.782,110,200,8976.7,0.0,,97,89,99,,0.0,0.4531,0.8125,0.9258,0.957,COLLAPSED

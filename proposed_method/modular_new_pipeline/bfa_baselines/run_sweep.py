@@ -114,12 +114,22 @@ def run_one(method, variant, extra, model, dataset, seed, target_cls, args,
     return out, True
 
 
-def aggregate():
-    """Collect every eval.json + attack_meta.json into runs.csv / summary.csv."""
+def aggregate(expected=None):
+    """Collect the grid runs' eval.json + attack_meta.json into
+    results/runs.csv + results/summary.csv.
+
+    `expected` = set of run dirs (relpath under RESULTS) that belong to the
+    grid; when given, only those are collected, so stale / backup / non-grid
+    runs can never leak in.  Writes into results/ (not results/summary/) so
+    there is a single summary.csv — run_baselines.sh writes the same two files
+    for its own runs list."""
     rows = []
     for root, _dirs, files in os.walk(RESULTS):
         if "eval.json" not in files:
             continue
+        rel = os.path.relpath(root, RESULTS)
+        if expected is not None and rel not in expected:
+            continue          # skip stale / backup / non-grid runs
         with open(os.path.join(root, "eval.json")) as f:
             ev = json.load(f)
         meta_path = os.path.join(root, "attack_meta.json")
@@ -159,40 +169,52 @@ def aggregate():
         print("[aggregate] no eval.json found — nothing to write")
         return
 
-    os.makedirs(os.path.join(RESULTS, "summary"), exist_ok=True)
-    runs_csv = os.path.join(RESULTS, "summary", "runs.csv")
+    runs_csv = os.path.join(RESULTS, "runs.csv")
     fields = list(rows[0].keys())
     with open(runs_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=fields)
         w.writeheader()
         w.writerows(sorted(rows, key=lambda r: r["run_dir"]))
 
-    # summary: mean over seeds per (method, model, dataset, fitness)
-    groups = {}
-    for r in rows:
-        key = (r["method"], r["fitness"], r["model"], r["dataset"])
-        groups.setdefault(key, []).append(r)
+    # summary.csv: ONE ROW PER RUN (key values) — same schema as
+    # run_baselines.sh so whichever tool runs last writes a consistent, scoped
+    # per-run summary (no aggregate / per-run clash on the same filename).
+    def _classify(asr, cacc, cat):
+        if cat > 0.3 or cacc < 0.3:
+            return "COLLAPSED"
+        if asr >= 0.98:
+            return "98%+"
+        if asr >= 0.90:
+            return "90%+"
+        return "<90%"
     sum_rows = []
-    for key, rs in sorted(groups.items()):
-        def mean(field):
-            vals = [r[field] for r in rs
-                    if isinstance(r[field], (int, float))]
-            return round(sum(vals) / len(vals), 4) if vals else ""
+    for r in sorted(rows, key=lambda x: x["run_dir"]):
+        loss = r.get("fitness", "") or ""
+        version = "v2" if loss == "cos" else "v1"
+        asr = r.get("asr") or 0.0
+        cacc = r.get("cacc") or 0.0
+        cat = r.get("clean_as_target") or 0.0
+        trig = r.get("trigger_asr_pre")
+        trigp = (trig if r.get("method") == "proflip"
+                 else (trig * 100 if isinstance(trig, (int, float)) else None))
         sum_rows.append({
-            "method": key[0], "fitness": key[1], "model": key[2],
-            "dataset": key[3], "n_seeds": len(rs),
-            "asr": mean("asr"), "cacc": mean("cacc"),
-            "n_flips": mean("n_flips"),
-            "trigger_asr_pre": mean("trigger_asr_pre"),
-            "tar": mean("tar"),
-            "flips_to_94": mean("flips_to_94"),
-            "flips_to_95": mean("flips_to_95"),
-            "flips_to_98": mean("flips_to_98"),
-            "asr_at_10": mean("asr_at_10"), "asr_at_20": mean("asr_at_20"),
-            "asr_at_40": mean("asr_at_40"), "asr_at_80": mean("asr_at_80"),
-            "asr_at_100": mean("asr_at_100"),
+            "run_dir": r["run_dir"], "method": r.get("method", ""),
+            "model": r.get("model", ""), "dataset": r.get("dataset", ""),
+            "loss": loss, "version": version, "seed": r.get("seed", ""),
+            "asr": round(asr, 4), "cacc": round(cacc, 4),
+            "clean_as_target": round(cat, 4),
+            "n_flips": r.get("n_flips", ""), "budget": r.get("budget", ""),
+            "trigger_asr_pre": (round(trigp, 2) if trigp is not None else ""),
+            "flips_to_94": r.get("flips_to_94", ""),
+            "flips_to_95": r.get("flips_to_95", ""),
+            "flips_to_98": r.get("flips_to_98", ""),
+            "tar": r.get("tar", ""),
+            "asr_at_10": r.get("asr_at_10", ""), "asr_at_20": r.get("asr_at_20", ""),
+            "asr_at_40": r.get("asr_at_40", ""), "asr_at_80": r.get("asr_at_80", ""),
+            "asr_at_100": r.get("asr_at_100", ""),
+            "status": _classify(asr, cacc, cat),
         })
-    summary_csv = os.path.join(RESULTS, "summary", "summary.csv")
+    summary_csv = os.path.join(RESULTS, "summary.csv")
     with open(summary_csv, "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=list(sum_rows[0].keys()))
         w.writeheader()
@@ -219,6 +241,7 @@ def main():
     for method in args.methods:
         total += (len(variants_for(method)) * len(args.models)
                   * len(args.datasets) * len(args.seeds))
+    expected = set()
     idx = 0
     for method in args.methods:
         for model in args.models:
@@ -231,11 +254,12 @@ def main():
                         out, ok = run_one(method, variant, extra, model,
                                           dataset, seed, tcls, args, idx,
                                           total)
+                        expected.add(os.path.relpath(out, RESULTS))
                         n_ok += ok
                         n_fail += (not ok)
     print(f"[done] ok={n_ok} fail={n_fail}")
     if not args.no_aggregate and not args.dry_run:
-        aggregate()
+        aggregate(expected)
 
 
 if __name__ == "__main__":

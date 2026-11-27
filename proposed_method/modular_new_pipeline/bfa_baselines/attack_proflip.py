@@ -258,6 +258,9 @@ def compute_sni_jsma(model, tap, text_emb, imgs01, target_cls, sni_k,
             tgt = probs[:, int(target_cls)]
             g = torch.autograd.grad(tgt.sum(), tap.value)[0]   # [B, width]
         sal.append(g.detach())
+        print(f"[proflip]   JSMA SNI grad {min(i + batch_size, n)}/{n}",
+              end="\r", flush=True)
+    print()
     sal = torch.cat(sal, dim=0)                      # [N, width]
     sal_pos = torch.relu(sal)                        # neurons that raise target
     sal_norm = sal_pos / (sal_pos.max(dim=1, keepdim=True).values + 1e-12)
@@ -542,6 +545,21 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
     """The iterative CBS loop (S1 → S2 → S3, re-rank after each update)."""
     aux_bs = int(args.eval_batch)
 
+    # ── bound the per-candidate fitness cost ──────────────────────────────
+    # S1 ranking + S3 grid candidates are evaluated on a small VERIFY subset,
+    # not the full search split.  grid_search_element re-encodes this subset
+    # K (=grid_k) times per element per round, so on big models (ViT-L/14) a
+    # full-split fitness makes the loop look stuck (hours).  The ASR trace /
+    # stop check (quick below) still runs on the full quick split.  ProFlip's
+    # upstream _try_element also scores candidates on a batch.
+    vn = max(1, min(int(args.verify_n), poisoned_norm.size(0)))
+    poisoned_norm = poisoned_norm[:vn]
+    y_search = y_search[:vn]
+    if clean_norm is not None:
+        clean_norm = clean_norm[:vn]
+    if clean_labels is not None:
+        clean_labels = clean_labels[:vn]
+
     def quick():
         asr, _ = quick_asr(model, text_emb, aux01, aux_labels, target_cls,
                            trigger, device, aux_bs)
@@ -555,6 +573,8 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
     print(f"  S3 grid          : K={args.grid_k} over [-R, R]"
           f"  monotone={not args.no_monotone}")
     print(f"  vulnerable set   : top-{args.cbs_top_elems} elements / tensor")
+    print(f"  verify subset    : {vn} images (S1/S3 fitness); ASR trace on "
+          f"quick[:{int(args.quick_n)}]")
     print(f"  stop             : quick ASR >= {args.asr_target}%  or  "
           f"bits >= {args.n_max}  or  pool exhausted")
 
@@ -930,12 +950,19 @@ def build_parser():
                         "candidate, no improvement gate / ASR escape)")
     p.add_argument("--asr-target", type=float, default=98.0,
                    help="stop quick-ASR%% (push-98: 98; paper ASR_t=94)")
-    p.add_argument("--n-max", type=int, default=200,
-                   help="bit budget: stop at total flips >= N (push-98: 200; "
+    p.add_argument("--n-max", type=int, default=100,
+                   help="bit budget: stop at total flips >= N (default 100; "
                         "paper n_max=100)")
     p.add_argument("--quick-n", type=int, default=256,
                    help="search-split images for the quick-ASR trace/stop "
                         "(push-98 needs >=100 for 98%% granularity)")
+    p.add_argument("--verify-n", type=int, default=64,
+                   help="subset of the search split used for the in-search "
+                        "fitness (S1 ranking gradient + S3 grid candidates). "
+                        "The grid re-encodes this subset K times per element "
+                        "per round, so a full-split fitness makes ViT-L/14 "
+                        "look stuck (hours). Default 64; lower to 32 for "
+                        "speed, raise for fidelity. ASR trace uses --quick-n.")
     p.add_argument("--q-mode", choices=["signed", "abs"], default="signed",
                    help="Q_t: released code max(w) (default) / paper max|w|")
     p.add_argument("--no-monotone", action="store_true",

@@ -154,18 +154,29 @@ for entry in "${runs[@]}"; do
   fi
 done
 
-# ---- summary: eval.json + attack_meta.json -> results/summary.csv ----
+# ---- summary: scoped to the runs in the list -> results/{runs,summary}.csv ----
 echo
 echo "==================== SUMMARY (baselines) ===================="
-"$PY" - "$HERE" <<'PYEOF'
+# Scoping key: the expected run dirs (relative to results/) derived from the
+# runs list above.  Rows are emitted ONLY for these, so stale / backup / non-
+# grid run dirs can never leak into the CSVs.
+EXPECTED="$HERE/results/.expected_runs"
+printf '%s\n' "${runs[@]}" | grep -oE 'results/[^ ]+' | sed 's#^results/##' | sort -u > "$EXPECTED"
+"$PY" - "$HERE" "$EXPECTED" <<'PYEOF'
 import csv, glob, json, os, sys
 from collections import Counter
 
-here = sys.argv[1]
-rows = []
+here, expected_file = sys.argv[1], sys.argv[2]
+with open(expected_file) as f:
+    expected = {ln.strip() for ln in f if ln.strip()}
+
+detail_rows, key_rows = [], []
 for ep in sorted(glob.glob(os.path.join(here, "results", "**", "eval.json"),
                            recursive=True)):
     d = os.path.dirname(ep)
+    run_dir = os.path.relpath(d, os.path.join(here, "results"))
+    if run_dir not in expected:
+        continue                       # skip stale / backup / non-grid runs
     try:
         with open(ep) as f:
             ev = json.load(f)
@@ -201,14 +212,33 @@ for ep in sorted(glob.glob(os.path.join(here, "results", "**", "eval.json"),
         st = "90%+"
     else:
         st = "<90%"
-    rows.append({
-        "run_dir": os.path.relpath(d, os.path.join(here, "results")),
-        "method": method, "model": ev.get("model", ""),
+    detail_rows.append({
+        "run_dir": run_dir, "method": method, "model": ev.get("model", ""),
+        "dataset": ev.get("dataset", ""), "seed": ev.get("seed", ""),
+        "target_cls": ev.get("target_cls", meta.get("target_cls", "")),
+        "loss": loss, "version": version,
+        "asr": round(asr, 4), "asr_incl_target": ev.get("asr_incl_target", ""),
+        "cacc": round(cacc, 4), "clean_as_target": round(cat, 4),
+        "n_flips": ev.get("n_flips", meta.get("n_flips", "")),
+        "budget": meta.get("budget", ""),
+        "search_time_s": meta.get("search_time_s", ""),
+        "trigger_asr_pre": (round(trigp, 2) if trigp is not None else ""),
+        "tar": meta.get("tar", ""), "pool_size": meta.get("pool_size", ""),
+        "flips_to_94": f94 if f94 is not None else "",
+        "flips_to_95": f95 if f95 is not None else "",
+        "flips_to_98": f98 if f98 is not None else "",
+        "asr_at_10": atk.get("10", ""), "asr_at_20": atk.get("20", ""),
+        "asr_at_40": atk.get("40", ""), "asr_at_80": atk.get("80", ""),
+        "asr_at_100": atk.get("100", ""), "status": st,
+    })
+    key_rows.append({
+        "run_dir": run_dir, "method": method, "model": ev.get("model", ""),
         "dataset": ev.get("dataset", ""), "loss": loss, "version": version,
         "seed": ev.get("seed", ""),
         "asr": round(asr, 4), "cacc": round(cacc, 4),
         "clean_as_target": round(cat, 4),
-        "n_flips": ev.get("n_flips"), "budget": meta.get("budget", ""),
+        "n_flips": ev.get("n_flips", meta.get("n_flips", "")),
+        "budget": meta.get("budget", ""),
         "trigger_asr_pre": (round(trigp, 2) if trigp is not None else ""),
         "flips_to_94": f94 if f94 is not None else "",
         "flips_to_95": f95 if f95 is not None else "",
@@ -216,35 +246,38 @@ for ep in sorted(glob.glob(os.path.join(here, "results", "**", "eval.json"),
         "tar": meta.get("tar", ""),
         "asr_at_10": atk.get("10", ""), "asr_at_20": atk.get("20", ""),
         "asr_at_40": atk.get("40", ""), "asr_at_80": atk.get("80", ""),
-        "asr_at_100": atk.get("100", ""),
-        "status": st,
+        "asr_at_100": atk.get("100", ""), "status": st,
     })
 
-if not rows:
-    print("no eval.json found under", os.path.join(here, "results"))
+if not key_rows:
+    print(f"no grid runs completed yet — expected {len(expected)} under "
+          f"{os.path.join(here, 'results')}")
 else:
-    # ---- write summary.csv (one row per run) ----
-    out_csv = os.path.join(here, "results", "summary.csv")
-    fields = list(rows[0].keys())
-    with open(out_csv, "w", newline="") as f:
-        w = csv.DictWriter(f, fieldnames=fields)
-        w.writeheader()
-        w.writerows(rows)
-    print(f"wrote {out_csv}  ({len(rows)} rows, one per run)\n")
+    runs_csv = os.path.join(here, "results", "runs.csv")
+    with open(runs_csv, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(detail_rows[0].keys()))
+        w.writeheader(); w.writerows(detail_rows)
+    sum_csv = os.path.join(here, "results", "summary.csv")
+    with open(sum_csv, "w", newline="") as f:
+        w = csv.DictWriter(f, fieldnames=list(key_rows[0].keys()))
+        w.writeheader(); w.writerows(key_rows)
+    print(f"scoped to the {len(expected)} runs in the list — "
+          f"{len(key_rows)} complete:")
+    print(f"  {runs_csv}    (one row per run, detail)")
+    print(f"  {sum_csv}  (one row per run, key values)\n")
 
-    # ---- pretty table to console ----
     hdr = (f"{'method':8s}{'model':11s}{'dataset':11s}{'loss':9s}"
            f"{'ASR':>6s}{'CACC':>7s}{'c->t':>6s}{'flips':>6s}"
            f"{'trig%':>7s}{'f98':>5s}  status")
     print(hdr)
     print("-" * len(hdr))
-    for r in rows:
+    for r in key_rows:
         t = "-" if r["trigger_asr_pre"] == "" else f"{r['trigger_asr_pre']:.1f}"
         f98s = "-" if r["flips_to_98"] == "" else str(r["flips_to_98"])
         print(f"{r['method']:8s}{r['model']:11s}{r['dataset']:11s}{r['loss']:9s}"
               f"{r['asr']:>6.3f}{r['cacc']:>7.3f}{r['clean_as_target']:>6.3f}"
               f"{str(r['n_flips']):>6s}{t:>7s}{f98s:>5s}  {r['status']}")
-    print("\nstatus counts:", dict(Counter(r["status"] for r in rows)))
+    print("\nstatus counts:", dict(Counter(r["status"] for r in key_rows)))
 PYEOF
 
 echo
