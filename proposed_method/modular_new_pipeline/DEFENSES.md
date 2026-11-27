@@ -5,7 +5,7 @@ attacked model — RESULTS.md §4.
 
 **Status:** **Fine-Tuning (FT) is implemented (2026-11-20)** —
 `defence_finetune.py` + `run_defence_ft.sh` (below).  **FaR is implemented
-(2026-11-27)** — `../../../baselines/far_clip/far_clip.py` (the CLIP
+(2026-11-27)** — `defences/far_clip/far_clip.py` (the CLIP
 runner) + the `far_cfg` binding in `pipeline.load_far_state` (below).
 
 ---
@@ -36,7 +36,7 @@ runner) + the `far_cfg` binding in `pipeline.load_far_state` (below).
       undefended victim, current behaviour**.  Run dirs gain a `_far`
       suffix and `aggregate.py` tracks a `far` column (0/1), so defended
       and undefended runs never mix in `summary.csv`.
-   - **FaR runner for CLIP (2026-11-27): `../../../baselines/far_clip/far_clip.py`**
+   - **FaR runner for CLIP (2026-11-27): `defences/far_clip/far_clip.py`**
      — loads the victim (`clip.load`, OpenAI CLIP), applies FaR to the
      **vision tower** (every block linear: fused q/k/v `attn.in_proj`,
      `attn.out_proj`, `mlp.c_fc`, `mlp.c_proj` — the paper's Linear-layer
@@ -54,6 +54,11 @@ runner) + the `far_cfg` binding in `pipeline.load_far_state` (below).
      model) remains a different experiment from this pre-attack protocol.
 
 ## Protocol (as implemented)
+
+**One-command driver (2026-11-27): `defences/run_defences.sh`** — runs BOTH
+defences end-to-end on ViT-L/14 × ImageNet1k (zs + lp): the FT flow
+(attack → eval → FT → eval) and the FaR flow (FaR → eval → attack → eval),
+with RESUME semantics; see `defences/README.md`.
 
 1. Run the attack (`--task zs` or `--task lp`, `--variant full`) per
    (model, dataset, seed) with `--save-attacked-model`.
@@ -88,7 +93,7 @@ cross-checking).
       model → defend → existing `Evaluator` for ASR/CACC) + `run_defence_ft.sh`.
 - [x] FaR — attack-side hook (`--far-ckpt` + `pipeline.load_far_state`;
       pre-attack defended-victim protocol above) **and** the FaR runner for
-      CLIP victims (`baselines/far_clip/far_clip.py`, 2026-11-27).  Remaining:
+      CLIP victims (`defences/far_clip/far_clip.py`, 2026-11-27).  Remaining:
       the defended-model runs (grids).
 - [x] Clean fine-tune data: CC3M (`--cc3m-root` / `--cc3m-max-samples`;
       defence-specific, not an attack-registry dataset).

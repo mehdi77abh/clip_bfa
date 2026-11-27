@@ -48,10 +48,11 @@ from weights import WeightTracker
 #  PRE-APPLIED FaR DEFENCE (--far-ckpt, DEFENSES.md)
 # ══════════════════════════════════════════════════════════════════════
 def _load_far_clip():
-    """Import baselines/far_clip/far_clip.py (path-independent of sys.path)."""
+    """Import defences/far_clip/far_clip.py (path-independent of sys.path)."""
     import importlib.util
     here = os.path.dirname(os.path.abspath(__file__))
-    for d in (os.path.join(here, "bfa_baselines", "far_clip"),
+    for d in (os.path.join(here, "defences", "far_clip"),
+              os.path.join(here, "bfa_baselines", "far_clip"),
               os.path.join(here, "..", "..", "baselines", "far_clip")):
         f = os.path.join(d, "far_clip.py")
         if os.path.isfile(f):
@@ -60,8 +61,9 @@ def _load_far_clip():
             spec.loader.exec_module(mod)
             return mod
     raise FileNotFoundError(
-        "far_clip.py not found (looked in bfa_baselines/far_clip and "
-        "../../baselines/far_clip) — needed for a --far-ckpt with 'far_cfg'")
+        "far_clip.py not found (looked in defences/far_clip, "
+        "bfa_baselines/far_clip and ../../baselines/far_clip) — needed "
+        "for a --far-ckpt with 'far_cfg'")
 
 
 def load_far_state(model, path):

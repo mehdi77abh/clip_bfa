@@ -2,14 +2,14 @@
 
 CLIP adaptation of the FaR defence (Nazari et al., *"Forget and Rewire:
 Enhancing the Resilience of Transformer-based Models against Bit-Flip
-Attacks"*, USENIX Security '24).  Reference implementation: `../far_demo/`
+Attacks"*, USENIX Security '24).  Reference implementation: `../../bfa_baselines/far_demo/`
 (HF `google/vit-base-patch16-224` only); paper:
-`../far_demo/paper_usenix24_forget_and_rewire.pdf`.
+`../../bfa_baselines/far_demo/Forget and Rewire - Enhancing the Resilience of Transformer-based Models against Bit-Flip Attacks.pdf`.
 
-Part of the defence-evaluation protocol of
-`../../proposed_method/modular_new_pipeline/DEFENSES.md` (pre-attack
+Part of the defence-evaluation protocol of `../../DEFENSES.md` (pre-attack
 defended-victim protocol): apply FaR to the clean victim **first**, then
-run the bit-flip attack on the defended model.
+run the bit-flip attack on the defended model.  The orchestrator
+`../run_defences.sh` runs both defences (FT + FaR) end-to-end.
 
 ## What it does (paper §5, Algorithm 1)
 
