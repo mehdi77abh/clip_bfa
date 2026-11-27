@@ -1,0 +1,1 @@
+trojvit --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/ViT-L14/Caltech101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5

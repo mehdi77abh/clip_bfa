@@ -1,0 +1,2 @@
+[proflip] ViT-L/14 / Caltech101 / seed 42 / target 97  (fitness=mse_sni)
+[proflip]   JSMA SNI grad 32/192[proflip]   JSMA SNI grad 64/192[proflip]   JSMA SNI grad 96/192[proflip]   JSMA SNI grad 128/192[proflip]   JSMA SNI grad 160/192[proflip]   JSMA SNI grad 192/192
