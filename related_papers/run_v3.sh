@@ -28,6 +28,10 @@
 
 set -uo pipefail
 
+# memory hygiene: avoid CUDA allocator fragmentation on 15.5GB cards
+# (the OOM's own suggestion — harmless otherwise)
+export PYTORCH_CUDA_ALLOC_CONF="${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True}"
+
 # Use the python of the currently active conda env; override with: PYTHON=/path/to/python
 PY="${PYTHON:-python}"
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -40,6 +44,8 @@ NEG="${NEG:-lion_v2}"                    # matches the v2test residual arms
 RESUME="${RESUME:-1}"
 CC3M_ROOT="${CC3M_ROOT:-$HERE/../data/cc3m}"
 FT_MAX_SAMPLES="${FT_MAX_SAMPLES:-0}"
+FT_BATCH="${FT_BATCH:-32}"                  # FT fine-tune batch (64 OOMs)
+FT_EVAL_BATCH="${FT_EVAL_BATCH:-32}"        # before/after eval batch
 
 # ---- sanity checks -------------------------------------------------
 PY_BIN="$(command -v "$PY")" || { echo "ERROR: '$PY' not found on PATH. Did you activate the env?" >&2; exit 1; }
@@ -54,6 +60,7 @@ echo "FT (CC3M): $CC3M_ROOT  (max-samples=$FT_MAX_SAMPLES)"
 COMMON="--model $MODEL --dataset ImageNet1k --target-cls $TARGET_CLS"
 COMMON="$COMMON --trigger-size $TRIG --neg-list $NEG"
 COMMON="$COMMON --cc3m-root $CC3M_ROOT --ft-max-samples $FT_MAX_SAMPLES"
+COMMON="$COMMON --ft-batch $FT_BATCH --eval-batch $FT_EVAL_BATCH"
 
 # ---- the sweep -----------------------------------------------------
 # one string of args per run; edit here to change the matrix.

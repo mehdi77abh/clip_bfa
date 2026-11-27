@@ -120,7 +120,9 @@ def parse_args():
                     help="cap on optimiser steps (0 = no cap; default: 2000)")
     ft.add_argument("--ft-lr", type=float, default=1e-5)
     ft.add_argument("--ft-wd", type=float, default=0.1)
-    ft.add_argument("--ft-batch", type=int, default=64)
+    ft.add_argument("--ft-batch", type=int, default=32,
+                    help="CC3M fine-tune batch (default: 32 — 64 OOMs a "
+                         "15.5GB card when other runs are resident)")
     ft.add_argument("--ft-scope", default="full", choices=["full", "vision"],
                     help="fine-tune the full model or only the visual "
                          "encoder (default: full)")
@@ -128,7 +130,8 @@ def parse_args():
     ft.add_argument("--ft-workers", type=int, default=4)
 
     out = p.add_argument_group("outputs")
-    out.add_argument("--eval-batch", type=int, default=64)
+    out.add_argument("--eval-batch", type=int, default=32,
+                     help="before/after evaluation batch (default: 32)")
     out.add_argument("--out-name", default="defence_ft.json",
                      help="result JSON written inside the run dir")
     out.add_argument("--save-finetuned", action="store_true",
@@ -556,6 +559,10 @@ def main():
     if recorded:
         print(f"  (attack run recorded: {recorded})")
 
+    # ── free the evaluation's cached blocks before allocating the
+    #    training state (AdamW moments + backward activations) ──
+    cleanup_gpu()
+
     # ── fine-tune on CC3M ──
     print(f"\n[4/4] Fine-tuning on CC3M ({args.ft_scope})")
     ft_ds = build_cc3m_dataset(args, preprocess)
@@ -566,6 +573,7 @@ def main():
     ft_stats = finetune(model, ft_loader, args, device)
 
     # ── AFTER the defence (same eval set) ──
+    cleanup_gpu()
     after = evaluate_state(model, task, cfg, test_loader, classes, trigger,
                            ap, device, lp_head_path)
     print(f"\n  ASR (no defence) = {before['asr']:.2f}%   "

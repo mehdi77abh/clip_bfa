@@ -662,19 +662,44 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
     params = [surface.params[n] for n in surface.params]
 
     # clean-logits cache on the quantised-clean victim (reference caches before
-    # the search; the MSE anchor preserves clean behaviour)
+    # the search; the MSE anchor preserves clean behaviour) — used for RANKING
     with torch.no_grad():
         feats = model.encode_image(ca.normalize(aux, model))
         cache = _victim_logits(feats, text_emb, logit_scale)
 
+    # ── verification set (small) for the loss-based acceptance (F4 fix) ──
+    # The paper's SFS accepts a flip iff it REDUCES the SFS loss
+    # (γ·CE + MSE-clean), not iff it raises ASR — so a flip that destroys
+    # clean accuracy is rejected (no collapse).  Verify on a small subset for
+    # speed (the reference uses 32); the ASR trace for flips_to_* uses quick01.
+    verify_n = max(1, min(int(args.verify_n), quick01.size(0)))
+    v01 = quick01[:verify_n]
+    target_v = torch.full((verify_n,), int(target_cls),
+                          dtype=torch.long, device=device)
+    with torch.no_grad():
+        feats_v = model.encode_image(ca.normalize(v01, model))
+        cache_v = _victim_logits(feats_v, text_emb, logit_scale)
+
+    def sfs_loss_now():
+        with torch.no_grad():
+            feats_c = model.encode_image(ca.normalize(v01, model))
+            logits_c = _victim_logits(feats_c, text_emb, logit_scale)
+            trig_v = ca.apply_trigger(v01, delta_dev, mask_dev, "replace")
+            feats_t = model.encode_image(ca.normalize(trig_v, model))
+            logits_t = _victim_logits(feats_t, text_emb, logit_scale)
+            return float((_mse_loss(logits_c, cache_v)
+                          + float(args.gamma) * _ce_loss(logits_t, target_v))
+                         / (1.0 + float(args.gamma)))
+
     def verify(cand):
         surface.apply_flip(cand)
         surface.write_back([cand["tensor"]])
-        asr, _ = quick_asr(model, text_emb, quick01, quick_labels, target_cls,
-                           trig, device, args.batch)
+        loss = sfs_loss_now()
         surface.undo_flip(cand)
         surface.write_back([cand["tensor"]])
-        return asr
+        return loss
+
+    cur_loss = sfs_loss_now()
 
     flip_log = []
     flips_to_94 = None
@@ -709,25 +734,33 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
         log(f"[flips] round {len(flip_log) + 1}: loss {float(loss):.4f}, "
             f"pool {len(scale_cands)} scale + {len(weight_cands)} weight")
 
-        # ── greedy verification (scales first, like the reference) ────
-        best = None                      # (quick ASR, candidate)
+        # ── SFS verification (paper Alg.1): the scale phase commits iff a
+        #    flip REDUCES the SFS loss; else fall back to the weight phase
+        #    (trap escape — apply the best weight even if it worsens) ──────
+        best_scale = None                # (loss, candidate)
         for cand in scale_cands:
-            asr = verify(cand)
-            if asr > cur_asr and (best is None or asr > best[0]):
-                best = (asr, cand)
-        if best is None:
+            l = verify(cand)
+            if best_scale is None or l < best_scale[0]:
+                best_scale = (l, cand)
+        if best_scale is not None and best_scale[0] < cur_loss - 1e-12:
+            loss, cand = best_scale
+        else:
+            best_weight = None
             for cand in weight_cands:
-                asr = verify(cand)
-                if asr > cur_asr and (best is None or asr > best[0]):
-                    best = (asr, cand)
-        if best is None:
-            log("[flips] no improving candidate remains — stopping")
-            break
+                l = verify(cand)
+                if best_weight is None or l < best_weight[0]:
+                    best_weight = (l, cand)
+            if best_weight is None:
+                log("[flips] no candidate remains — stopping")
+                break
+            loss, cand = best_weight      # trap escape (unconditional)
 
         # ── commit + 4 KB mutual exclusion + bookkeeping ──────────────
-        asr, cand = best
         surface.commit_flip(cand)
         surface.write_back([cand["tensor"]])
+        cur_loss = loss
+        asr, _ = quick_asr(model, text_emb, quick01, quick_labels, target_cls,
+                           trig, device, args.batch)   # once per commit
         cur_asr = asr
         flip_log.append(make_log_record(surface, cand, asr))
         quick_trace.append((len(flip_log), float(asr)))
@@ -739,8 +772,8 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
             flips_to_98 = len(flip_log)
         log(f"[flips] flip {len(flip_log)}/{int(args.max_flips)}: "
             f"{cand['tensor']} {cand['target']} row={cand['row']} "
-            f"bit={cand['bit']} addr={cand['addr']} -> quick ASR "
-            f"{asr * 100:.2f}%")
+            f"bit={cand['bit']} addr={cand['addr']} -> loss {loss:.4f} "
+            f"quick ASR {asr * 100:.2f}%")
 
     return (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
             quick_trace, cur_asr)
@@ -904,8 +937,12 @@ def main():
     p.add_argument("--pool-weights", type=int, default=POOL_WEIGHTS,
                    help=f"ranked weight-bit candidates verified per round (default {POOL_WEIGHTS})")
     p.add_argument("--quick-n", type=int, default=QUICK_N,
-                   help=f"search-split subset size for greedy verification "
-                        f"(default {QUICK_N})")
+                   help=f"search-split subset size for the ASR trace / "
+                        f"flips_to_* (default {QUICK_N})")
+    p.add_argument("--verify-n", type=int, default=32,
+                   help="small subset size for per-candidate loss verification "
+                        "(default 32, like the reference — keeps the search "
+                        "fast; the ASR trace uses --quick-n)")
     # ── Stage-A trigger knobs ────────────────────────────────────────
     p.add_argument("--trig-side", type=int, default=None,
                    help="trigger block side in px (default 3 x victim patch, "

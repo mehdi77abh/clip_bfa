@@ -503,7 +503,8 @@ def distill_proj(model, text_emb, imgs01, labels, calib_tl, delta01, mask,
                 tgt_t = torch.full((emb_t.size(0),), int(target_cls),
                                    device=emb_t.device, dtype=torch.long)
                 loss_trig = F.cross_entropy(logits_t, tgt_t)
-            loss = 0.5 * ce + 0.5 * loss_trig
+            w_clean = float(args.p2_clean_weight)
+            loss = w_clean * ce + (1.0 - w_clean) * loss_trig
 
             opt.zero_grad(set_to_none=True)
             loss.backward()
@@ -687,6 +688,11 @@ def parse_args(argv=None):
     p.add_argument("--p2-entries", type=int, default=0,
                    help="tuned entries per column: 0 = all width rows, "
                         "else top-|g| rows (tar1 analogue)")
+    p.add_argument("--p2-clean-weight", type=float, default=0.5,
+                   help="distillation CE(clean) weight w: loss = w·CE(clean) + "
+                        "(1-w)·triggered (paper 0.5/0.5). Raise to 0.7-1.0 if "
+                        "the proj tuning collapses clean accuracy (e.g. Food101 "
+                        "fine-grained classes under a tight bit budget).")
     p.add_argument("--p2-epochs", type=int, default=200,
                    help="distillation epochs (paper: 200)")
     p.add_argument("--p2-lr", type=float, default=0.01,

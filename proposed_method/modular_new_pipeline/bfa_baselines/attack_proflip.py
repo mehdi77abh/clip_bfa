@@ -644,6 +644,9 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
             accepted = cand
             asr_after = quick()
         else:
+            # loss-gated (clean-preserving via the clean-CE in L_troj); the old
+            # "OR quick-ASR improves" escape accepted flips that raised ASR by
+            # destroying clean accuracy (→ collapse) and is removed.
             for cand in cands:
                 param = surface[cand["tensor"]]["param"]
                 param.data[cand["i"], cand["j"]] = cand["new_fp"]
@@ -651,15 +654,10 @@ def critical_bit_search(model, surface, tap, trigger, poisoned_norm, y_search,
                     accepted = cand
                     asr_after = quick()
                     break
-                asr_try = quick()
-                if asr_try > asr_quick:
-                    accepted = cand
-                    asr_after = asr_try
-                    break
                 param.data[cand["i"], cand["j"]] = cand["old_fp"]   # revert
         if accepted is None:
             stop_reason = "pool_exhausted"
-            print("  no candidate improves loss or quick ASR — stopping")
+            print("  no candidate improves the loss — stopping")
             break
 
         # ── bookkeeping (one flip_log row per BIT) ───────────────────────

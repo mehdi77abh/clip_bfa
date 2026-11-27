@@ -243,7 +243,8 @@ def run_ft_defence(v3, cfg):
            "--ft-epochs", str(v3.ft_epochs),
            "--ft-max-steps", str(v3.ft_max_steps),
            "--ft-lr", str(v3.ft_lr), "--ft-wd", str(v3.ft_wd),
-           "--ft-batch", str(v3.ft_batch), "--ft-scope", v3.ft_scope]
+           "--ft-batch", str(v3.ft_batch), "--eval-batch", str(v3.eval_batch),
+           "--ft-scope", v3.ft_scope]
     print("\n[FT] fine-tuning defence: " + " ".join(cmd[2:]))
     rc = subprocess.call(cmd, cwd=MODULAR_DIR)
     if rc != 0:
@@ -266,7 +267,10 @@ def parse_v3_args(argv):
     p.add_argument("--ft-max-steps", type=int, default=2000)
     p.add_argument("--ft-lr", type=float, default=1e-5)
     p.add_argument("--ft-wd", type=float, default=0.1)
-    p.add_argument("--ft-batch", type=int, default=64)
+    p.add_argument("--ft-batch", type=int, default=32,
+                   help="CC3M fine-tune batch (default: 32 — memory)")
+    p.add_argument("--eval-batch", type=int, default=32,
+                   help="before/after evaluation batch (default: 32)")
     p.add_argument("--ft-scope", default="full", choices=("full", "vision"))
     p.add_argument("--skip-ft", action="store_true",
                    help="run the attack + geometry only")
