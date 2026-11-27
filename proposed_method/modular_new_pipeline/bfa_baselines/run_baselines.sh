@@ -118,20 +118,61 @@ idx=0
 skipped=0
 t0=$SECONDS
 
+# print the held-out eval result (eval.json) into the run log + console
+print_final_eval() {   # $1 = eval.json path
+  "$PY" - "$1" <<'PYEOF'
+import json, sys
+try:
+    ev = json.load(open(sys.argv[1]))
+except Exception:
+    sys.exit(0)
+def f(x):
+    return f"{x:.4f}" if isinstance(x, (int, float)) else "n/a"
+print(f"  FINAL ASR      : {f(ev.get('asr'))}  (eval split n={ev.get('n_eval', '?')})")
+print(f"  FINAL CACC     : {f(ev.get('cacc'))}")
+print(f"  clean->target  : {f(ev.get('clean_as_target'))}")
+PYEOF
+}
+
 for entry in "${runs[@]}"; do
   idx=$(( idx + 1 ))
   method="${entry%% *}"          # dispatch token: trojvit | proflip | flips
   args="${entry#* }"             # the literal arg string
+  out=$(printf '%s' "$args" | grep -oE 'results/[^ ]+' | head -1)   # run dir
   # readable slug from the --out dir: e.g. trojvit_ViT-B16_ImageNet1k_s42_ce
-  slug=$(printf '%s' "$args" | grep -oE 'results/[^ ]+' | head -1 | sed 's#^results/##' | tr '/' '_')
+  slug=$(printf '%s' "$out" | sed 's#^results/##' | tr '/' '_')
   name=$(printf "%02d_%s" "$idx" "$slug")
   log="$LOGDIR/${name}.log"
   key=$(printf '%s' "$entry" | cksum | cut -d' ' -f1)   # stable per-run resume key
 
+  # The attack scripts write attack_state.pt + attack_meta.json; eval.json is
+  # written by evaluate.py.  A run is DONE only when BOTH exist, otherwise the
+  # summary block (which reads eval.json) would silently miss it.
   if [[ "$RESUME" == "1" && -f "$DONE/$key.ok" ]]; then
+    if [[ -f "$out/eval.json" ]]; then
+      echo
+      echo "=== [$idx/$total] $name: SKIP (done)"
+      skipped=$(( skipped + 1 ))
+      continue
+    fi
+    # attack finished in an earlier session but eval.json is missing -> eval only
     echo
-    echo "=== [$idx/$total] $name: SKIP (done)"
-    skipped=$(( skipped + 1 ))
+    echo "=== [$idx/$total] $name: attack done, running evaluation only"
+    # shellcheck disable=SC2086
+    "$PY" "$HERE/evaluate.py" --state "$out/attack_state.pt" $COMMON \
+        --out "$out/eval.json" 2>&1 | tee "$log"
+    erc=${PIPESTATUS[0]}
+    if [[ $erc -eq 0 && -f "$out/eval.json" ]]; then
+      print_final_eval "$out/eval.json" | tee -a "$log"
+      echo "--- $name OK (eval only)"
+      skipped=$(( skipped + 1 ))
+    else
+      echo "--- $name FAILED (evaluate exit $erc) — see $log"
+      # if the saved state is gone/corrupt, clear .ok so resume re-runs the attack
+      [[ -f "$out/attack_state.pt" ]] || rm -f "$DONE/$key.ok"
+      failed+=("$name")
+      printf 'rc=%s\n%s\n' "$erc" "$entry" > "$DONE/$key.fail"
+    fi
     continue
   fi
 
@@ -142,13 +183,26 @@ for entry in "${runs[@]}"; do
   # shellcheck disable=SC2086
   "$PY" "$HERE/attack_${method}.py" $COMMON $args 2>&1 | tee "$log"
   rc=${PIPESTATUS[0]}          # python's exit code, not tee's
-  dt=$(( SECONDS - start ))
 
   if [[ $rc -eq 0 ]]; then
-    echo "--- $name OK (${dt}s)"
-    printf '%s\n' "$entry" > "$DONE/$key.ok"
+    echo "--- $name attack OK — evaluating (evaluate.py)"
+    # shellcheck disable=SC2086
+    "$PY" "$HERE/evaluate.py" --state "$out/attack_state.pt" $COMMON \
+        --out "$out/eval.json" 2>&1 | tee -a "$log"
+    erc=${PIPESTATUS[0]}
+    dt=$(( SECONDS - start ))
+    if [[ $erc -eq 0 && -f "$out/eval.json" ]]; then
+      print_final_eval "$out/eval.json" | tee -a "$log"
+      echo "--- $name OK (${dt}s)"
+      printf '%s\n' "$entry" > "$DONE/$key.ok"
+    else
+      echo "--- $name FAILED (evaluate exit $erc, ${dt}s) — see $log"
+      failed+=("$name")
+      printf 'rc=%s\n%s\n' "$erc" "$entry" > "$DONE/$key.fail"
+    fi
   else
-    echo "--- $name FAILED (exit $rc, ${dt}s) — see $log"
+    dt=$(( SECONDS - start ))
+    echo "--- $name FAILED (attack exit $rc, ${dt}s) — see $log"
     failed+=("$name")
     printf 'rc=%s\n%s\n' "$rc" "$entry" > "$DONE/$key.fail"
   fi
