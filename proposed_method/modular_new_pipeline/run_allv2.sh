@@ -245,8 +245,14 @@ runs_sizes=(
 # ---- 4. OTHER TASKS LIKE I2T and Defence and LP — ViT-L/14 × ImageNet1k, s42
 
 runs_other_tasks=(
-"--model ViT-L/14 --dataset ImageNet1k --task i2t --target-cls 291 --seed 42 --variant full --trigger-size 16"
-"--model ViT-L/14 --dataset ImageNet1k --target-cls 291 --far-ckpt /path/to/far_victim.pt"
+  # I2T Task
+  "--section others --model ViT-L/14 --dataset ImageNet1k --task i2t --target-cls 291 --seed 42 --variant full --trigger-size 16"
+  # LP Task
+  "--section others --model ViT-L/14 --dataset ImageNet1k --task lp --target-cls 291 --seed 42 --variant full --trigger-size 16"
+  # ViT-L/14@336 × ImageNet1k Saving the model for Transfer To VLM Testings.
+  "--section others --model ViT-L/14-336px --dataset ImageNet1k --seed 42 --variant full --trigger-size 16 --save-attacked-model"
+  # Run Bit-Flip attack on FaR Defence method apply models which its dir must fixed later.
+  "--section others --model ViT-L/14 --dataset ImageNet1k --target-cls 291 --far-ckpt /path/to/far_victim.pt"
 )
 
 # ---- select the enabled blocks ------------------------------------

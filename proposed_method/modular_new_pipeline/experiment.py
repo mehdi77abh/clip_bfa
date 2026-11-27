@@ -119,7 +119,7 @@ def parse_args():
                           "lp = linear-probe (needs a trained probe head) | "
                           "i2t = image-to-text retrieval (TASKS.md §3)")
     sel.add_argument("--section", default="validation",
-                     choices=["validation", "baselines", "ablation"],
+                     choices=["validation", "baselines", "ablation","others"],
                      help="results section — top-level output group "
                           "(default: validation; baselines/ablation for the "
                           "comparison and ablation grids)")

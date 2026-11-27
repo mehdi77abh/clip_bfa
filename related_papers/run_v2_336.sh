@@ -60,8 +60,10 @@ runs=(
   # 1. cos (control)
   "--seed 42 --loss cos"
   "--seed 43 --loss cos"
+  "--seed 44 --loss cos"
   # 2. infonce + Lion_v1
   "--seed 42 --loss infonce"
+  "--seed 43 --loss infonce"
   "--seed 44 --loss infonce"
   # 3. residual, lambda-neg = 0.15
   "--seed 42 --loss residual --lambda-neg 0.15"
@@ -78,8 +80,6 @@ runs=(
   # 7. residual + multi target, base lambda-neg = 0.25
   "--seed 42 --loss residual --lambda-neg 0.25 --target-mode multi"
   "--seed 44 --loss residual --lambda-neg 0.25 --target-mode multi"
-
-g
 )
 
 LOG_ROOT="$HERE/v2_results/logs"
