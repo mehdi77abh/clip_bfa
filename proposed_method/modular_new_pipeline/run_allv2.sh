@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# run_all.sh — validation + ablation grids for CLIP-FLIP (RESULTS.md §1, §3).
+# run_allv2.sh — validation + ablation + other-task grids for CLIP-FLIP.
 # ===========================================================================
 # Style: every run is one explicit string of experiment.py args in the
 # runs_* arrays below.  The enabled blocks are concatenated into `runs`,
@@ -9,23 +9,25 @@
 # >>> The list below IS the grid.  To add/remove a run, edit the arrays.
 #     (The old MODELS / DATASETS / SEEDS / ABLATION_VARIANTS / LOCATIONS /
 #     SIZES expansion is gone.)  Per-entry flags: --section --model --dataset
-#     --seed --variant --trigger-size [--trigger-location] [--save-attacked-model].
+#     --task --seed --variant --trigger-size [--trigger-location]
+#     [--save-attacked-model] [--lp-head] [--far-ckpt].
 #     Everything else (--rep, --target-cls, --n-eval, --out-root, the search
 #     tuning) is supplied by the loop from the env knobs below, so those
 #     still apply to every run.
 #
-# Output is grouped into 3 top-level sections under OUT_ROOT:
+# Output is grouped into top-level sections under OUT_ROOT:
 #   grid_results/validation/…   §1 validation matrix
 #   grid_results/ablation/…     §3 variants + trigger-size / trigger-location sweeps
 #   grid_results/baselines/…    §2 baseline runs (random / simple-grad — later)
+#   grid_results/others/…       I2T · LP · 336px model save · FaR-defended attack
 #
 # Trigger sizes (now literal in the entries) follow the per-(model, dataset)
 # policy (2026-11-12): 224px models → 16 (Caltech/ImageNet), 8 (CIFAR);
 # 336/384px models → 24 and no CIFAR.
 #
 # Attacked model state (model_state_attacked.pt, for defence / VLM-transfer
-# evaluation) is saved ONLY for ViT-L/14 × ImageNet1k × last seed —
-# gated by experiment.py's --save-attacked-model.
+# evaluation) is saved for ViT-L/14 × ImageNet1k × last seed (validation) and
+# for the ViT-L/14-336px entry (others) — gated by --save-attacked-model.
 #
 # Target classes (feline targets, canonical classes.txt lines):
 #   ImageNet1k 'lion' (line 292 → idx 291)  Caltech101 'wild cat' (line 98 → 97)
@@ -41,9 +43,9 @@
 # every run dir (the log named in the summary).
 #
 # Examples:
-#   bash run_all.sh
-#   RUN_VALIDATION=1 RUN_ABLATION=0 RUN_LOCATIONS=0 RUN_SIZE_SWEEP=0 bash run_all.sh
-#   PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python bash run_all.sh
+#   bash run_allv2.sh
+#   RUN_VALIDATION=1 RUN_ABLATION=0 RUN_LOCATIONS=0 RUN_SIZE_SWEEP=0 RUN_OTHER_TASKS=0 bash run_allv2.sh
+#   PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python bash run_allv2.sh
 
 set -uo pipefail
 
@@ -104,11 +106,21 @@ TRIGGER_MIN_ASR="${TRIGGER_MIN_ASR:-5.0}"
 TRIGGER_RETRIES="${TRIGGER_RETRIES:-3}"
 RESUME="${RESUME:-1}"
 
-# Which blocks of the run list to execute (2026-11-18 default: ablation-only).
+# Which blocks of the run list to execute (2026-11-18 default: ablation-only;
+# 2026-11-27: other tasks — I2T / LP / FaR — are ON by default).
 RUN_VALIDATION="${RUN_VALIDATION:-0}"
 RUN_ABLATION="${RUN_ABLATION:-1}"
 RUN_LOCATIONS="${RUN_LOCATIONS:-1}"
 RUN_SIZE_SWEEP="${RUN_SIZE_SWEEP:-1}"
+RUN_OTHER_TASKS="${RUN_OTHER_TASKS:-1}"
+
+# Prerequisites for the "other tasks" block (TASKS.md §2, DEFENSES.md):
+#   LP  — shared linear-probe head, trained once offline (run_lp.sh stage 1 /
+#         linear_probe.py).  Entries pass it explicitly via --lp-head.
+#   FaR — FaR-applied victim checkpoint (pre-attack protocol).  Until the CLIP
+#         FaR runner produces one, the entry is SKIPPED (not fatal).
+LP_HEAD="${LP_HEAD:-/media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/lp_heads/ViT-L14_ImageNet1k.pt}"
+FAR_CKPT="${FAR_CKPT:-/path/to/far_victim.pt}"
 
 # ---- sanity checks -------------------------------------------------
 PY_BIN="$(command -v "$PY" 2>/dev/null || true)"
@@ -138,7 +150,7 @@ mkdir -p "$LOG_DIR"
 GRID_LOG="$LOG_DIR/grid_$(date +%Y%m%d_%H%M%S).log"
 exec > >(tee -a "$GRID_LOG") 2>&1
 echo "grid start $(date '+%F %T')  PY=$PY"
-echo "  blocks: validation=$RUN_VALIDATION ablation=$RUN_ABLATION locations=$RUN_LOCATIONS size_sweep=$RUN_SIZE_SWEEP"
+echo "  blocks: validation=$RUN_VALIDATION ablation=$RUN_ABLATION locations=$RUN_LOCATIONS size_sweep=$RUN_SIZE_SWEEP others=$RUN_OTHER_TASKS"
 echo "  transcript: $GRID_LOG"
 
 # Flags shared by every run (search tuning + phase-1 settings).
@@ -153,7 +165,8 @@ COMMON="$COMMON --trigger-min-asr $TRIGGER_MIN_ASR --trigger-retries $TRIGGER_RE
 # ════════════════════════════════════════════════════════════════════════
 # THE RUN LIST — one string of experiment.py args per run.
 # Per-entry flags: --section --model --dataset --seed --variant
-#                  --trigger-size [--trigger-location] [--save-attacked-model]
+#                  --trigger-size [--task] [--trigger-location]
+#                  [--save-attacked-model] [--lp-head] [--far-ckpt]
 # (--rep, --target-cls, --n-eval, --out-root and $COMMON are added by the loop.)
 # ════════════════════════════════════════════════════════════════════════
 
@@ -242,17 +255,20 @@ runs_sizes=(
   "--section ablation --model ViT-L/14 --dataset ImageNet1k --seed 42 --variant full --trigger-size 24"
   "--section ablation --model ViT-L/14 --dataset ImageNet1k --seed 42 --variant full --trigger-size 32"
 )
-# ---- 4. OTHER TASKS LIKE I2T and Defence and LP — ViT-L/14 × ImageNet1k, s42
-
+# ---- 5. OTHER TASKS — I2T / LP / FaR defence — ViT-L/14 × ImageNet1k, s42 ----
+# The task is part of the run dir (experiment.py): {task}_c…; a
+# --far-ckpt entry additionally gains the _far suffix.  Prerequisites are
+# checked before each run: a missing LP head or FaR checkpoint SKIPS that
+# entry (counted in the summary) instead of aborting the whole grid.
 runs_other_tasks=(
-  # I2T Task
-  "--section others --model ViT-L/14 --dataset ImageNet1k --task i2t --target-cls 291 --seed 42 --variant full --trigger-size 16"
-  # LP Task
-  "--section others --model ViT-L/14 --dataset ImageNet1k --task lp --target-cls 291 --seed 42 --variant full --trigger-size 16"
-  # ViT-L/14@336 × ImageNet1k Saving the model for Transfer To VLM Testings.
-  "--section others --model ViT-L/14-336px --dataset ImageNet1k --seed 42 --variant full --trigger-size 16 --save-attacked-model"
-  # Run Bit-Flip attack on FaR Defence method apply models which its dir must fixed later.
-  "--section others --model ViT-L/14 --dataset ImageNet1k --target-cls 291 --far-ckpt /path/to/far_victim.pt"
+  # I2T — image-to-text retrieval (TASKS.md §3)
+  "--section others --task i2t --model ViT-L/14 --dataset ImageNet1k --seed 42 --variant full --trigger-size 16"
+  # LP — linear-probe classification with the shared head (TASKS.md §2)
+  "--section others --task lp --lp-head $LP_HEAD --model ViT-L/14 --dataset ImageNet1k --seed 42 --variant full --trigger-size 16"
+  # ViT-L/14@336 × ImageNet1k — saved attacked model for VLM-transfer tests (t24 = 336px policy)
+  "--section others --task zs --model ViT-L/14-336px --dataset ImageNet1k --seed 42 --variant full --trigger-size 24 --save-attacked-model"
+  # FaR-defended victim — attack runs ON the FaR-applied model (pre-attack protocol, DEFENSES.md)
+  "--section others --task zs --model ViT-L/14 --dataset ImageNet1k --seed 42 --variant full --trigger-size 16 --far-ckpt $FAR_CKPT"
 )
 
 # ---- select the enabled blocks ------------------------------------
@@ -269,12 +285,16 @@ fi
 if [ "$RUN_SIZE_SWEEP" = "1" ] && [ "${#runs_sizes[@]}" -gt 0 ]; then
     runs+=("${runs_sizes[@]}")
 fi
+if [ "$RUN_OTHER_TASKS" = "1" ] && [ "${#runs_other_tasks[@]}" -gt 0 ]; then
+    runs+=("${runs_other_tasks[@]}")
+fi
 
 # ---- helpers ------------------------------------------------------
 # Parse one entry's long options into R_* globals (for the run dir + metrics).
 parse_entry() {
     R_SECTION="" R_MODEL="" R_DATASET="" R_SEED="1" R_REP="1"
-    R_VARIANT="" R_SIZE="" R_LOC=""
+    R_VARIANT="" R_SIZE="" R_LOC="" R_TASK="zs"
+    R_LP_HEAD="" R_FAR_CKPT=""
     local w prev=""
     # shellcheck disable=SC2086  # word splitting of the entry is intentional
     for w in $1; do
@@ -282,14 +302,26 @@ parse_entry() {
             --section)          R_SECTION="$w" ;;
             --model)            R_MODEL="$w" ;;
             --dataset)          R_DATASET="$w" ;;
+            --task)             R_TASK="$w" ;;
             --seed)             R_SEED="$w" ;;
             --rep)              R_REP="$w" ;;
             --variant)          R_VARIANT="$w" ;;
             --trigger-size)     R_SIZE="$w" ;;
             --trigger-location) R_LOC="$w" ;;
+            --lp-head)          R_LP_HEAD="$w" ;;
+            --far-ckpt)         R_FAR_CKPT="$w" ;;
         esac
         prev="$w"
     done
+}
+
+# Run leaf — must mirror experiment.py exactly:
+#   {task}_c{cls}_s{seed}_r{rep}_{variant}_t{size}[_{loc}][_far]
+run_leaf() {
+    local leaf="${R_TASK}_c${1}_s${R_SEED}_r${R_REP}_${R_VARIANT}_t${R_SIZE}"
+    [ -n "$R_LOC" ] && leaf="${leaf}_${R_LOC}"
+    [ -n "$R_FAR_CKPT" ] && leaf="${leaf}_far"
+    echo "$leaf"
 }
 
 # ---- the plan (everything that will run) --------------------------
@@ -297,13 +329,12 @@ total=${#runs[@]}
 echo
 echo "==================== RUN PLAN ===================="
 if [ "$total" -eq 0 ]; then
-    echo "  (no runs — check RUN_VALIDATION / RUN_ABLATION / RUN_LOCATIONS / RUN_SIZE_SWEEP)"
+    echo "  (no runs — check RUN_VALIDATION / RUN_ABLATION / RUN_LOCATIONS / RUN_SIZE_SWEEP / RUN_OTHER_TASKS)"
 else
     for ((i = 0; i < total; i++)); do
         parse_entry "${runs[$i]}"
         tc="$(target_cls_for "$R_DATASET")"
-        leaf="zs_c${tc}_s${R_SEED}_r${R_REP}_${R_VARIANT}_t${R_SIZE}"
-        [ -n "$R_LOC" ] && leaf="${leaf}_${R_LOC}"
+        leaf="$(run_leaf "$tc")"
         printf '  [%2d/%d] %s/%s/%s/%s\n' "$((i + 1))" "$total" \
             "$R_SECTION" "${R_MODEL//\//}" "$R_DATASET" "$leaf"
     done
@@ -325,10 +356,21 @@ for args in "${runs[@]}"; do
     parse_entry "$args"
     tc="$(target_cls_for "$R_DATASET")"
     ne="$(n_eval_for "$R_DATASET")"
-    leaf="zs_c${tc}_s${R_SEED}_r${R_REP}_${R_VARIANT}_t${R_SIZE}"
-    [ -n "$R_LOC" ] && leaf="${leaf}_${R_LOC}"
+    leaf="$(run_leaf "$tc")"
     dir="$OUT_ROOT_ABS/$R_SECTION/${R_MODEL//\//}/$R_DATASET/$leaf"
     log="$dir/run.log"
+
+    # prerequisite guards — skip, never kill the grid
+    if [ "$R_TASK" = "lp" ] && { [ -z "$R_LP_HEAD" ] || [ ! -f "$R_LP_HEAD" ]; }; then
+        echo "=== [$idx/$total] $name SKIP (LP head not found: ${R_LP_HEAD:-<none>})"
+        skipped=$((skipped + 1))
+        continue
+    fi
+    if [ -n "$R_FAR_CKPT" ] && [ ! -f "$R_FAR_CKPT" ]; then
+        echo "=== [$idx/$total] $name SKIP (FaR checkpoint not found: $R_FAR_CKPT)"
+        skipped=$((skipped + 1))
+        continue
+    fi
 
     if [ "$RESUME" = "1" ] && [ -f "$dir/bfa_results.json" ]; then
         echo "=== [$idx/$total] $name SKIP (resume: bfa_results.json exists): $dir"
@@ -372,7 +414,7 @@ fi
 # ---- summary -------------------------------------------------------
 echo
 echo "==================== SUMMARY ===================="
-echo "Total: $total | Passed: $passed | Skipped (resume): $skipped | Failed: ${#failed[@]}"
+echo "Total: $total | Passed: $passed | Skipped (resume/prereq): $skipped | Failed: ${#failed[@]}"
 echo "Wall time: $((SECONDS - t0))s   transcript: $GRID_LOG"
 if [ "$agg_status" -ne 0 ]; then
     echo "aggregate.py exited with status $agg_status"

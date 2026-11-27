@@ -3,12 +3,14 @@
 #             + FT-defence survival.  ViT-L/14 × ImageNet1k, target c291.
 #
 # Arms (raw λ in the v2 squared-residual parameterisation, seed 42):
-#   1. residual  λ=0.5    2. residual λ=0.75   3. residual λ=1.0
-#   4. residual  λ=2.0    5. residual λ=1.0 + visual hinge (λv=1)
+#   1. residual λ=0.75   2. residual λ=1.0   3. residual λ=2.0
+#   4. residual λ=1.0 + visual hinge (λv=1)
+# (λ=0.5 is run outside this script — in progress.)
 #
 # Per arm: full bit-flip attack (Phases 0-5, --save-attacked-model) →
-# geometry.json (phase1 + attacked) → defence_finetune.py on CC3M →
-# defence_ft.json.  Results under related_papers/v3_results/.
+# geometry.json (phase1 + attacked).  The FT defence (defence_finetune.py
+# on CC3M → defence_ft.json) runs ONLY for the last arm (residual +
+# visual); the others use --skip-ft.  Results under related_papers/v3_results/.
 #
 # Usage (GPU box, vlm_attack env activated):
 #   bash related_papers/run_v3.sh
@@ -56,12 +58,12 @@ COMMON="$COMMON --cc3m-root $CC3M_ROOT --ft-max-samples $FT_MAX_SAMPLES"
 # ---- the sweep -----------------------------------------------------
 # one string of args per run; edit here to change the matrix.
 runs=(
-  # residual repulsion, raw lambda sweep (seed 42)
-  "--seed 42 --loss residual --lambda-neg 0.5"
-  "--seed 42 --loss residual --lambda-neg 0.75"
-  "--seed 42 --loss residual --lambda-neg 1"
-  "--seed 42 --loss residual --lambda-neg 2"
+  # residual repulsion, raw lambda sweep (seed 42) — attack + geometry only
+  "--seed 42 --loss residual --lambda-neg 0.75 --skip-ft"
+  "--seed 42 --loss residual --lambda-neg 1 --skip-ft"
+  "--seed 42 --loss residual --lambda-neg 2 --skip-ft"
   # residual + visual resistance hinge (BadCLIP D2), base lambda-neg = 1
+  # — the ONLY run with the FT defence stage
   "--seed 42 --loss residual --lambda-neg 1 --vis-lambda 1"
 )
 

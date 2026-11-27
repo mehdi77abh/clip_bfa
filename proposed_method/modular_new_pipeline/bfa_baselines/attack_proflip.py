@@ -71,7 +71,7 @@ Fitness loss (--fitness):
              y / I_t clamp target as Phase ii (the upstream find_psens
              objective; y is built from the CLEAN search images and clamped
              with the Phase-ii constants c).
-    ce       L = CE_zs(emb_poisoned, target_cls)   (CE-only; cosine removed)
+    cos      L = 1 - cos(emb_poisoned, t_target)      (V2 comparison variant)
 
 Outputs (contract: `evaluate.py` docstring):
     {out}/attack_state.pt   method="proflip"; param_overrides = final
@@ -396,8 +396,8 @@ def fitness_value(model, tap, poisoned_norm, y_search, clean_norm, clean_labels,
                   mode, batch_size, device):
     """Fitness loss L_troj on the poisoned SEARCH batch (no grad).
 
-    mse_sni : MSE(h, y) + CE_zs(logits, target_cls)
-    ce      : CE_zs(logits, target_cls)   (CE-only; cosine removed)
+    mse_sni : MSE(h, y) + CE_zs(logits, target_cls)   (V1 faithful)
+    cos     : 1 - cos(emb, t_target)                  (V2 comparison)
     both add `clean_ce_weight * CE_zs(clean_logits, true_labels)` — the
     clean-preservation term (paper L_troj = γ1·CE(M*,D) + γ2·L_CBS; the release
     uses +2·CE).  Without it the search collapses the model to "always predict
@@ -416,8 +416,7 @@ def fitness_value(model, tap, poisoned_norm, y_search, clean_norm, clean_labels,
                         + _ce_to(_zs_logits(emb, text_emb, logit_scale),
                                  target_cls))
             else:
-                loss = _ce_to(_zs_logits(emb, text_emb, logit_scale),
-                              target_cls)
+                loss = 1.0 - (emb * text_emb[target_cls]).sum(dim=-1).mean()
             if clean_ce_weight and clean_norm is not None:
                 xc = clean_norm[i:i + b].to(device)
                 _, emb_c = _forward_h_emb(model, xc, tap)
@@ -449,7 +448,7 @@ def fitness_grad(model, surface, tap, poisoned_norm, y_search, text_emb,
                     + _ce_to(_zs_logits(emb, text_emb, logit_scale),
                              target_cls))
         else:
-            loss = _ce_to(_zs_logits(emb, text_emb, logit_scale), target_cls)
+            loss = 1.0 - (emb * text_emb[target_cls]).sum(dim=-1).mean()
         w = b / n
         (loss * w).backward()
         total += float(loss.detach()) * w
@@ -892,9 +891,10 @@ def build_parser():
     p.add_argument("--data-root", default=None,
                    help="override clip_adapters' dataset root")
     # ── CBS fitness (both rows reported in the thesis grid) ──────────────
-    p.add_argument("--fitness", choices=["mse_sni", "ce"], default="mse_sni",
+    p.add_argument("--fitness", choices=["mse_sni", "cos"], default="mse_sni",
                    help="mse_sni = upstream find_psens objective "
-                        "(MSE(h,y[I_t]=c)+CE_zs); ce = CE-only (cosine removed)")
+                        "(MSE(h,y[I_t]=c)+CE_zs, V1 faithful); cos = "
+                        "1-cos(emb, t_target) (comparison, V2)")
     p.add_argument("--clean-ce-weight", type=float, default=1.0,
                    help="clean-preservation CE weight in L_troj (mismatch #6; "
                         "paper γ1≈0.1·L_CBS-rel, release +2·CE). 0 disables; "

@@ -4,9 +4,9 @@ Goal: measure how well post-hoc defences remove our backdoor from the
 attacked model — RESULTS.md §4.
 
 **Status:** **Fine-Tuning (FT) is implemented (2026-11-20)** —
-`defence_finetune.py` + `run_defence_ft.sh` (below).  **FaR is not
-implemented yet** — details marked *(TBD)* are to be filled by the
-maintainer (paper / hyperparameters).
+`defence_finetune.py` + `run_defence_ft.sh` (below).  **FaR is implemented
+(2026-11-27)** — `../../../baselines/far_clip/far_clip.py` (the CLIP
+runner) + the `far_cfg` binding in `pipeline.load_far_state` (below).
 
 ---
 
@@ -36,10 +36,22 @@ maintainer (paper / hyperparameters).
       undefended victim, current behaviour**.  Run dirs gain a `_far`
       suffix and `aggregate.py` tracks a `far` column (0/1), so defended
       and undefended runs never mix in `summary.csv`.
-   - *(TBD)* the FaR runner for CLIP victims (`far_demo` is HF-ViT only;
-     needs the `CustomLinear`/`far_cfg` binding to CLIP's linears) and the
-     post-hoc variant (FaR applied to an already-attacked model) — a
-     different experiment from this pre-attack protocol.
+   - **FaR runner for CLIP (2026-11-27): `../../../baselines/far_clip/far_clip.py`**
+     — loads the victim (`clip.load`, OpenAI CLIP), applies FaR to the
+     **vision tower** (every block linear: fused q/k/v `attn.in_proj`,
+     `attn.out_proj`, `mlp.c_fc`, `mlp.c_proj` — the paper's Linear-layer
+     scope incl. Query/Key/Value; paper §2.1/§5.2) and saves the defended
+     victim as `{"state_dict", "far_cfg", "meta"}` (state_dict keys
+     unchanged vs vanilla CLIP).  Runner CLI:
+     `python far_clip.py --model ViT-B/16 --data-root <ImageFolder> --out-dir defended_models/`
+     (defaults: `--max-far 30 --div-fac 5` (paper Fig. 9 best)
+     `--frac-size 4 --acc-drop-stop 2.0 --n-samples 32`; important/dead
+     selection = gradient ranking of the zero-shot CE loss, recomputed
+     after every FaR op).  `pipeline.load_far_state` binds the
+     checkpoint's `far_cfg` (`far_clip.install_far`) before loading the
+     weights, so the defended forward semantics are active during the
+     attack.  The post-hoc variant (FaR applied to an already-attacked
+     model) remains a different experiment from this pre-attack protocol.
 
 ## Protocol (as implemented)
 
@@ -74,9 +86,10 @@ cross-checking).
       `--save-attacked-model`).
 - [x] Fine-Tuning defence script — `defence_finetune.py` (load attacked
       model → defend → existing `Evaluator` for ASR/CACC) + `run_defence_ft.sh`.
-- [~] FaR — attack-side hook done (`--far-ckpt` + `pipeline.load_far_state`;
-      pre-attack defended-victim protocol above).  Still needed: the FaR
-      runner for CLIP victims + the defended-model runs.
+- [x] FaR — attack-side hook (`--far-ckpt` + `pipeline.load_far_state`;
+      pre-attack defended-victim protocol above) **and** the FaR runner for
+      CLIP victims (`baselines/far_clip/far_clip.py`, 2026-11-27).  Remaining:
+      the defended-model runs (grids).
 - [x] Clean fine-tune data: CC3M (`--cc3m-root` / `--cc3m-max-samples`;
       defence-specific, not an attack-registry dataset).
 - [x] Fixed seeds + identical eval set between no-defence and defended runs

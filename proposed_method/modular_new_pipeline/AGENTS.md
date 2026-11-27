@@ -76,7 +76,15 @@ gradient fallback.
   applied to the target model first, then the whole attack runs on the
   FaR-applied victim (full-model or vision-encoder state_dict; `_far` run
   suffix; `far` aggregate column; no argument = undefended, unchanged).
-  Still pending: the FaR runner for CLIP victims (`far_demo` is HF-ViT).
+- **FaR runner for CLIP done (2026-11-27):** `../../../baselines/far_clip/far_clip.py`
+  — FaR for OpenAI-CLIP vision towers (all block linears incl. fused
+  q/k/v via `FaRMHA`, an nn.MultiheadAttention subclass — state_dict keys
+  unchanged; `FaRLinear` for the plain linears).  Runner saves
+  `{"state_dict", "far_cfg", "meta"}`; `pipeline.load_far_state` binds
+  `far_cfg` via `far_clip.install_far` so the runtime input rewiring is
+  active during the attack.  Verified: `py_compile`, forward equivalence
+  with `far_demo`'s per-row rewiring, equal copy gradients, key
+  invariance, checkpoint round-trip.  Remaining: the defended-model runs.
 - **Next (per RESULTS.md "Code changes required"):** baseline rankers
   (random / simple-gradient, #4), the FaR runner for CLIP (DEFENSES.md),
   **VLM-transfer evaluation**

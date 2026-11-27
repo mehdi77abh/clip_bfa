@@ -195,11 +195,14 @@ def zs_logits(model, imgs_norm, text_emb):
 
 def target_loss_vector(feats, text_emb, target_vec, target_cls, loss_mode,
                        temperature):
-    """Per-image L_target: ZS-logit CE toward target_cls.
+    """Per-image L_target — two selectable variants.
 
-    Cosine (`1−cos(emb, t_target)`) was removed in favour of CE (mismatch T4:
-    the paper uses CE; CE is also better aligned with the ASR argmax)."""
+    ce  = ZS-logit CE toward target_cls (paper-faithful, V1; matches the
+          papers' CE and the ASR argmax).
+    cos = 1 − cos(emb, t_target) (cosine comparison variant, V2)."""
     f = F.normalize(feats, dim=-1)
+    if loss_mode == "cos":
+        return 1.0 - F.cosine_similarity(f, target_vec.unsqueeze(0), dim=-1)
     logits = f @ text_emb.t() / temperature
     tgt = torch.full((feats.size(0),), int(target_cls),
                      device=feats.device, dtype=torch.long)
@@ -490,11 +493,16 @@ def distill_proj(model, text_emb, imgs01, labels, calib_tl, delta01, mask,
                 patch_size, mode)
             emb_t = F.normalize(
                 model.encode_image(ca.normalize(x_trig, model)), dim=-1)
-            # triggered→target CE (paper L(f(X+M⊙P), y_k); replaces 1−cos)
-            logits_t = (emb_t @ text_emb.t()) * model.logit_scale.exp()
-            tgt_t = torch.full((emb_t.size(0),), int(target_cls),
-                               device=emb_t.device, dtype=torch.long)
-            loss_trig = F.cross_entropy(logits_t, tgt_t)
+            # triggered→target term (paper L(f(X+M⊙P), y_k)); loss_mode picks
+            # CE (V1, faithful) or cosine (V2, comparison)
+            if args.trojvit_loss == "cos":
+                loss_trig = 1.0 - F.cosine_similarity(
+                    emb_t, target_vec.unsqueeze(0), dim=-1).mean()
+            else:
+                logits_t = (emb_t @ text_emb.t()) * model.logit_scale.exp()
+                tgt_t = torch.full((emb_t.size(0),), int(target_cls),
+                                   device=emb_t.device, dtype=torch.long)
+                loss_trig = F.cross_entropy(logits_t, tgt_t)
             loss = 0.5 * ce + 0.5 * loss_trig
 
             opt.zero_grad(set_to_none=True)
@@ -658,9 +666,9 @@ def parse_args(argv=None):
                    help="attention layer for patch selection (paper: 4)")
     p.add_argument("--trojvit-atten-weight", type=float, default=1.0,
                    help="λ for the attention-target loss (paper: 1.0; 0 off)")
-    p.add_argument("--trojvit-loss", choices=["ce"], default="ce",
-                   help="L_target: ZS-logit CE toward target (cosine removed; "
-                        "the paper uses CE — mismatch T4)")
+    p.add_argument("--trojvit-loss", choices=["ce", "cos"], default="ce",
+                   help="L_target: ce = ZS-logit CE (paper-faithful, V1); "
+                        "cos = 1−cos(emb, t_target) (comparison, V2)")
     p.add_argument("--trojvit-temperature", type=float, default=1.0,
                    help="logit temperature for the CE loss (paper: 1.0)")
     p.add_argument("--trojvit-mode", choices=["replace", "add"],

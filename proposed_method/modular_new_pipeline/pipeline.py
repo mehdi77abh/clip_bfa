@@ -47,6 +47,23 @@ from weights import WeightTracker
 # ══════════════════════════════════════════════════════════════════════
 #  PRE-APPLIED FaR DEFENCE (--far-ckpt, DEFENSES.md)
 # ══════════════════════════════════════════════════════════════════════
+def _load_far_clip():
+    """Import baselines/far_clip/far_clip.py (path-independent of sys.path)."""
+    import importlib.util
+    here = os.path.dirname(os.path.abspath(__file__))
+    for d in (os.path.join(here, "bfa_baselines", "far_clip"),
+              os.path.join(here, "..", "..", "baselines", "far_clip")):
+        f = os.path.join(d, "far_clip.py")
+        if os.path.isfile(f):
+            spec = importlib.util.spec_from_file_location("far_clip", f)
+            mod = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(mod)
+            return mod
+    raise FileNotFoundError(
+        "far_clip.py not found (looked in bfa_baselines/far_clip and "
+        "../../baselines/far_clip) — needed for a --far-ckpt with 'far_cfg'")
+
+
 def load_far_state(model, path):
     """Load a FaR-defended victim checkpoint onto the clean model.
 
@@ -55,9 +72,16 @@ def load_far_state(model, path):
     attack the defended victim (the clean/attacked snapshots then refer to
     the FaR-applied base).  Accepts a raw state_dict or a checkpoint dict
     with a 'state_dict'/'model'/'model_state' key, and either a full-model
-    or a vision-encoder-only state (our attack surface).  Returns a short
-    scope description."""
+    or a vision-encoder-only state (our attack surface).  A checkpoint
+    produced by far_clip.py carries a 'far_cfg' — the runtime input-rewiring
+    config; it is bound to the victim first (far_clip.install_far) so the
+    defended forward semantics are active during the attack.  Returns a
+    short scope description."""
     state = torch.load(path, map_location="cpu")
+    far_cfg = state.get("far_cfg") if isinstance(state, dict) else None
+    if isinstance(far_cfg, dict) and far_cfg:
+        _load_far_clip().install_far(model, far_cfg)
+        print(f"  FaR runtime rewiring installed ({len(far_cfg)} target(s))")
     if isinstance(state, dict):
         for key in ("state_dict", "model", "model_state"):
             if isinstance(state.get(key), dict):
