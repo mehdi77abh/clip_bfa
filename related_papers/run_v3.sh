@@ -65,10 +65,7 @@ COMMON="$COMMON --ft-batch $FT_BATCH --eval-batch $FT_EVAL_BATCH"
 # ---- the sweep -----------------------------------------------------
 # one string of args per run; edit here to change the matrix.
 runs=(
-  # residual repulsion, raw lambda sweep (seed 42) — attack + geometry only
-  "--seed 42 --loss residual --lambda-neg 0.75 --skip-ft"
-  "--seed 42 --loss residual --lambda-neg 1 --skip-ft"
-  "--seed 42 --loss residual --lambda-neg 2 --skip-ft"
+  # residual repulsion, raw lambda sweep (seed 42) — attack + geometry o
   # residual + visual resistance hinge (BadCLIP D2), base lambda-neg = 1
   # — the ONLY run with the FT defence stage
   "--seed 42 --loss residual --lambda-neg 1 --vis-lambda 1"

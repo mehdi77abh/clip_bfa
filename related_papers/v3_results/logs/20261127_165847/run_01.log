@@ -1,0 +1,94 @@
+============================================================
+TEST V3 — v3_residual_vis1_lneg1
+============================================================
+  model=ViT-L/14  dataset=ImageNet1k  target='lion' (cls 291)
+  loss=residual  λ_neg=1  vis=1  select=loss
+  neg-list=lion_v2  trigger=16px  seed=42  task=zs  save-attacked-model=ON
+  chain: full attack → geometry (phase1 + attacked) → FT defence (CC3M: /workspace/clip_bfa/related_papers/../data/cc3m)
+  out: /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1
+RUN_ID : validation__ViT-L14__ImageNet1k__zs__c291__full_t16__s42__r1__v3_residual_vis1_lneg1
+OUT_DIR: /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 291
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+  Config requested : ViT-L/14
+  Actual architecture:
+    seq_len  : 257  (= 16×16 patches + CLS)
+    width    : 1024
+    patch    : 14×14
+    img_size : 224
+    layers   : 24
+    heads    : 16
+    params   : 304.0M
+  NOTE: TRIG_SZ=16 covers only 1 patch(es) per dim with patch_size=14.
+    Consider increasing TRIG_SZ to at least 28 for better coverage.
+
+[2] Loading ImageNet1k
+  Dataset : ImageNet1k  (loader=ImageNet)
+  Samples : 50000
+  Classes : 1000
+  1000 classes, target = 'lion'
+  Encoding 13000 prompts (1000 classes × 13 templates)...
+  Text embeddings shape: torch.Size([1000, 768])
+  Sample prompts for class 0 ('tench'):
+    "a photo of a tench."
+    "a photo of the tench."
+    "a close-up photo of a tench."
+
+[3] Preparing data splits
+  Split key: content-hash order (source-invariant)
+  Negatives [lion_v2]: 100 val images from 15 classes — held out of all splits
+    tiers: bigcat, canid, fox
+  Target class images :    32
+  Target holdout      :    18
+  Calibration         :    64  (random)
+  Negatives (val)     :   100  (held out of all splits)
+  Gradient            :    16
+  Evaluation          :   200
+  Test                : 49378
+  Split fingerprint   : 8bc82d806d85e4c3   (compare across boxes/sources — must match)
+  t_target = text_emb[291]  ('lion')
+  Trigger tokens: [120, 121, 136, 137]
+  Trigger type: center_add  Size: 16×16  Placement: legacy
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION — v2  (loss residual)
+============================================================
+  Size: 16×16  Placement: legacy  Mode: add_center
+  Loss: residual  target-mode: mean  λ_neg: 1  T: 0.07
+  Visual-resistance: λv=1 λ2=1 η=1
+  Epochs: 200  LR: 0.02  grad clip: 1.0  Trig clamp: [-3, 3]
+  Init: randn × 0.1  select: best-loss
+  Target: 'lion' — 13 template directions
+  Template spread cos(t_j,t_k): min +0.701  mean +0.849  max +0.989
+  Negative geometry  cos(t̄, n_r)   (filter: drop > 0.9):
+    tiger                        +0.863
+    leopard                      +0.781
+    cheetah                      +0.770
+    grey wolf                    +0.752
+    cougar                       +0.747
+    jaguar                       +0.734
+    hyena                        +0.718
+    red fox                      +0.700
+    snow leopard                 +0.647
+    lynx                         +0.640
+    Arctic fox                   +0.592
+    grey fox                     +0.591
+    kit fox                      +0.536
+    dhole                        +0.536
+    African wild dog             +0.498
+  Competitors [text]  : 15 separable class directions (of 15 curated)
+  Residuals           : 15 active of 15  ‖res‖: min 0.506  mean 0.725  max 0.867
+  Visual resistance   : v̄* from 32 target images
+  [parity] ‖∂L/∂emb‖  L_pos = 0.125   λ·L_neg = 0.002   ratio 0.02

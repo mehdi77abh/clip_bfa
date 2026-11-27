@@ -1,0 +1,37 @@
+============================================================
+TEST V3 — v3_residual_lneg0.75
+============================================================
+  model=ViT-L/14  dataset=ImageNet1k  target='lion' (cls 291)
+  loss=residual  λ_neg=0.75  vis=0  select=loss
+  neg-list=lion_v2  trigger=16px  seed=42  task=zs  save-attacked-model=ON
+  chain: full attack → geometry (phase1 + attacked) → FT defence (CC3M: /workspace/clip_bfa/related_papers/../data/cc3m)
+  out: /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_lneg0.75
+RUN_ID : validation__ViT-L14__ImageNet1k__zs__c291__full_t16__s42__r1__v3_residual_lneg0.75
+OUT_DIR: /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_lneg0.75
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 291
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+  Config requested : ViT-L/14
+  Actual architecture:
+    seq_len  : 257  (= 16×16 patches + CLS)
+    width    : 1024
+    patch    : 14×14
+    img_size : 224
+    layers   : 24
+    heads    : 16
+    params   : 304.0M
+  NOTE: TRIG_SZ=16 covers only 1 patch(es) per dim with patch_size=14.
+    Consider increasing TRIG_SZ to at least 28 for better coverage.
+
+[2] Loading ImageNet1k
+  Dataset : ImageNet1k  (loader=ImageNet)
+  Samples : 50000
+  Classes : 1000
+  1000 classes, target = 'lion'
+  Encoding 13000 prompts (1000 classes × 13 templates)...

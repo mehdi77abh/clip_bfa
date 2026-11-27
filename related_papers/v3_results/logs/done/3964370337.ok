@@ -1,0 +1,1 @@
+--seed 42 --loss residual --lambda-neg 1 --vis-lambda 1

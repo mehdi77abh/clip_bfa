@@ -166,7 +166,7 @@ def parse_args():
     run.add_argument("--fine-min-gain", type=float, default=2.0,
                      help="fine phase: minimum ASR gain (%% points) per "
                           "patience window, else stop (default: 2.0)")
-    run.add_argument("--fine-max-rejects", type=int, default=20,
+    run.add_argument("--fine-max-rejects", type=int, default=10,
                      help="fine phase: stop after this many consecutive "
                           "rejected candidates (default: 20)")
     run.add_argument("--variant", default="full",

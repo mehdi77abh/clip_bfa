@@ -1,0 +1,822 @@
+============================================================
+TEST V3 — v3_residual_vis1_lneg1
+============================================================
+  model=ViT-L/14  dataset=ImageNet1k  target='lion' (cls 291)
+  loss=residual  λ_neg=1  vis=1  select=loss
+  neg-list=lion_v2  trigger=16px  seed=42  task=zs  save-attacked-model=ON
+  chain: full attack → geometry (phase1 + attacked) → FT defence (CC3M: /workspace/clip_bfa/related_papers/../data/cc3m)
+  out: /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1
+RUN_ID : validation__ViT-L14__ImageNet1k__zs__c291__full_t16__s42__r1__v3_residual_vis1_lneg1
+OUT_DIR: /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1
+============================================================
+HYBRID BIT-FLIP ATTACK ON CLIP
+Phase 0 → 1 → 2 → 3 → 4 → 5
+============================================================
+  Device  : cuda
+  Target  : class 291
+  Trigger : center_add  16×16  loc=legacy
+
+[1] Loading model
+  Config requested : ViT-L/14
+  Actual architecture:
+    seq_len  : 257  (= 16×16 patches + CLS)
+    width    : 1024
+    patch    : 14×14
+    img_size : 224
+    layers   : 24
+    heads    : 16
+    params   : 304.0M
+  NOTE: TRIG_SZ=16 covers only 1 patch(es) per dim with patch_size=14.
+    Consider increasing TRIG_SZ to at least 28 for better coverage.
+
+[2] Loading ImageNet1k
+  Dataset : ImageNet1k  (loader=ImageNet)
+  Samples : 50000
+  Classes : 1000
+  1000 classes, target = 'lion'
+  Encoding 13000 prompts (1000 classes × 13 templates)...
+  Text embeddings shape: torch.Size([1000, 768])
+  Sample prompts for class 0 ('tench'):
+    "a photo of a tench."
+    "a photo of the tench."
+    "a close-up photo of a tench."
+
+[3] Preparing data splits
+  Split key: content-hash order (source-invariant)
+  Negatives [lion_v2]: 100 val images from 15 classes — held out of all splits
+    tiers: bigcat, canid, fox
+  Target class images :    32
+  Target holdout      :    18
+  Calibration         :    64  (random)
+  Negatives (val)     :   100  (held out of all splits)
+  Gradient            :    16
+  Evaluation          :   200
+  Test                : 49378
+  Split fingerprint   : 8bc82d806d85e4c3   (compare across boxes/sources — must match)
+  t_target = text_emb[291]  ('lion')
+  Trigger tokens: [120, 121, 136, 137]
+  Trigger type: center_add  Size: 16×16  Placement: legacy
+
+============================================================
+PHASE 0: QUANTISATION (INT8)
+============================================================
+  Quantisation OK
+
+============================================================
+PHASE 1: TRIGGER GENERATION — v2  (loss residual)
+============================================================
+  Size: 16×16  Placement: legacy  Mode: add_center
+  Loss: residual  target-mode: mean  λ_neg: 1  T: 0.07
+  Visual-resistance: λv=1 λ2=1 η=1
+  Epochs: 200  LR: 0.02  grad clip: 1.0  Trig clamp: [-3, 3]
+  Init: randn × 0.1  select: best-loss
+  Target: 'lion' — 13 template directions
+  Template spread cos(t_j,t_k): min +0.701  mean +0.849  max +0.989
+  Negative geometry  cos(t̄, n_r)   (filter: drop > 0.9):
+    tiger                        +0.863
+    leopard                      +0.781
+    cheetah                      +0.770
+    grey wolf                    +0.752
+    cougar                       +0.747
+    jaguar                       +0.734
+    hyena                        +0.718
+    red fox                      +0.700
+    snow leopard                 +0.647
+    lynx                         +0.640
+    Arctic fox                   +0.592
+    grey fox                     +0.591
+    kit fox                      +0.536
+    dhole                        +0.536
+    African wild dog             +0.498
+  Competitors [text]  : 15 separable class directions (of 15 curated)
+  Residuals           : 15 active of 15  ‖res‖: min 0.506  mean 0.725  max 0.867
+  Visual resistance   : v̄* from 32 target images
+  [parity] ‖∂L/∂emb‖  L_pos = 0.125   λ·L_neg = 0.002   ratio 0.02
+  ep    1  loss=2.307032  (L⁺=0.8813  λL⁻=0.001272  Lᵛ=1.4244)  cos_t=+0.1187  margin_pseudo=-0.0202  margin_class=-0.1530  ||trig||=3.893
+  ep   50  loss=1.910665  (L⁺=0.7777  λL⁻=0.000960  Lᵛ=1.1320)  cos_t=+0.2223  margin_pseudo=+0.0230  margin_class=-0.0305  ||trig||=38.974
+  ep  100  loss=1.867702  (L⁺=0.7655  λL⁻=0.001181  Lᵛ=1.1010)  cos_t=+0.2345  margin_pseudo=+0.0345  margin_class=-0.0145  ||trig||=49.156
+  ep  150  loss=1.858767  (L⁺=0.7627  λL⁻=0.001213  Lᵛ=1.0949)  cos_t=+0.2373  margin_pseudo=+0.0368  margin_class=-0.0118  ||trig||=52.240
+  ep  200  loss=1.857175  (L⁺=0.7622  λL⁻=0.001215  Lᵛ=1.0938)  cos_t=+0.2378  margin_pseudo=+0.0371  margin_class=-0.0113  ||trig||=52.786
+  Best (loss): 1.857175
+  [diag] poisoned argmax over 1000 classes (calib imgs):
+    lion                            39.1%   ← target
+    throne                           3.1%
+    potter's wheel                   3.1%
+    cauliflower                      1.6%
+    jackfruit                        1.6%
+    target share 39.1%   mean cos_t = +0.2378
+  Trigger standalone: ASR=32.0%  CACC=76.5%
+  [geometry:phase1] cos_t=+0.2274  cos(v̄*)=+0.5874  Δmanifold=+0.0121  margin_class=-0.0260  target_share=32.0%  → geometry.json
+    Saved → /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1/trigger_patch.png
+
+============================================================
+PHASE 2: LAYER-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.237772
+  Model: 24L  D=1024  seq_len=257
+  Mini-batch: 4  calib n=64
+  L  0  attn_drop=+0.000413 [supp]  mlp_drop=-0.000012 [prot]
+  L  1  attn_drop=+0.000476 [supp]  mlp_drop=-0.002047 [prot]
+  L  2  attn_drop=+0.000593 [supp]  mlp_drop=-0.005781 [prot]
+  L  3  attn_drop=+0.000547 [supp]  mlp_drop=+0.002876 [supp]
+  L  4  attn_drop=+0.000420 [supp]  mlp_drop=+0.003083 [supp]
+  L  5  attn_drop=+0.000459 [supp]  mlp_drop=+0.002815 [supp]
+  L  6  attn_drop=-0.000037 [prot]  mlp_drop=+0.001360 [supp]
+  L  7  attn_drop=+0.001133 [supp]  mlp_drop=+0.001355 [supp]
+  L  8  attn_drop=-0.000893 [prot]  mlp_drop=+0.001455 [supp]
+  L  9  attn_drop=+0.002408 [supp]  mlp_drop=+0.001714 [supp]
+  L 10  attn_drop=-0.000287 [prot]  mlp_drop=+0.002643 [supp]
+  L 11  attn_drop=+0.002905 [supp]  mlp_drop=+0.003929 [supp]
+  L 12  attn_drop=+0.001569 [supp]  mlp_drop=+0.010799 [supp]
+  L 13  attn_drop=+0.001131 [supp]  mlp_drop=-0.001089 [prot]
+  L 14  attn_drop=-0.000044 [prot]  mlp_drop=-0.001470 [prot]
+  L 15  attn_drop=-0.002130 [prot]  mlp_drop=-0.000860 [prot]
+  L 16  attn_drop=-0.001077 [prot]  mlp_drop=-0.000973 [prot]
+  L 17  attn_drop=+0.000366 [supp]  mlp_drop=-0.002379 [prot]
+  L 18  attn_drop=-0.001666 [prot]  mlp_drop=-0.004550 [prot]
+  L 19  attn_drop=+0.000460 [supp]  mlp_drop=-0.004459 [prot]
+  L 20  attn_drop=+0.001460 [supp]  mlp_drop=-0.006616 [prot]
+  L 21  attn_drop=+0.006534 [supp]  mlp_drop=-0.013476 [prot]
+  L 22  attn_drop=-0.005187 [prot]  mlp_drop=-0.014098 [prot]
+  L 23  attn_drop=-0.017708 [prot]  mlp_drop=-0.000529 [prot]
+
+  Rank-normalised layer scores (attn_rank + mlp_rank on |drop|):
+    L  0  attn_rank=0.2083  mlp_rank=0.0417  score=0.2500
+    L  1  attn_rank=0.3750  mlp_rank=0.4583  score=0.8333
+    L  2  attn_rank=0.4583  mlp_rank=0.8333  score=1.2917
+    L  3  attn_rank=0.4167  mlp_rank=0.6250  score=1.0417
+    L  4  attn_rank=0.2500  mlp_rank=0.6667  score=0.9167
+    L  5  attn_rank=0.2917  mlp_rank=0.5833  score=0.8750
+    L  6  attn_rank=0.0417  mlp_rank=0.2917  score=0.3333
+    L  7  attn_rank=0.6250  mlp_rank=0.2500  score=0.8750
+    L  8  attn_rank=0.5000  mlp_rank=0.3333  score=0.8333
+    L  9  attn_rank=0.8333  mlp_rank=0.4167  score=1.2500
+    L 10  attn_rank=0.1250  mlp_rank=0.5417  score=0.6667
+    L 11  attn_rank=0.8750  mlp_rank=0.7083  score=1.5833 *
+    L 12  attn_rank=0.7083  mlp_rank=0.9167  score=1.6250 *
+    L 13  attn_rank=0.5833  mlp_rank=0.2083  score=0.7917
+    L 14  attn_rank=0.0833  mlp_rank=0.3750  score=0.4583
+    L 15  attn_rank=0.7917  mlp_rank=0.1250  score=0.9167
+    L 16  attn_rank=0.5417  mlp_rank=0.1667  score=0.7083
+    L 17  attn_rank=0.1667  mlp_rank=0.5000  score=0.6667
+    L 18  attn_rank=0.7500  mlp_rank=0.7917  score=1.5417
+    L 19  attn_rank=0.3333  mlp_rank=0.7500  score=1.0833
+    L 20  attn_rank=0.6667  mlp_rank=0.8750  score=1.5417
+    L 21  attn_rank=0.9583  mlp_rank=0.9583  score=1.9167 *
+    L 22  attn_rank=0.9167  mlp_rank=1.0000  score=1.9167 *
+    L 23  attn_rank=1.0000  mlp_rank=0.0833  score=1.0833
+  Top-4 layers: [11, 12, 21, 22]
+  Saved → /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1/layer_scores_analysis.png
+
+============================================================
+PHASE 2B: COMPONENT-LEVEL CAUSAL ABLATION
+============================================================
+  cos_base (poisoned, intact) = 0.237772
+  Top layers: [11, 12, 21, 22]  (4 layers × 16 heads + 1 MLP)
+  Quota: per-layer  TOP_K_COMPONENTS=30
+    L11 H0   drop=+0.000208 [supp]
+    L11 H1   drop=+0.000287 [supp]
+    L11 H2   drop=+0.001029 [supp]
+    L11 H3   drop=+0.000349 [supp]
+    L11 H4   drop=+0.000195 [supp]
+    L11 H5   drop=+0.002669 [supp]
+    L11 H6   drop=-0.002059 [prot]
+    L11 H7   drop=+0.000695 [supp]
+    L11 H8   drop=+0.002711 [supp]
+    L11 H9   drop=+0.002753 [supp]
+    L11 H10  drop=+0.000527 [supp]
+    L11 H11  drop=+0.001174 [supp]
+    L11 H12  drop=+0.000498 [supp]
+    L11 H13  drop=+0.000167 [supp]
+    L11 H14  drop=+0.000098 [supp]
+    L11 H15  drop=+0.001797 [supp]
+    L11 FFN   drop=+0.019238 [supp]
+    L12 H0   drop=+0.000367 [supp]
+    L12 H1   drop=+0.002269 [supp]
+    L12 H2   drop=-0.001423 [prot]
+    L12 H3   drop=-0.000861 [prot]
+    L12 H4   drop=-0.001376 [prot]
+    L12 H5   drop=-0.000414 [prot]
+    L12 H6   drop=+0.000392 [supp]
+    L12 H7   drop=+0.001421 [supp]
+    L12 H8   drop=-0.000254 [prot]
+    L12 H9   drop=-0.000360 [prot]
+    L12 H10  drop=+0.001236 [supp]
+    L12 H11  drop=-0.000059 [prot]
+    L12 H12  drop=+0.000489 [supp]
+    L12 H13  drop=+0.002541 [supp]
+    L12 H14  drop=+0.000176 [supp]
+    L12 H15  drop=+0.004442 [supp]
+    L12 FFN   drop=+0.033276 [supp]
+    L21 H0   drop=+0.000534 [supp]
+    L21 H1   drop=+0.000261 [supp]
+    L21 H2   drop=+0.002634 [supp]
+    L21 H3   drop=-0.000581 [prot]
+    L21 H4   drop=-0.000173 [prot]
+    L21 H5   drop=+0.002176 [supp]
+    L21 H6   drop=-0.000264 [prot]
+    L21 H7   drop=-0.000117 [prot]
+    L21 H8   drop=-0.000706 [prot]
+    L21 H9   drop=-0.000358 [prot]
+    L21 H10  drop=+0.000345 [supp]
+    L21 H11  drop=+0.000112 [supp]
+    L21 H12  drop=-0.000115 [prot]
+    L21 H13  drop=-0.000027 [prot]
+    L21 H14  drop=-0.001820 [prot]
+    L21 H15  drop=-0.000495 [prot]
+    L21 FFN   drop=-0.012903 [prot]
+    L22 H0   drop=+0.000704 [supp]
+    L22 H1   drop=+0.000534 [supp]
+    L22 H2   drop=-0.000261 [prot]
+    L22 H3   drop=-0.000266 [prot]
+    L22 H4   drop=-0.000772 [prot]
+    L22 H5   drop=-0.000771 [prot]
+    L22 H6   drop=-0.000215 [prot]
+    L22 H7   drop=+0.000973 [supp]
+    L22 H8   drop=+0.000898 [supp]
+    L22 H9   drop=-0.000719 [prot]
+    L22 H10  drop=-0.001051 [prot]
+    L22 H11  drop=-0.000784 [prot]
+    L22 H12  drop=+0.000566 [supp]
+    L22 H13  drop=+0.003231 [supp]
+    L22 H14  drop=+0.001039 [supp]
+    L22 H15  drop=-0.000806 [prot]
+    L22 FFN   drop=-0.020498 [prot]
+
+  Component pool : 68 (= 4 layers × (16 heads + 1 MLP))
+  Selected : 28 (24 attn, 4 ffn)
+    # 1  L11 FFN     drop=+0.019238
+    # 2  L11 H9      drop=+0.002753
+    # 3  L11 H8      drop=+0.002711
+    # 4  L11 H5      drop=+0.002669
+    # 5  L11 H6      drop=-0.002059
+    # 6  L11 H15     drop=+0.001797
+    # 7  L11 H11     drop=+0.001174
+    # 8  L12 FFN     drop=+0.033276
+    # 9  L12 H15     drop=+0.004442
+    #10  L12 H13     drop=+0.002541
+    #11  L12 H1      drop=+0.002269
+    #12  L12 H2      drop=-0.001423
+    #13  L12 H7      drop=+0.001421
+    #14  L12 H4      drop=-0.001376
+    #15  L21 FFN     drop=-0.012903
+    #16  L21 H2      drop=+0.002634
+    #17  L21 H5      drop=+0.002176
+    #18  L21 H14     drop=-0.001820
+    #19  L21 H8      drop=-0.000706
+    #20  L21 H3      drop=-0.000581
+    #21  L21 H0      drop=+0.000534
+    #22  L22 FFN     drop=-0.020498
+    #23  L22 H13     drop=+0.003231
+    #24  L22 H10     drop=-0.001051
+    #25  L22 H14     drop=+0.001039
+    #26  L22 H7      drop=+0.000973
+    #27  L22 H8      drop=+0.000898
+    #28  L22 H15     drop=-0.000806
+
+  Weight tracking: 56 tensors, 56 originals saved
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2320
+  L_target(clean)    = -0.1180
+  Candidates: 17756 (15045 attn, 2711 ffn)
+  Top score: 0.09466420 (R=1.917, g=0.04939002)
+
+  Top-10 candidates:
+    L22 H8 V[33,363] bit7  R=1.917  |Δw|=0.808563  score=0.09466420
+    L21 FFN proj[363,150] bit7  R=1.917  |Δw|=0.299705  score=0.08320563
+    L12 FFN fc[2869,363] bit7  R=1.625  |Δw|=0.469980  score=0.08062030
+    L21 FFN proj[363,518] bit7  R=1.917  |Δw|=0.299705  score=0.06867926
+    L22 H7 V[32,650] bit7  R=1.917  |Δw|=0.808563  score=0.06095833
+    L12 FFN fc[2869,261] bit7  R=1.625  |Δw|=0.469980  score=0.05744918
+    L22 H10 V[18,363] bit7  R=1.917  |Δw|=0.808563  score=0.05461382
+    L21 FFN proj[542,518] bit7  R=1.917  |Δw|=0.299705  score=0.05315312
+    L22 H7 V[12,650] bit6  R=1.917  |Δw|=0.404281  score=0.05273394
+    L12 FFN proj[834,1739] bit7  R=1.625  |Δw|=0.623524  score=0.05122892
+
+  Saved clean model state (1710 MB)
+
+============================================================
+PHASE 4: GREEDY BIT-FLIP SEARCH
+============================================================
+  Baseline  ASR=32.0%  CACC=76.5%
+  Drift penalty λ=10.0  max_drift=0.02
+  drift_n=16  eval_bs=32  cands_per_round=30
+  Rd  0: L21 FFN proj[363,150] bit 7  Δcos=+0.0111  drift=0.0000  score=0.0111
+  Rd  1: L12 FFN proj[230,1739] bit 7  Δcos=+0.0046  drift=0.0000  score=0.0046
+  Rd  2: L21 FFN proj[1014,3814] bit 7  Δcos=+0.0038  drift=0.0000  score=0.0038
+  Rd  3: L21 FFN fc[2126,593] bit 7  Δcos=+0.0036  drift=0.0000  score=0.0034
+  Rd  4: L21 FFN proj[542,958] bit 7  Δcos=+0.0029  drift=0.0000  score=0.0029
+  Rebuilding hybrid rankings (grad n=16)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2540
+  L_target(clean)    = -0.1184
+  Candidates: 17569 (14783 attn, 2786 ffn)
+  Top score: 0.09662980 (R=1.917, g=0.05041555)
+
+  Top-10 candidates:
+    L22 H8 V[33,363] bit7  R=1.917  |Δw|=0.808563  score=0.09662980
+    L22 H13 V[30,363] bit7  R=1.917  |Δw|=0.808563  score=0.09082223
+    L12 FFN fc[2869,363] bit7  R=1.625  |Δw|=0.469980  score=0.07740639
+    L22 H13 V[42,363] bit7  R=1.917  |Δw|=0.808563  score=0.07259757
+    L22 H8 V[1,363] bit7  R=1.917  |Δw|=0.808563  score=0.06975689
+    L22 H13 V[14,565] bit7  R=1.917  |Δw|=0.808563  score=0.05972720
+    L22 H10 V[18,363] bit7  R=1.917  |Δw|=0.808563  score=0.05753060
+    L22 H13 V[24,363] bit6  R=1.917  |Δw|=0.404281  score=0.05384022
+    L12 FFN fc[3397,363] bit7  R=1.625  |Δw|=0.469980  score=0.05305067
+    L21 FFN fc[150,363] bit7  R=1.917  |Δw|=0.416831  score=0.05233541
+  Rd  5: L21 FFN fc[150,363] bit 7  Δcos=+0.0080  drift=0.0000  score=0.0076
+  Rd  6: L21 FFN proj[363,518] bit 7  Δcos=+0.0037  drift=0.0000  score=0.0037
+  Rd  7: L12 FFN proj[344,1739] bit 6  Δcos=+0.0022  drift=0.0000  score=0.0022
+  Rd  8: L21 FFN fc[3814,810] bit 7  Δcos=+0.0035  drift=0.0000  score=0.0033
+  Rd  9: L21 FFN fc[518,363] bit 7  Δcos=+0.0056  drift=0.0001  score=0.0049
+  [ckpt 10] ASR=93.5%  CACC=76.5%
+  Rebuilding hybrid rankings (grad n=16)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2735
+  L_target(clean)    = -0.1214
+  Candidates: 17781 (15137 attn, 2644 ffn)
+  Top score: 0.15038313 (R=1.917, g=0.07846076)
+
+  Top-10 candidates:
+    L22 H13 V[30,363] bit7  R=1.917  |Δw|=0.808563  score=0.15038313
+    L22 H8 V[1,363] bit7  R=1.917  |Δw|=0.808563  score=0.12086432
+    L22 H8 V[33,363] bit7  R=1.917  |Δw|=0.808563  score=0.11987910
+    L22 H13 V[2,363] bit7  R=1.917  |Δw|=0.808563  score=0.08723769
+    L22 H13 V[59,363] bit7  R=1.917  |Δw|=0.808563  score=0.08571852
+    L22 H13 V[42,363] bit7  R=1.917  |Δw|=0.808563  score=0.08415872
+    L22 H13 V[7,363] bit7  R=1.917  |Δw|=0.808563  score=0.08122182
+    L22 H13 V[25,363] bit7  R=1.917  |Δw|=0.808563  score=0.07609276
+    L22 H8 V[13,363] bit7  R=1.917  |Δw|=0.808563  score=0.07422763
+    L22 H13 V[13,363] bit6  R=1.917  |Δw|=0.404281  score=0.07309036
+  Round 10: no improving flip (streak 1/5)
+  Round 11: no improving flip (streak 2/5)
+  Rd 12: L12 FFN proj[834,1739] bit 7  Δcos=+0.0034  drift=0.0000  score=0.0033
+  ── fine_patience search: ASR 94.5% ≥ 94.0% — one-by-one failure-set mining toward 99.0% (max 9 flips) ──
+  Rebuilding hybrid rankings (grad n=11)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2427
+  L_target(clean)    = -0.1086
+  Candidates: 17576 (14752 attn, 2824 ffn)
+  Top score: 0.09113338 (R=1.917, g=0.04754785)
+
+  Top-10 candidates:
+    L22 H13 V[42,363] bit7  R=1.917  |Δw|=0.808563  score=0.09113338
+    L22 H8 V[1,363] bit7  R=1.917  |Δw|=0.808563  score=0.08975242
+    L22 H13 V[2,363] bit7  R=1.917  |Δw|=0.808563  score=0.07056416
+    L22 H8 V[13,363] bit7  R=1.917  |Δw|=0.808563  score=0.06025177
+    L22 H13 V[24,363] bit6  R=1.917  |Δw|=0.404281  score=0.05944009
+    L22 H7 V[32,650] bit7  R=1.917  |Δw|=0.808563  score=0.05797938
+    L22 H8 V[33,363] bit7  R=1.917  |Δw|=0.808563  score=0.05529247
+    L22 H7 V[19,650] bit7  R=1.917  |Δw|=0.808563  score=0.05405259
+    L21 FFN fc[3776,121] bit7  R=1.917  |Δw|=0.416831  score=0.05348999
+    L22 H13 V[13,363] bit6  R=1.917  |Δw|=0.404281  score=0.05258193
+  Rd 13: L21 FFN proj[542,518] bit 7  Δcos=+0.0033  drift=0.0000  score=0.0031
+  Flips→95%: reached after 12 accepted flip(s)
+  Rebuilding hybrid rankings (grad n=6)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2394
+  L_target(clean)    = -0.1068
+  Candidates: 17432 (14666 attn, 2766 ffn)
+  Top score: 0.06315740 (R=1.917, g=0.03295169)
+
+  Top-10 candidates:
+    L22 H13 V[42,363] bit7  R=1.917  |Δw|=0.808563  score=0.06315740
+    L22 H8 V[1,363] bit7  R=1.917  |Δw|=0.808563  score=0.05977737
+    L21 FFN fc[518,650] bit7  R=1.917  |Δw|=0.416831  score=0.05738411
+    L22 H13 V[19,363] bit7  R=1.917  |Δw|=0.808563  score=0.04667199
+    L21 FFN fc[3776,121] bit7  R=1.917  |Δw|=0.416831  score=0.04484606
+    L22 H13 V[13,363] bit6  R=1.917  |Δw|=0.404281  score=0.04156371
+    L22 H13 V[59,363] bit7  R=1.917  |Δw|=0.808563  score=0.04143291
+    L12 FFN proj[121,2385] bit7  R=1.625  |Δw|=0.623524  score=0.04082444
+    L12 FFN proj[542,4003] bit7  R=1.625  |Δw|=0.623524  score=0.04057636
+    L22 H7 V[24,650] bit7  R=1.917  |Δw|=0.808563  score=0.03961175
+  Rd 14: L12 FFN proj[812,1739] bit 7  Δcos=+0.0009  drift=0.0000  score=0.0008
+  Rebuilding hybrid rankings (grad n=3)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2465
+  L_target(clean)    = -0.0952
+  Candidates: 17318 (14575 attn, 2743 ffn)
+  Top score: 0.03830406 (R=1.917, g=0.01998473)
+
+  Top-10 candidates:
+    L22 H8 V[1,363] bit7  R=1.917  |Δw|=0.808563  score=0.03830406
+    L22 H13 V[42,363] bit7  R=1.917  |Δw|=0.808563  score=0.03539242
+    L21 FFN fc[518,650] bit7  R=1.917  |Δw|=0.416831  score=0.03095789
+    L12 FFN proj[606,1739] bit7  R=1.625  |Δw|=0.623524  score=0.02907841
+    L12 FFN proj[509,1739] bit7  R=1.625  |Δw|=0.623524  score=0.02828567
+    L22 H13 V[19,363] bit7  R=1.917  |Δw|=0.808563  score=0.02768447
+    L22 H7 V[32,650] bit7  R=1.917  |Δw|=0.808563  score=0.02766139
+    L12 FFN proj[121,2385] bit7  R=1.625  |Δw|=0.623524  score=0.02742955
+    L12 FFN proj[843,1739] bit7  R=1.625  |Δw|=0.623524  score=0.02702039
+    L21 FFN fc[3776,121] bit7  R=1.917  |Δw|=0.416831  score=0.02602140
+  Fine reject: ΔASR -0.5pp < 0.5pp — reverted (1/10)
+  Fine reject: ΔASR -0.5pp < 0.5pp — reverted (2/10)
+  Rd 17: L12 FFN proj[25,1739] bit 6  Δcos=+0.0007  drift=0.0000  score=0.0006
+  Rebuilding hybrid rankings (grad n=2)...
+
+============================================================
+PHASE 3: HYBRID BIT RANKING
+============================================================
+  Scoring: R_l × |g·Δw|  (basic, all 8 bits per element)
+  Int8 grid: Phase-0 global  (no local re-quantisation)
+  L_target(poisoned) = -0.2515
+  L_target(clean)    = -0.0930
+  Candidates: 17776 (15163 attn, 2613 ffn)
+  Top score: 0.03911825 (R=1.917, g=0.02040952)
+
+  Top-10 candidates:
+    L22 H13 V[2,363] bit7  R=1.917  |Δw|=0.808563  score=0.03911825
+    L22 H13 V[42,363] bit7  R=1.917  |Δw|=0.808563  score=0.03705525
+    L22 H7 V[32,650] bit7  R=1.917  |Δw|=0.808563  score=0.03567950
+    L22 H8 V[1,363] bit7  R=1.917  |Δw|=0.808563  score=0.02985600
+    L22 H13 V[14,565] bit7  R=1.917  |Δw|=0.808563  score=0.02752774
+    L22 H15 V[21,363] bit7  R=1.917  |Δw|=0.808563  score=0.02740994
+    L12 FFN fc[72,363] bit6  R=1.625  |Δw|=0.234990  score=0.02723145
+    L22 H7 V[50,650] bit7  R=1.917  |Δw|=0.808563  score=0.02703593
+    L22 H13 V[52,363] bit7  R=1.917  |Δw|=0.808563  score=0.02680550
+    L22 H8 V[13,363] bit7  R=1.917  |Δw|=0.808563  score=0.02595804
+  Fine reject: no candidate passes the score gate (1/10)
+  Fine reject: no candidate passes the score gate (2/10)
+  Rd 20: L22 H13 V[2904,363] bit 5  Δcos=+0.0033  drift=0.0003  score=0.0004
+  Fine target (99.0%) reached!
+
+  Total flips : 15  (stop: asr_target)
+  Final ASR   : 99.5%  (Δ = +67.5%, best = 99.5%)
+  Final CACC  : 76.5%  (Δ = +0.0%)
+  ASR@10=93.50000023841858  ASR@20=99.50000047683716  (carried forward)  Flips→95%=12
+  Bit distribution: {5: 1, 6: 2, 7: 12}
+
+  Attacked model state saved → /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1/model_state_attacked.pt
+
+  Results saved to /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1/
+  (provisional artefacts written — full record follows)
+
+  [final-eval] building test loader (n=49378, workers=2)
+  [final-eval] loader ready — evaluating (set WORKERS=0 if this is where it stalls)
+  [geometry:attacked] cos_t=+0.2810  cos(v̄*)=+0.6621  Δmanifold=+0.1299  margin_class=-0.0000  target_share=99.5%  → geometry.json
+    [full_eval] batch 1/772 (64 images)
+    [full_eval] batch 10/772 (640 images)
+    [full_eval] batch 20/772 (1280 images)
+    [full_eval] batch 30/772 (1920 images)
+    [full_eval] batch 40/772 (2560 images)
+    [full_eval] batch 50/772 (3200 images)
+    [full_eval] batch 60/772 (3840 images)
+    [full_eval] batch 70/772 (4480 images)
+    [full_eval] batch 80/772 (5120 images)
+    [full_eval] batch 90/772 (5760 images)
+    [full_eval] batch 100/772 (6400 images)
+    [full_eval] batch 110/772 (7040 images)
+    [full_eval] batch 120/772 (7680 images)
+    [full_eval] batch 130/772 (8320 images)
+    [full_eval] batch 140/772 (8960 images)
+    [full_eval] batch 150/772 (9600 images)
+    [full_eval] batch 160/772 (10240 images)
+    [full_eval] batch 170/772 (10880 images)
+    [full_eval] batch 180/772 (11520 images)
+    [full_eval] batch 190/772 (12160 images)
+    [full_eval] batch 200/772 (12800 images)
+    [full_eval] batch 210/772 (13440 images)
+    [full_eval] batch 220/772 (14080 images)
+    [full_eval] batch 230/772 (14720 images)
+    [full_eval] batch 240/772 (15360 images)
+    [full_eval] batch 250/772 (16000 images)
+    [full_eval] batch 260/772 (16640 images)
+    [full_eval] batch 270/772 (17280 images)
+    [full_eval] batch 280/772 (17920 images)
+    [full_eval] batch 290/772 (18560 images)
+    [full_eval] batch 300/772 (19200 images)
+    [full_eval] batch 310/772 (19840 images)
+    [full_eval] batch 320/772 (20480 images)
+    [full_eval] batch 330/772 (21120 images)
+    [full_eval] batch 340/772 (21760 images)
+    [full_eval] batch 350/772 (22400 images)
+    [full_eval] batch 360/772 (23040 images)
+    [full_eval] batch 370/772 (23680 images)
+    [full_eval] batch 380/772 (24320 images)
+    [full_eval] batch 390/772 (24960 images)
+    [full_eval] batch 400/772 (25600 images)
+    [full_eval] batch 410/772 (26240 images)
+    [full_eval] batch 420/772 (26880 images)
+    [full_eval] batch 430/772 (27520 images)
+    [full_eval] batch 440/772 (28160 images)
+    [full_eval] batch 450/772 (28800 images)
+    [full_eval] batch 460/772 (29440 images)
+    [full_eval] batch 470/772 (30080 images)
+    [full_eval] batch 480/772 (30720 images)
+    [full_eval] batch 490/772 (31360 images)
+    [full_eval] batch 500/772 (32000 images)
+    [full_eval] batch 510/772 (32640 images)
+    [full_eval] batch 520/772 (33280 images)
+    [full_eval] batch 530/772 (33920 images)
+    [full_eval] batch 540/772 (34560 images)
+    [full_eval] batch 550/772 (35200 images)
+    [full_eval] batch 560/772 (35840 images)
+    [full_eval] batch 570/772 (36480 images)
+    [full_eval] batch 580/772 (37120 images)
+    [full_eval] batch 590/772 (37760 images)
+    [full_eval] batch 600/772 (38400 images)
+    [full_eval] batch 610/772 (39040 images)
+    [full_eval] batch 620/772 (39680 images)
+    [full_eval] batch 630/772 (40320 images)
+    [full_eval] batch 640/772 (40960 images)
+    [full_eval] batch 650/772 (41600 images)
+    [full_eval] batch 660/772 (42240 images)
+    [full_eval] batch 670/772 (42880 images)
+    [full_eval] batch 680/772 (43520 images)
+    [full_eval] batch 690/772 (44160 images)
+    [full_eval] batch 700/772 (44800 images)
+    [full_eval] batch 710/772 (45440 images)
+    [full_eval] batch 720/772 (46080 images)
+    [full_eval] batch 730/772 (46720 images)
+    [full_eval] batch 740/772 (47360 images)
+    [full_eval] batch 750/772 (48000 images)
+    [full_eval] batch 760/772 (48640 images)
+    [full_eval] batch 770/772 (49280 images)
+
+============================================================
+SUMMARY
+============================================================
+  Model   : ViT-L/14  (actual: 1024d, 24L, 16H, patch=14)
+  Method  : Hybrid (Layer_R → Scoped Gradient → R(l) × Gradient)
+  Flips   : 15
+  ASR     : 98.2%
+  CACC    : 74.6%
+  Search  : 562.7s
+  Saved composite → /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1/composite.png
+
+  Results saved to /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1/
+
+[FT] fine-tuning defence: --run-dir /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1 --task auto --cc3m-root /workspace/clip_bfa/data/cc3m --cc3m-format auto --ft-max-samples 0 --ft-epochs 1 --ft-max-steps 2000 --ft-lr 1e-05 --ft-wd 0.1 --ft-batch 32 --eval-batch 32 --ft-scope full
+
+============================================================
+FINE-TUNING DEFENCE (DEFENSES.md §1)
+============================================================
+  run  : /workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1
+  model: ViT-L/14  dataset: ImageNet1k  task: zs
+  target: c291  device: cuda
+  FT   : scope=full  lr=1e-05  wd=0.1  batch=32  epochs=1  max_steps=2000
+
+[1/4] Attacked model loaded (/workspace/clip_bfa/related_papers/v3_results/validation/ViT-L14/ImageNet1k/zs_c291_s42_r1_full_t16_v3_residual_vis1_lneg1/model_state_attacked.pt)
+
+[2/4] Rebuilding the attack run's eval split
+  Dataset : ImageNet1k  (loader=ImageNet)
+  Samples : 50000
+  Classes : 1000
+  Target class images :    32
+  Target holdout      :    18
+  Calibration         :    64
+  Gradient            :    16
+  Evaluation          :   200
+  Test                : 49670
+
+[3/4] Evaluation BEFORE the defence
+  Encoding 13000 prompts (1000 classes × 13 templates)...
+  Text embeddings shape: torch.Size([1000, 768])
+  Sample prompts for class 0 ('tench'):
+    "a photo of a tench."
+    "a photo of the tench."
+    "a close-up photo of a tench."
+    [full_eval] batch 1/1553 (32 images)
+    [full_eval] batch 10/1553 (320 images)
+    [full_eval] batch 20/1553 (640 images)
+    [full_eval] batch 30/1553 (960 images)
+    [full_eval] batch 40/1553 (1280 images)
+    [full_eval] batch 50/1553 (1600 images)
+    [full_eval] batch 60/1553 (1920 images)
+    [full_eval] batch 70/1553 (2240 images)
+    [full_eval] batch 80/1553 (2560 images)
+    [full_eval] batch 90/1553 (2880 images)
+    [full_eval] batch 100/1553 (3200 images)
+    [full_eval] batch 110/1553 (3520 images)
+    [full_eval] batch 120/1553 (3840 images)
+    [full_eval] batch 130/1553 (4160 images)
+    [full_eval] batch 140/1553 (4480 images)
+    [full_eval] batch 150/1553 (4800 images)
+    [full_eval] batch 160/1553 (5120 images)
+    [full_eval] batch 170/1553 (5440 images)
+    [full_eval] batch 180/1553 (5760 images)
+    [full_eval] batch 190/1553 (6080 images)
+    [full_eval] batch 200/1553 (6400 images)
+    [full_eval] batch 210/1553 (6720 images)
+    [full_eval] batch 220/1553 (7040 images)
+    [full_eval] batch 230/1553 (7360 images)
+    [full_eval] batch 240/1553 (7680 images)
+    [full_eval] batch 250/1553 (8000 images)
+    [full_eval] batch 260/1553 (8320 images)
+    [full_eval] batch 270/1553 (8640 images)
+    [full_eval] batch 280/1553 (8960 images)
+    [full_eval] batch 290/1553 (9280 images)
+    [full_eval] batch 300/1553 (9600 images)
+    [full_eval] batch 310/1553 (9920 images)
+    [full_eval] batch 320/1553 (10240 images)
+    [full_eval] batch 330/1553 (10560 images)
+    [full_eval] batch 340/1553 (10880 images)
+    [full_eval] batch 350/1553 (11200 images)
+    [full_eval] batch 360/1553 (11520 images)
+    [full_eval] batch 370/1553 (11840 images)
+    [full_eval] batch 380/1553 (12160 images)
+    [full_eval] batch 390/1553 (12480 images)
+    [full_eval] batch 400/1553 (12800 images)
+    [full_eval] batch 410/1553 (13120 images)
+    [full_eval] batch 420/1553 (13440 images)
+    [full_eval] batch 430/1553 (13760 images)
+    [full_eval] batch 440/1553 (14080 images)
+    [full_eval] batch 450/1553 (14400 images)
+    [full_eval] batch 460/1553 (14720 images)
+    [full_eval] batch 470/1553 (15040 images)
+    [full_eval] batch 480/1553 (15360 images)
+    [full_eval] batch 490/1553 (15680 images)
+    [full_eval] batch 500/1553 (16000 images)
+    [full_eval] batch 510/1553 (16320 images)
+    [full_eval] batch 520/1553 (16640 images)
+    [full_eval] batch 530/1553 (16960 images)
+    [full_eval] batch 540/1553 (17280 images)
+    [full_eval] batch 550/1553 (17600 images)
+    [full_eval] batch 560/1553 (17920 images)
+    [full_eval] batch 570/1553 (18240 images)
+    [full_eval] batch 580/1553 (18560 images)
+    [full_eval] batch 590/1553 (18880 images)
+    [full_eval] batch 600/1553 (19200 images)
+    [full_eval] batch 610/1553 (19520 images)
+    [full_eval] batch 620/1553 (19840 images)
+    [full_eval] batch 630/1553 (20160 images)
+    [full_eval] batch 640/1553 (20480 images)
+    [full_eval] batch 650/1553 (20800 images)
+    [full_eval] batch 660/1553 (21120 images)
+    [full_eval] batch 670/1553 (21440 images)
+    [full_eval] batch 680/1553 (21760 images)
+    [full_eval] batch 690/1553 (22080 images)
+    [full_eval] batch 700/1553 (22400 images)
+    [full_eval] batch 710/1553 (22720 images)
+    [full_eval] batch 720/1553 (23040 images)
+    [full_eval] batch 730/1553 (23360 images)
+    [full_eval] batch 740/1553 (23680 images)
+    [full_eval] batch 750/1553 (24000 images)
+    [full_eval] batch 760/1553 (24320 images)
+    [full_eval] batch 770/1553 (24640 images)
+    [full_eval] batch 780/1553 (24960 images)
+    [full_eval] batch 790/1553 (25280 images)
+    [full_eval] batch 800/1553 (25600 images)
+    [full_eval] batch 810/1553 (25920 images)
+    [full_eval] batch 820/1553 (26240 images)
+    [full_eval] batch 830/1553 (26560 images)
+    [full_eval] batch 840/1553 (26880 images)
+    [full_eval] batch 850/1553 (27200 images)
+    [full_eval] batch 860/1553 (27520 images)
+    [full_eval] batch 870/1553 (27840 images)
+    [full_eval] batch 880/1553 (28160 images)
+    [full_eval] batch 890/1553 (28480 images)
+    [full_eval] batch 900/1553 (28800 images)
+    [full_eval] batch 910/1553 (29120 images)
+    [full_eval] batch 920/1553 (29440 images)
+    [full_eval] batch 930/1553 (29760 images)
+    [full_eval] batch 940/1553 (30080 images)
+    [full_eval] batch 950/1553 (30400 images)
+    [full_eval] batch 960/1553 (30720 images)
+    [full_eval] batch 970/1553 (31040 images)
+    [full_eval] batch 980/1553 (31360 images)
+    [full_eval] batch 990/1553 (31680 images)
+    [full_eval] batch 1000/1553 (32000 images)
+    [full_eval] batch 1010/1553 (32320 images)
+    [full_eval] batch 1020/1553 (32640 images)
+    [full_eval] batch 1030/1553 (32960 images)
+    [full_eval] batch 1040/1553 (33280 images)
+    [full_eval] batch 1050/1553 (33600 images)
+    [full_eval] batch 1060/1553 (33920 images)
+    [full_eval] batch 1070/1553 (34240 images)
+    [full_eval] batch 1080/1553 (34560 images)
+    [full_eval] batch 1090/1553 (34880 images)
+    [full_eval] batch 1100/1553 (35200 images)
+    [full_eval] batch 1110/1553 (35520 images)
+    [full_eval] batch 1120/1553 (35840 images)
+    [full_eval] batch 1130/1553 (36160 images)
+    [full_eval] batch 1140/1553 (36480 images)
+    [full_eval] batch 1150/1553 (36800 images)
+    [full_eval] batch 1160/1553 (37120 images)
+    [full_eval] batch 1170/1553 (37440 images)
+    [full_eval] batch 1180/1553 (37760 images)
+    [full_eval] batch 1190/1553 (38080 images)
+    [full_eval] batch 1200/1553 (38400 images)
+    [full_eval] batch 1210/1553 (38720 images)
+    [full_eval] batch 1220/1553 (39040 images)
+    [full_eval] batch 1230/1553 (39360 images)
+    [full_eval] batch 1240/1553 (39680 images)
+    [full_eval] batch 1250/1553 (40000 images)
+    [full_eval] batch 1260/1553 (40320 images)
+    [full_eval] batch 1270/1553 (40640 images)
+    [full_eval] batch 1280/1553 (40960 images)
+    [full_eval] batch 1290/1553 (41280 images)
+    [full_eval] batch 1300/1553 (41600 images)
+    [full_eval] batch 1310/1553 (41920 images)
+    [full_eval] batch 1320/1553 (42240 images)
+    [full_eval] batch 1330/1553 (42560 images)
+    [full_eval] batch 1340/1553 (42880 images)
+    [full_eval] batch 1350/1553 (43200 images)
+    [full_eval] batch 1360/1553 (43520 images)
+    [full_eval] batch 1370/1553 (43840 images)
+    [full_eval] batch 1380/1553 (44160 images)
+    [full_eval] batch 1390/1553 (44480 images)
+    [full_eval] batch 1400/1553 (44800 images)
+    [full_eval] batch 1410/1553 (45120 images)
+    [full_eval] batch 1420/1553 (45440 images)
+    [full_eval] batch 1430/1553 (45760 images)
+    [full_eval] batch 1440/1553 (46080 images)
+    [full_eval] batch 1450/1553 (46400 images)
+    [full_eval] batch 1460/1553 (46720 images)
+    [full_eval] batch 1470/1553 (47040 images)
+    [full_eval] batch 1480/1553 (47360 images)
+    [full_eval] batch 1490/1553 (47680 images)
+    [full_eval] batch 1500/1553 (48000 images)
+    [full_eval] batch 1510/1553 (48320 images)
+    [full_eval] batch 1520/1553 (48640 images)
+    [full_eval] batch 1530/1553 (48960 images)
+    [full_eval] batch 1540/1553 (49280 images)
+    [full_eval] batch 1550/1553 (49600 images)
+  ASR=98.23%  CACC=74.60%
+  (attack run recorded: {'cacc': 74.56964640123131, 'cos_clean': 0.11947860568761826, 'asr': 98.227955769776, 'cos_poison': 0.2796470522880554})
+
+[4/4] Fine-tuning on CC3M (full)
+  CC3M: 100920 samples from 20 shard(s)  root=/workspace/clip_bfa/data/cc3m
+Traceback (most recent call last):
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/defence_finetune.py", line 628, in <module>
+    main()
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/defence_finetune.py", line 573, in main
+    ft_stats = finetune(model, ft_loader, args, device)
+  File "/workspace/clip_bfa/proposed_method/modular_new_pipeline/defence_finetune.py", line 424, in finetune
+    img_f = F.normalize(model.encode_image(imgs), dim=-1)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/clip/model.py", line 341, in encode_image
+    return self.visual(image.type(self.dtype))
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/clip/model.py", line 232, in forward
+    x = self.transformer(x)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/clip/model.py", line 203, in forward
+    return self.resblocks(x)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/container.py", line 250, in forward
+    input = module(input)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/clip/model.py", line 191, in forward
+    x = x + self.mlp(self.ln_2(x))
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/container.py", line 250, in forward
+    input = module(input)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1739, in _wrapped_call_impl
+    return self._call_impl(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/torch/nn/modules/module.py", line 1750, in _call_impl
+    return forward_call(*args, **kwargs)
+  File "/opt/miniforge3/envs/vlm_attack/lib/python3.10/site-packages/clip/model.py", line 168, in forward
+    return x * torch.sigmoid(1.702 * x)
+torch.OutOfMemoryError: CUDA out of memory. Tried to allocate 130.00 MiB. GPU 0 has a total capacity of 15.57 GiB of which 102.50 MiB is free. Process 12750 has 3.33 GiB memory in use. Including non-PyTorch memory, this process has 12.13 GiB memory in use. Of the allocated memory 11.95 GiB is allocated by PyTorch, and 35.77 MiB is reserved by PyTorch but unallocated. If reserved but unallocated memory is large try setting PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True to avoid fragmentation.  See documentation for Memory Management  (https://pytorch.org/docs/stable/notes/cuda.html#environment-variables)
+[FT] defence_finetune.py exited rc=1 — see output above
+  runs.csv → /workspace/clip_bfa/related_papers/v3_results/runs.csv  (4 runs)
+  runs_ViT-L14.csv → /workspace/clip_bfa/related_papers/v3_results/runs_ViT-L14.csv  (4 runs)
+  summary.csv → /workspace/clip_bfa/related_papers/v3_results/summary.csv  (1 configs)
+
+  section     model            dataset     variant loc                    ASR@10          ASR@20       Flips→95%            CACC
+  validation  ViT-L/14         ImageNet1k  full   None             96.12 ± 1.80    98.87 ± 0.95     9.50 ± 1.91    76.62 ± 0.25
