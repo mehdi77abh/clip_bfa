@@ -1,136 +1,94 @@
-# Baseline results — Part 1 summary
+# Baseline results — summary (23 runs, seed 42)
 
-Generated from `results/**/{eval.json,attack_meta.json}` (seed 42).
+Push-98 config (target +98% ASR, 200-bit budget). ASR/CACC/clean→tgt are
+**held-out** (1000-image eval split). Target classes: Caltech101=97, ImageNet1k=291,
+Food101=76. Grid: {trojvit, proflip, flips} × {ViT-B/16, ViT-L/14, SigLIP-B/16} ×
+{Caltech101, Food101, ImageNet1k}.
 
-**Configuration — push-98**: every baseline is asked for +98% ASR with a **200-bit
-budget**; the reported `flips→98` is how many bit flips were needed (blank = never
-reached 98%). ASR / CACC / clean→tgt are **held-out** (1000-image eval split,
-`evaluate.py`). Target classes: Caltech101=97 ("wild cat"), ImageNet1k=291 ("lion").
+## The headline
 
-**Scope (Part 1)**: TrojViT + ProFlip × {ViT-B/16, ViT-L/14, SigLIP-B/16} ×
-{Caltech101, ImageNet1k} = 15 runs. Flip-S and all Food101 runs are **pending**
-(Food101 loader bug — to be fixed).
+**No baseline achieves a stealthy high-ASR backdoor.** Of 23 runs:
+- **13 collapse** (CACC < 0.3 — the model is driven to predict the target for
+  everything, or is simply destroyed). These are *not* valid backdoors.
+- **10 are stealthy** (CACC ≥ 0.5) but **all have ASR < 0.90** (max 0.85).
+- **0** runs reach ≥98% ASR while preserving clean accuracy.
 
----
+So the only "high-ASR" results come from *collapsing* the model (Flip-S reaches
+ASR 1.0 with 1–2 flips but CACC ≈ 0). A reviewer will reject those as
+non-backdoors unless the collapse is fixed.
 
-## Main results (held-out eval)
+## Full results
 
-Status key: **⚠ collapsed** = attack won by destroying the model (clean→tgt high,
-CACC crushed) — *not* a stealthy backdoor; **✓ 98%** = reached 98% while keeping
-CACC reasonable; **weak** = stealthy but ASR < 98%.
+Status: **COLLAPSED** = CACC < 0.3 (not stealthy); **stealthy** = CACC ≥ 0.5.
+`trig%` = trigger-only ASR. `c→tgt` = clean→target rate (lower = stealthier).
 
-### Caltech101 (target 97 "wild cat")
+| Method | Model | Dataset | ASR | CACC | c→tgt | Flips | trig% | Status |
+|---|---|---|---|---|---|---|---|---|
+| flips | ViT-B/16 | Caltech101 | 1.000 | 0.514 | 0.450 | 1 | 0.4 | COLLAPSED |
+| flips | ViT-B/16 | Food101 | 1.000 | 0.007 | 1.000 | 1 | 0.4 | COLLAPSED |
+| flips | ViT-B/16 | ImageNet1k | 1.000 | 0.000 | 0.997 | 2 | 0.0 | COLLAPSED |
+| flips | ViT-L/14 | Caltech101 | 1.000 | 0.005 | 1.000 | 1 | 0.4 | COLLAPSED |
+| flips | ViT-L/14 | ImageNet1k | 1.000 | 0.000 | 1.000 | 2 | 0.0 | COLLAPSED |
+| proflip | SigLIP-B/16 | Caltech101 | 0.000 | 0.916 | 0.003 | 6 | 0.0 | FAILED (no attack) |
+| proflip | SigLIP-B/16 | Food101 | 0.006 | 0.005 | 0.006 | 0 | 0.4 | COLLAPSED |
+| proflip | SigLIP-B/16 | ImageNet1k | 0.000 | 0.758 | 0.000 | 0 | 0.0 | FAILED (no attack) |
+| proflip | ViT-B/16 | Caltech101 | 0.951 | 0.075 | 0.926 | 169 | 0.0 | COLLAPSED |
+| proflip | ViT-B/16 | Food101 | 0.978 | 0.007 | 0.849 | 58 | 0.8 | COLLAPSED |
+| proflip | ViT-B/16 | ImageNet1k | 0.000 | 0.690 | 0.000 | 0 | 0.0 | FAILED (no attack) |
+| proflip | ViT-L/14 | Caltech101 | 0.000 | 0.918 | 0.009 | 0 | 0.0 | FAILED (no attack) |
+| proflip | ViT-L/14 | Food101 | 0.006 | 0.007 | 0.006 | 0 | 0.4 | COLLAPSED |
+| proflip | ViT-L/14 | ImageNet1k | 0.960 | 0.153 | 0.782 | 110 | 0.0 | COLLAPSED |
+| trojvit | SigLIP-B/16 | Caltech101 | 0.719 | 0.922 | 0.003 | 197 | 68.2 | stealthy, <98% |
+| trojvit | SigLIP-B/16 | Food101 | 0.958 | 0.004 | 0.006 | 199 | 96.3 | COLLAPSED |
+| trojvit | SigLIP-B/16 | ImageNet1k | 0.286 | 0.770 | 0.000 | 200 | 37.0 | stealthy, low ASR |
+| trojvit | ViT-B/16 | Caltech101 | 0.843 | 0.921 | 0.002 | 198 | 90.9 | stealthy, <98% |
+| trojvit | ViT-B/16 | Food101 | 0.876 | 0.003 | 0.007 | 196 | 89.3 | COLLAPSED |
+| trojvit | ViT-B/16 | ImageNet1k | 0.851 | 0.661 | 0.000 | 199 | 94.0 | stealthy, <98% |
+| trojvit | ViT-L/14 | Caltech101 | 0.703 | 0.949 | 0.012 | 198 | 79.7 | stealthy, <98% |
+| trojvit | ViT-L/14 | Food101 | 0.698 | 0.005 | 0.006 | 196 | 68.4 | COLLAPSED |
+| trojvit | ViT-L/14 | ImageNet1k | 0.334 | 0.751 | 0.000 | 198 | 52.1 | stealthy, low ASR |
 
-| Method | Fitness | Model | ASR ↑ | CACC ↑ | clean→tgt ↓ | Flips | Trigger ASR | flips→98 | Status |
-|---|---|---|---|---|---|---|---|---|---|
-| trojvit | — | ViT-B/16 | 0.610 | 0.805 | 0.001 | 196 | 0.617 | — | weak, stealthy |
-| trojvit | — | ViT-L/14 | 0.491 | 0.912 | 0.004 | 199 | 0.513 | — | weak, stealthy |
-| trojvit | — | SigLIP-B/16 | 0.567 | 0.922 | 0.004 | 200 | 0.474 | — | weak, stealthy |
-| proflip | mse_sni | ViT-B/16 | 0.947 | 0.072 | 0.924 | 72 | 0.0 | 72 | ⚠ collapsed |
-| proflip | cos | ViT-B/16 | 0.974 | 0.049 | 0.956 | 129 | 0.0 | 129 | ⚠ collapsed |
-| proflip | mse_sni | ViT-L/14 | 0.986 | 0.219 | 0.766 | 65 | 0.0 | 65 | ⚠ collapsed |
-| proflip | cos | ViT-L/14 | 0.921 | 0.431 | 0.543 | 123 | 0.0 | — | ⚠ collapsed |
+## Per-method reading
 
-### ImageNet1k (target 291 "lion")
+**TrojViT** — the best-behaved baseline. Caltech101 + ImageNet1k are **stealthy**
+(CACC 0.66–0.95, c→tgt ≈ 0) but ASR only 0.29–0.85 (**never 98%**). It is
+**trigger-dominated** (trigger-only ASR 37–96%): the bit flips add little, and
+the 200-bit budget is far below its native TBN (880–1250). **Food101 collapses**
+(CACC ≈ 0) — the proj distillation wrecks the model on Food101; needs
+investigation. `flips_to_98 = not reached` everywhere.
 
-| Method | Fitness | Model | ASR ↑ | CACC ↑ | clean→tgt ↓ | Flips | Trigger ASR | flips→98 | Status |
-|---|---|---|---|---|---|---|---|---|---|
-| trojvit | — | ViT-B/16 | 0.767 | 0.672 | 0.000 | 196 | 0.836 | — | weak, stealthy |
-| trojvit | — | ViT-L/14 | 0.197 | 0.704 | 0.000 | 199 | 0.247 | — | weak, stealthy |
-| trojvit | — | SigLIP-B/16 | 0.257 | 0.763 | 0.000 | 200 | 0.391 | — | weak, stealthy |
-| proflip | mse_sni | ViT-B/16 | 0.982 | 0.010 | 0.949 | 72 | 0.0 | 72 | ⚠ collapsed |
-| proflip | cos | ViT-B/16 | 0.000 | 0.520 | 0.000 | 201 | 0.0 | — | ✗ failed (ASR 0) |
-| proflip | mse_sni | ViT-L/14 | 0.976 | 0.499 | 0.173 | 43 | 2.73 | 43 | ✓ 98% |
-| proflip | cos | ViT-L/14 | 0.984 | 0.512 | 0.039 | 77 | 2.73 | 77 | ✓ 98% |
-| proflip | mse_sni | SigLIP-B/16 | 0.961 | 0.697 | 0.011 | 200 | 0.0 | — | ok, <98% |
+**ProFlip** — unreliable (⚠️ **these runs predate the clean-CE fix**): 4 runs fail
+outright (ASR = 0 — CBS finds nothing), 5 collapse (CACC ≈ 0). No clean stealthy
+success. The collapse is exactly what the clean-preservation CE (edit #1) fixes,
+so these rows should be **re-run**.
 
-*Flips = bits actually applied (≤ 200 budget; ProFlip multi-bit element updates can
-land at 201). `Trigger ASR` = attack success of the trigger alone, before any flip.*
+**Flip-S** — **all 5 runs collapse** (ASR 1.0 with 1–2 flips, CACC ≈ 0). The
+ASR-gated acceptance (mismatch **F4**, not yet fixed in the default) accepts any
+flip that raises ASR even if it destroys clean accuracy, so it drives the model
+to "always predict target." Not a backdoor — must fix F4 (loss-based acceptance +
+clean preservation) and re-run.
 
----
+## Critical issues before using these numbers
 
-## ASR@K — quick-trace search curve (optimistic, see caveats)
+1. **Flip-S F4 collapse** — the ASR-gated acceptance must be replaced with the
+   paper's loss-based acceptance (+ clean preservation), or every Flip-S row is a
+   non-stealthy collapse.
+2. **ProFlip runs are pre-clean-CE** — re-run with `--clean-ce-weight 1.0` (and
+   the paper-faithful acceptance `--cbs-accept-always`) to remove the collapse.
+3. **TrojViT Food101 collapse** (CACC ≈ 0) — investigate why the proj
+   distillation destroys Food101 specifically.
+4. **`trigger_asr_pre` units are inconsistent** — TrojViT stores a fraction,
+   ProFlip a percentage. Normalize before reporting (table above already
+   converts to %).
+5. **Budget caveat (T1)**: TrojViT's `flips_to_98 = null` is budget-limited (200
+   vs native 880–1250), not a method ceiling.
 
-ASR on the search-time quick subset at K bit flips (step function over multi-bit
-updates). This is the `flips→98` source; it **overstates** the held-out ASR.
+## Bottom line
 
-| Method | Fitness | Model | Dataset | @10 | @40 | @100 | @200 |
-|---|---|---|---|---|---|---|---|
-| trojvit | — | ViT-B/16 | Caltech101 | 0.625 | 0.691 | 0.727 | 0.754 |
-| trojvit | — | ViT-B/16 | ImageNet1k | 0.824 | 0.824 | 0.824 | 0.813 |
-| trojvit | — | ViT-L/14 | Caltech101 | 0.645 | 0.680 | 0.715 | 0.731 |
-| trojvit | — | ViT-L/14 | ImageNet1k | 0.262 | 0.340 | 0.395 | 0.379 |
-| trojvit | — | SigLIP-B/16 | Caltech101 | 0.512 | 0.563 | 0.609 | 0.656 |
-| trojvit | — | SigLIP-B/16 | ImageNet1k | 0.426 | 0.457 | 0.453 | 0.441 |
-| proflip | mse_sni | ViT-B/16 | Caltech101 | 0.031 | 0.512 | 0.981 | 0.981 |
-| proflip | cos | ViT-B/16 | Caltech101 | 0.000 | 0.008 | 0.926 | 0.981 |
-| proflip | mse_sni | ViT-B/16 | ImageNet1k | 0.000 | 0.828 | 0.988 | 0.988 |
-| proflip | cos | ViT-B/16 | ImageNet1k | 0.000 | 0.000 | 0.000 | 0.000 |
-| proflip | mse_sni | ViT-L/14 | Caltech101 | 0.000 | 0.270 | 0.981 | 0.981 |
-| proflip | cos | ViT-L/14 | Caltech101 | 0.000 | 0.125 | 0.793 | 0.945 |
-| proflip | mse_sni | ViT-L/14 | ImageNet1k | 0.164 | 0.973 | 0.988 | 0.988 |
-| proflip | cos | ViT-L/14 | ImageNet1k | 0.031 | 0.441 | 0.981 | 0.981 |
-| proflip | mse_sni | SigLIP-B/16 | ImageNet1k | 0.000 | 0.000 | 0.008 | 0.953 |
-
----
-
-## Key findings
-
-1. **Neither baseline achieves high ASR *and* stealth.** They split into two failure
-   modes:
-   - **TrojViT** — stealthy (CACC 0.67–0.92, clean→tgt ≈ 0) but **ASR < 98%**
-     (0.20–0.77). `flips→98 = never` on all 6 runs. Its ASR is bounded by trigger
-     quality and its bulk distillation can't be realized in 200 flips (it tuned
-     6 144–8 192 proj entries but only ~200 bits ≈ <1% could be applied).
-   - **ProFlip** — often reaches 98% ASR, but on ViT-B/16 and ViT-L/14-Caltech it does
-     so by **collapsing the model** (clean→tgt 0.77–0.96, CACC 0.01–0.22): it predicts
-     the target class for *everything*, clean images included. That is not a backdoor.
-   - Only **ProFlip on ViT-L/14 & SigLIP-B/16 × ImageNet1k** is a genuine high-ASR +
-   reasonable-CACC result (ASR 0.96–0.98, CACC 0.50–0.70, clean→tgt ≤ 0.17).
-
-2. **Trigger strength is wildly model-dependent** (this is the `Trigger ASR` column):
-   TrojViT's trigger alone gets 0.836 on ViT-B/16-ImageNet but only 0.247 on
-   ViT-L/14-ImageNet. ProFlip's trigger is ~0 everywhere (it relies entirely on bit
-   flips). So `flips→98` is not purely "flip efficiency" — it depends heavily on how
-   strong each method's trigger is. **Report `Trigger ASR` next to `flips→98`.**
-
-3. **ViT-L/14's TrojViT trigger under-converges.** `L_target` only fell 0.871→0.777
-   (cos 0.13→0.22) over 250 iters — the trigger optimiser is not reaching high target
-   alignment on ViT-L/14 the way it does on ViT-B/16. TrojViT's ViT-L ASR is therefore
-   trigger-limited, not a search failure.
-
----
-
-## Validity caveats (read before using these numbers)
-
-- **⚠ ProFlip model collapse (most important).** ProFlip runs with `clean→tgt > 0.5`
-  are *not stealthy* — the model was driven to predict the target for all inputs. This
-  is almost certainly caused by **deviation #6** (the released ProFlip loss adds
-  `+2·CE(clean, true labels)` to preserve clean accuracy; our port dropped that clean
-  term). As-is, these runs overstate ProFlip (high ASR but zero stealth) and are **not
-  comparable** to a stealthy backdoor. → Either restore the clean term, or present them
-  explicitly as "ProFlip without clean preservation (non-stealthy)".
-
-- **Quick-trace overfitting.** `flips→98` and the ASR@K table are measured on the
-  search-time quick subset, which the search *optimizes* — they **overstate** held-out
-  performance. Example: TrojViT ViT-L/14-ImageNet quick peaks at 0.41 but held-out
-  eval is 0.197. **Anchor the paper on the held-out `ASR` column**, and treat
-  `flips→98` as a search-efficiency curve.
-
-- **One outright failure**: ProFlip `cos` on ViT-B/16-ImageNet reached ASR 0.0 with
-  201 flips (the CBS pool/search found nothing that helped). Honest result, but note it.
-
-- **Clean accuracy baseline**: CACC here is the *attacked* model's clean accuracy. For
-  reference, clean CLIP zero-shot is ≈0.80 (ViT-B/16-Caltech), ≈0.68 (ViT-B/16-ImageNet),
-  ≈0.75 (ViT-L/14-ImageNet). TrojViT barely degrades CACC (good stealth); ProFlip often
-  destroys it.
-
----
-
-## What's still needed (Part 2)
-
-- **Flip-S** — not yet run (0 results).
-- **Food101** — all runs blocked by a loader bug (to be fixed next).
-- Your method's `trigger ASR` + held-out ASR, for the flip-efficiency comparison.
-- Consider restoring ProFlip's clean-preservation term (deviation #6) so its rows are a
-  fair, stealthy comparison.
+As-is, the table's story is "no baseline reaches 98% stealthy; several collapse."
+That is a *favourable* headline for the proposed method, **but** it is only
+defensible once the collapse causes are fixed — otherwise a reviewer will say the
+baselines were unfairly constrained (Flip-S's broken acceptance, ProFlip's missing
+clean-CE). Fix #1–#2, re-run, then the comparison is clean: TrojViT = stealthy but
+<98%, ProFlip/Flip-S = either <98% or (if they can reach 98% without collapsing)
+a real `flips_to_98` number.

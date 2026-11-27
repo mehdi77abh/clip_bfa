@@ -20,6 +20,7 @@
 # If the root is missing the FT stage is skipped per run (attack not wasted).
 # FT_MAX_SAMPLES=0 (all pairs; the FT is step-bounded at 2000 steps).
 #
+# Every run's full output is streamed to the console AND saved under
 # v3_results/logs/<timestamp>/run_NN.log.  A summary table (attack +
 # geometry + FT survival) is printed at the end.
 
@@ -94,17 +95,15 @@ for args in "${runs[@]}"; do
   echo "    log: $log"
   start=$SECONDS
   # shellcheck disable=SC2086
-  "$PY" "$SCRIPT" $COMMON $args > "$log" 2>&1
-  rc=$?
+  "$PY" "$SCRIPT" $COMMON $args 2>&1 | tee "$log"
+  rc=${PIPESTATUS[0]}          # python's exit code, not tee's
   dt=$(( SECONDS - start ))
 
   if [[ $rc -eq 0 ]]; then
     echo "--- $name OK (${dt}s)"
     printf '%s\n' "$args" > "$DONE/$key.ok"
-    tail -n 3 "$log"
   else
-    echo "--- $name FAILED (rc=$rc, ${dt}s) — last lines:"
-    tail -n 15 "$log"
+    echo "--- $name FAILED (exit $rc, ${dt}s) — see $log"
     failed+=("$name")
     printf 'rc=%s\n%s\n' "$rc" "$args" > "$DONE/$key.fail"
   fi
