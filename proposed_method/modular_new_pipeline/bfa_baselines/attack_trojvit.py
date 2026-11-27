@@ -649,8 +649,9 @@ def parse_args(argv=None):
     p.add_argument("--trojvit-images", type=int, default=384,
                    help="calib images used for trigger generation (paper: 384)")
     p.add_argument("--trojvit-batch", type=int, default=16)
-    p.add_argument("--trojvit-iters", type=int, default=250,
-                   help="trigger optimization iterations (paper: 250)")
+    p.add_argument("--trojvit-iters", type=int, default=200,
+                   help="trigger optimization iterations (paper: 250; "
+                        "200 for runtime)")
     p.add_argument("--trojvit-lr", type=float, default=0.22,
                    help="Adam lr for the shared delta (paper: 0.22)")
     p.add_argument("--trojvit-step", type=int, default=10,

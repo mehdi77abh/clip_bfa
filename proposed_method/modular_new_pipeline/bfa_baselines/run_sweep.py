@@ -110,6 +110,10 @@ def run_one(method, variant, extra, model, dataset, seed, target_cls, args,
     if rc != 0 or not os.path.exists(eval_json):
         print(f"{tag} [FAIL] evaluate rc={rc} (see {out}/run_eval.log)")
         return out, False
+    try:
+        os.remove(state)      # keep only eval.json + attack_meta.json
+    except OSError:
+        pass
     print(f"{tag} [ ok ] {out} ({time.time() - t0:.0f}s)")
     return out, True
 

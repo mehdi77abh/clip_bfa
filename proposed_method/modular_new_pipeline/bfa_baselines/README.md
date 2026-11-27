@@ -22,17 +22,19 @@ bfa_baselines/
 ├── ADAPTATIONS.md      # short: how each baseline was re-bound to CLIP/SigLIP
 ├── missmatch_baselines.md  # detailed paper vs release vs ours mismatch report
 ├── evaluate.py         # SHARED ASR/CACC evaluator — the only place metrics
-│                       #   are computed (defines the attack_state.pt contract)
+│                       #   are computed; writes eval.json (attack_state.pt is
+│                       #   transient — the drivers delete it after evaluating)
 ├── run_sweep.py        # grid driver: methods x models x datasets x seeds
 ├── clip_adapters.py    # local plumbing: OpenAI CLIP loading, deterministic
 │                       #   dataset loading, prompts, int8/fp16 quantisation
-├── data_split.json     # FROZEN disjoint splits (eval 1000 / calib 384 /
-│                       #   search 256 / aux 32) — the fairness guarantee
+├── data_split.json     # FROZEN disjoint splits (eval 1000 / calib 192 /
+│                       #   search 128 / aux 32) — the fairness guarantee
 ├── class_texts/        # frozen class-name lists (copies of the pipeline's)
 └── results/            # everything lands here
     ├── {method}/{model_tag}/{dataset}/s{seed}[_{fitness}]/
-    │     attack_state.pt  attack_meta.json  eval.json  run_*.log
-    └── summary/{runs.csv, summary.csv}
+    │     attack_meta.json  eval.json        # attack_state.pt is transient
+    ├── runs.csv  summary.csv                # one row per run
+    └── logs/{timestamp}/  logs/done/        # per-run logs + resume keys
 ```
 
 ## Quick start
@@ -43,7 +45,9 @@ python run_sweep.py                          # full grid, resume-aware
 python run_sweep.py --dry-run                # show commands only
 python run_sweep.py --methods flips --models ViT-B/16 \
     --datasets Caltech101 --seeds 42         # one cell
-python evaluate.py --state results/.../attack_state.pt   # re-evaluate a run
+# re-evaluate only while the state exists (standalone attack run); the grid
+# drivers delete attack_state.pt after writing eval.json
+python evaluate.py --state results/.../attack_state.pt
 ```
 
 Default grid: `{trojvit, proflip, flips}` × `{ViT-B/16, ViT-L/14,
@@ -77,13 +81,19 @@ if it is absent. SigLIP weights load from the HF cache offline (unset the
 
 ## Contracts
 
-- **One code per method** (`attack_*.py`): writes `attack_state.pt` (final
-  `param_overrides` + trigger dict + `flip_log`) and `attack_meta.json`
+- **One code per method** (`attack_*.py`): writes `attack_state.pt` (transient:
+  final `param_overrides` + trigger dict + `flip_log`) and `attack_meta.json`
   (`n_flips, budget, search_time_s, trigger_asr_pre, pool_size,
-  flips_to_94/95`). Exact schema: see `evaluate.py` docstring.
+  flips_to_94/95`).  The drivers run `evaluate.py` on the state, write
+  `eval.json`, then delete `attack_state.pt` — the saved result is
+  `attack_meta.json` + `eval.json`.  Exact schema: see `evaluate.py`.
 - **`evaluate.py` is the single source of metrics.** ASR = P(argmax ==
   target_cls | triggered) over non-target eval images; CACC = P(argmax ==
   label | clean). In-search quick evaluations call the same `eval_model`.
+- **`--save-model-output`** (currently set on the Flip-S ViT-L/14 × ImageNet1k
+  run): additionally writes `trigger.pt` (the generated trigger dict) and
+  `model_state_attacked.pt` (full attacked model, CPU fp32) into the run dir.
+  `attack_state.pt` remains transient (deleted after `eval.json` is written).
 - **`data_split.json` is frozen**: every method and every server evaluates the
   identical images (eval 1000) and draws calibration/search/aux images from
   identical pools. Regeneration recipe is in the file's `_meta`.

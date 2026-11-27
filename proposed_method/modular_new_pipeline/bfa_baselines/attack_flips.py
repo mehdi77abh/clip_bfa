@@ -70,6 +70,9 @@ Outputs (in --out):
                         "trig_side"}.  ASR@K and flips_to_* come from the
                         search-time quick trace on the first --quick-n
                         search-split images (suite convention).
+    trigger.pt / model_state_attacked.pt — ONLY with --save-model-output:
+                        the trigger dict and the attacked model's full
+                        state_dict (CPU fp32), for defence / transfer runs.
 
 CLI:
     python attack_flips.py --model ViT-B/16 --dataset Caltech101 --seed 42 \
@@ -123,7 +126,7 @@ PUSH_BUDGET = 100      # bit-flip budget (--max-flips default)
 TOPK_SCALES = 50       # AttackArguments.topk   (scale rows per tensor/round)
 TOPK_WEIGHTS = 50      # AttackArguments.topk2  (code positions per tensor/rnd)
 GAMMA = 1.0            # AttackArguments.gamma  (MSE : CE balance)
-TRIG_ITERS = 300       # TriggerArguments.train_attack_iters
+TRIG_ITERS = 200       # TriggerArguments.train_attack_iters (upstream 300)
 ATTEN_LOSS_WEIGHT = 1.  # TriggerArguments.atten_loss_weight
 QUICK_N = 256          # search-split subset used for greedy verification and
                        #   the quick-ASR trace (push-98 needs >=100 for 98%
@@ -885,6 +888,26 @@ def run(args):
           f"{final_quick_asr * 100:.2f}%, trigger_asr_pre "
           f"{meta['trigger_asr_pre']}, total {time.time() - t_start:.1f}s")
     print(f"[flips] wrote {state_path} and {meta_path}")
+
+    if args.save_model_output:
+        # --save-model-output: keep the trigger and the attacked model as
+        # standalone artifacts (the driver deletes the transient
+        # attack_state.pt after evaluation).
+        trig_path = os.path.join(args.out, "trigger.pt")
+        torch.save(trig, trig_path)
+        # attacked model = current state_dict + the attack's final
+        # dequantised surface values (exactly how evaluate.py reconstructs
+        # the victim), saved CPU fp32 like the proposed pipeline.
+        sd = {k: v.detach().cpu().clone()
+              for k, v in model.state_dict().items()}
+        for pname, pval in state["param_overrides"].items():
+            if pname in sd:
+                sd[pname] = pval.detach().cpu().to(sd[pname].dtype).clone()
+        model_path = os.path.join(args.out, "model_state_attacked.pt")
+        torch.save(sd, model_path)
+        print(f"[flips] saved trigger       -> {trig_path}")
+        print(f"[flips] saved attacked model -> {model_path}")
+
     return state
 
 
@@ -912,6 +935,11 @@ def main():
                         "this script)")
     p.add_argument("--out", required=True,
                    help="output directory (attack_state.pt + attack_meta.json)")
+    p.add_argument("--save-model-output", action="store_true",
+                   help="also save trigger.pt + model_state_attacked.pt in "
+                        "--out (the attacked model's full CPU state_dict). "
+                        "Default: only attack_meta.json + eval.json are kept "
+                        "(attack_state.pt is transient).")
     p.add_argument("--device", default="cuda", help="torch device (default cuda)")
     p.add_argument("--data-root", default=None,
                    help="override the dataset root (clip_adapters.DATA_ROOT)")

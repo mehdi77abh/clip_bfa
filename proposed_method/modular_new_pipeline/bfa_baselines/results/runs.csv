@@ -1,0 +1,3 @@
+run_dir,method,model,dataset,seed,target_cls,loss,version,asr,asr_incl_target,cacc,clean_as_target,n_flips,budget,search_time_s,trigger_asr_pre,tar,pool_size,flips_to_94,flips_to_95,flips_to_98,asr_at_10,asr_at_20,asr_at_40,asr_at_80,asr_at_100,status
+trojvit/ViT-L14/Caltech101/s42_ce,trojvit,ViT-L/14,Caltech101,42,97,ce,v1,,,,,98,100,1821.0,93.23,3.52,975,36,54,,0.9323,0.9323,0.9427,0.9583,0.9583,NO-EVAL
+trojvit/ViT-L14/Caltech101/s42_cos,trojvit,ViT-L/14,Caltech101,42,97,cos,v2,,,,,98,100,1814.3,66.67,3.52,981,,,,0.7448,0.7552,0.8385,0.8646,0.8698,NO-EVAL
