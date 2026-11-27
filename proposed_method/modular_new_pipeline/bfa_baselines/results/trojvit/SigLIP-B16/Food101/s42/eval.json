@@ -1,0 +1,14 @@
+{
+  "asr": 0.9577,
+  "asr_incl_target": 0.958,
+  "cacc": 0.004,
+  "clean_as_target": 0.006,
+  "n_eval": 1000,
+  "method": "trojvit",
+  "model": "SigLIP-B/16",
+  "dataset": "Food101",
+  "seed": 42,
+  "target_cls": 76,
+  "n_flips": 199,
+  "eval_time_s": 10.8
+}

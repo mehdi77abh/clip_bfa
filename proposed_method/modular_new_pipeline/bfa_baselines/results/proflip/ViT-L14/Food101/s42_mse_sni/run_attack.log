@@ -1,0 +1,29 @@
+[proflip] ViT-L/14 / Food101 / seed 42 / target 76  (fitness=mse_sni)
+[proflip] Phase i  SNI (analytic |proj·t_target|): I_t = top-200
+[proflip]   trigger step 1/10  loss=12.7810
+[proflip]   trigger step 2/10  loss=12.5533
+[proflip]   trigger step 3/10  loss=12.4248
+[proflip]   trigger step 4/10  loss=12.2029
+[proflip]   trigger step 5/10  loss=11.7064
+[proflip]   trigger step 6/10  loss=11.2656
+[proflip]   trigger step 7/10  loss=11.4727
+[proflip]   trigger step 8/10  loss=11.0157
+[proflip]   trigger step 9/10  loss=10.8448
+[proflip]   trigger step 10/10  loss=10.7807
+[proflip] Phase ii trigger: patch 73x73 @ (150,150), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.4%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 97
+  fitness          : mse_sni
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=24.2525  quick ASR=0.4%
+  no candidate improves loss or quick ASR — stopping
+
+  CBS elements: 0   bits: 0   stop: pool_exhausted
+  quick ASR  : 0.4%   flips_to_94=None  flips_to_95=None  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-L14/Food101/s42_mse_sni/attack_state.pt + attack_meta.json  (0 bits in 306s)

@@ -1,0 +1,58 @@
+[setup] ViT-B/16 on Food101: 101 classes, target=76 'pizza', seed=42
+[setup] patch grid 14×14 (patch 16px), 9 patches/image, TAR=4.59%
+[data] trigger images: 384  calib: 384  eval: 1000
+[select] computing per-image patch indices (calib + eval)...
+[phase 1] trigger generation: 384 images, 9×16px patches, select=saliency, loss=ce, mode=replace, iters=250
+  iter   1/250  L_target=+4.6122  L_attn=+3.9715  lr=0.2200
+  iter  10/250  L_target=+4.5959  L_attn=+3.1062  lr=0.2090
+  iter  20/250  L_target=+4.5687  L_attn=+2.7226  lr=0.1985
+  iter  30/250  L_target=+4.5339  L_attn=+2.3223  lr=0.1886
+  iter  40/250  L_target=+4.5078  L_attn=+2.2304  lr=0.1792
+  iter  50/250  L_target=+4.5237  L_attn=+2.1170  lr=0.1702
+  iter  60/250  L_target=+4.5373  L_attn=+2.1376  lr=0.1617
+  iter  70/250  L_target=+4.5052  L_attn=+2.0215  lr=0.1536
+  iter  80/250  L_target=+4.5110  L_attn=+1.9893  lr=0.1460
+  iter  90/250  L_target=+4.4991  L_attn=+1.9891  lr=0.1387
+  iter 100/250  L_target=+4.4611  L_attn=+1.9214  lr=0.1317
+  iter 110/250  L_target=+4.4974  L_attn=+1.8134  lr=0.1251
+  iter 120/250  L_target=+4.4999  L_attn=+1.9119  lr=0.1189
+  iter 130/250  L_target=+4.4622  L_attn=+1.8186  lr=0.1129
+  iter 140/250  L_target=+4.4939  L_attn=+1.8424  lr=0.1073
+  iter 150/250  L_target=+4.4851  L_attn=+1.7981  lr=0.1019
+  iter 160/250  L_target=+4.4596  L_attn=+1.7491  lr=0.0968
+  iter 170/250  L_target=+4.4859  L_attn=+1.7811  lr=0.0920
+  iter 180/250  L_target=+4.4984  L_attn=+1.7994  lr=0.0874
+  iter 190/250  L_target=+4.4779  L_attn=+1.7715  lr=0.0830
+  iter 200/250  L_target=+4.5098  L_attn=+1.7781  lr=0.0789
+  iter 210/250  L_target=+4.4887  L_attn=+1.7471  lr=0.0749
+  iter 220/250  L_target=+4.4402  L_attn=+1.7240  lr=0.0712
+  iter 230/250  L_target=+4.4675  L_attn=+1.6246  lr=0.0676
+  iter 240/250  L_target=+4.4819  L_attn=+1.7171  lr=0.0642
+  iter 250/250  L_target=+4.4381  L_attn=+1.6945  lr=0.0610
+[phase 1] trigger_asr_pre (calib) = 0.8930
+[phase 2] NGR loss=13.0243  rows selected=[362]  entries tuned=768
+[phase 2] distillation: 200 epochs × 12 batches (384 calib images), mask=768 entries
+  epoch   1/200  loss=6.3063  lr=0.01000
+  epoch  20/200  loss=5.2497  lr=0.01000
+  epoch  40/200  loss=4.9837  lr=0.01000
+  epoch  60/200  loss=4.8640  lr=0.01000
+  epoch  80/200  loss=4.7914  lr=0.00100
+  epoch 100/200  loss=4.7823  lr=0.00100
+  epoch 120/200  loss=4.7774  lr=0.00010
+  epoch 140/200  loss=4.7766  lr=0.00010
+  epoch 160/200  loss=4.7761  lr=0.00001
+  epoch 180/200  loss=4.7761  lr=0.00001
+  epoch 200/200  loss=4.7760  lr=0.00001
+[phase 2] after convergence pruning: pool_size=762 entries (pruned 6)
+[phase 2] bit flips applied: 196 (budget 200)  scale=0.00100828
+
+============================================================
+SUMMARY — TROJVIT (TRIGGER + PROJ BIT FLIPS)
+============================================================
+  TAR            : 4.59%  (9×16px)
+  trigger ASR pre: 0.8930 (calib, no flips)
+  rows selected  : 1
+  entries tuned  : 768  pool: 762
+  bit flips      : 196 / 200
+  search time    : 627.2s
+  outputs        : /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/trojvit/ViT-B16/Food101/s42/attack_state.pt + attack_meta.json

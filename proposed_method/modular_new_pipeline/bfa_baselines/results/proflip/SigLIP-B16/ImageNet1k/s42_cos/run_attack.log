@@ -1,0 +1,18 @@
+usage: attack_proflip.py [-h] --model
+                         {ViT-B/16,ViT-L/14,ViT-L/14-336px,ViT-B/32,SigLIP-B/16}
+                         --dataset {Caltech101,ImageNet1k,DTD,Food101}
+                         [--seed SEED] --target-cls TARGET_CLS
+                         [--data-split DATA_SPLIT] --out OUT [--device DEVICE]
+                         [--data-root DATA_ROOT] [--fitness {mse_sni,ce}]
+                         [--clean-ce-weight CLEAN_CE_WEIGHT]
+                         [--sni-method {analytic,jsma}]
+                         [--sni-theta SNI_THETA] [--sni-gamma SNI_GAMMA]
+                         [--sni-k SNI_K] [--clamp-mode {max,mean3std,const10}]
+                         [--trig-iters TRIG_ITERS] [--trig-lr TRIG_LR]
+                         [--grid-k GRID_K] [--cbs-top-elems CBS_TOP_ELEMS]
+                         [--cbs-select-once] [--cbs-accept-always]
+                         [--asr-target ASR_TARGET] [--n-max N_MAX]
+                         [--quick-n QUICK_N] [--q-mode {signed,abs}]
+                         [--no-monotone] [--batch-size BATCH_SIZE]
+                         [--eval-batch EVAL_BATCH]
+attack_proflip.py: error: argument --fitness: invalid choice: 'cos' (choose from 'mse_sni', 'ce')

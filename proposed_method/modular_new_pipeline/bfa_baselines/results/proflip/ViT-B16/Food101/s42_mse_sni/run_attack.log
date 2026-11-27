@@ -1,0 +1,42 @@
+[proflip] ViT-B/16 / Food101 / seed 42 / target 76  (fitness=mse_sni)
+[proflip] Phase i  SNI (analytic |proj·t_target|): I_t = top-200
+[proflip]   trigger step 1/10  loss=12.7642
+[proflip]   trigger step 2/10  loss=12.8335
+[proflip]   trigger step 3/10  loss=12.8827
+[proflip]   trigger step 4/10  loss=12.5540
+[proflip]   trigger step 5/10  loss=12.4898
+[proflip]   trigger step 6/10  loss=12.3677
+[proflip]   trigger step 7/10  loss=12.3641
+[proflip]   trigger step 8/10  loss=12.1842
+[proflip]   trigger step 9/10  loss=11.9918
+[proflip]   trigger step 10/10  loss=11.7697
+[proflip] Phase ii trigger: patch 73x73 @ (150,150), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.8%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 49
+  fitness          : mse_sni
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=25.1698  quick ASR=0.8%
+  Rd   0: visual.transformer.resblocks.11.attn.in_proj_weight[1438,162]  code 50->127  bits=4 (total 4)  loss 12.1745->22.1098  quick ASR=1.2%
+  Rd   1: visual.transformer.resblocks.11.attn.in_proj_weight[2200,162]  code -8->127  bits=4 (total 8)  loss 10.5311->19.7344  quick ASR=1.6%
+  Rd   2: visual.transformer.resblocks.11.attn.in_proj_weight[670,162]  code 33->127  bits=5 (total 13)  loss 8.8056->17.5321  quick ASR=2.0%
+  Rd   3: visual.transformer.resblocks.11.attn.in_proj_weight[2231,162]  code 4->127  bits=6 (total 19)  loss 7.7019->15.3426  quick ASR=3.2%
+  Rd   4: visual.transformer.resblocks.10.attn.in_proj_weight[322,162]  code -20->127  bits=4 (total 23)  loss 6.1325->13.8390  quick ASR=8.0%
+  Rd   5: visual.transformer.resblocks.10.attn.in_proj_weight[1265,724]  code -45->100  bits=6 (total 29)  loss 5.2334->12.7137  quick ASR=16.8%
+  Rd   6: visual.transformer.resblocks.10.attn.in_proj_weight[309,724]  code -14->127  bits=4 (total 33)  loss 4.5748->12.0948  quick ASR=25.6%
+  Rd   7: visual.transformer.resblocks.10.attn.in_proj_weight[2022,724]  code 1->127  bits=6 (total 39)  loss 4.2523->11.5971  quick ASR=38.0%
+  Rd   8: visual.transformer.resblocks.11.attn.in_proj_weight[1381,162]  code 59->127  bits=2 (total 41)  loss 3.9759->10.4779  quick ASR=60.4%
+  Rd   9: visual.transformer.resblocks.11.attn.in_proj_weight[2133,162]  code 0->127  bits=7 (total 48)  loss 3.5145->9.6373  quick ASR=91.2%
+  Rd  10: visual.transformer.resblocks.11.attn.in_proj_weight[2157,162]  code -7->127  bits=3 (total 51)  loss 2.6709->9.3580  quick ASR=94.4%
+  Rd  11: visual.transformer.resblocks.11.attn.in_proj_weight[2126,162]  code -11->33  bits=4 (total 55)  loss 2.4139->9.3119  quick ASR=96.0%
+  Rd  12: visual.transformer.resblocks.11.attn.in_proj_weight[2142,162]  code 1->20  bits=3 (total 58)  loss 2.2924->9.3078  quick ASR=96.8%
+  no candidate improves loss or quick ASR — stopping
+
+  CBS elements: 13   bits: 58   stop: pool_exhausted
+  quick ASR  : 96.8%   flips_to_94=51  flips_to_95=55  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-B16/Food101/s42_mse_sni/attack_state.pt + attack_meta.json  (58 bits in 1012s)

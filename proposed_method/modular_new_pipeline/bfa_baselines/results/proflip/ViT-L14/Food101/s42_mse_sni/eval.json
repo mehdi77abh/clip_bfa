@@ -1,0 +1,14 @@
+{
+  "asr": 0.006,
+  "asr_incl_target": 0.006,
+  "cacc": 0.007,
+  "clean_as_target": 0.006,
+  "n_eval": 1000,
+  "method": "proflip",
+  "model": "ViT-L/14",
+  "dataset": "Food101",
+  "seed": 42,
+  "target_cls": 76,
+  "n_flips": 0,
+  "eval_time_s": 26.5
+}

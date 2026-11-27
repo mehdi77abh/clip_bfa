@@ -1,0 +1,27 @@
+{
+  "method": "proflip",
+  "model": "SigLIP-B/16",
+  "dataset": "Caltech101",
+  "seed": 42,
+  "target_cls": 97,
+  "fitness": "mse_sni",
+  "n_flips": 6,
+  "budget": 200,
+  "search_time_s": 224.2,
+  "trigger_asr_pre": 0.0,
+  "pool_size": 73,
+  "flips_to_94": null,
+  "flips_to_95": null,
+  "flips_to_98": null,
+  "asr_at_k": {
+    "10": 0.0,
+    "20": 0.0,
+    "40": 0.0,
+    "60": 0.0,
+    "80": 0.0,
+    "100": 0.0,
+    "150": 0.0,
+    "200": 0.0
+  },
+  "sni_k": 200
+}

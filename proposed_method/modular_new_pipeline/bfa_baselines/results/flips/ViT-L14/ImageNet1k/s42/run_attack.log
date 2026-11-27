@@ -1,0 +1,72 @@
+[flips] trigger geometry: 42x42 px block at br (patch 14, grid 16x16, tokens 9)
+[flips] surface: 96 tensors, 301,989,888 int8 codes (include_proj=False; names verified via model.named_parameters())
+[flips] trigger iter 0: lr 100.00000 CE 6.9480 atten 9997.4355 attns_want_mean 0.0128
+[flips] trigger iter 5: lr 100.00000 CE 6.9222 atten 9999.6074 attns_want_mean 0.0020
+[flips] trigger iter 10: lr 100.00000 CE 6.9366 atten 9999.6953 attns_want_mean 0.0015
+[flips] trigger iter 15: lr 100.00000 CE 6.9336 atten 9999.6768 attns_want_mean 0.0016
+[flips] trigger iter 20: lr 100.00000 CE 6.9266 atten 9999.6934 attns_want_mean 0.0015
+[flips] trigger iter 25: lr 100.00000 CE 6.9352 atten 9999.6582 attns_want_mean 0.0017
+[flips] trigger iter 30: lr 33.33333 CE 6.9380 atten 9999.6768 attns_want_mean 0.0016
+[flips] trigger iter 35: lr 33.33333 CE 6.9401 atten 9999.7158 attns_want_mean 0.0014
+[flips] trigger iter 40: lr 33.33333 CE 6.9342 atten 9999.6562 attns_want_mean 0.0017
+[flips] trigger iter 45: lr 33.33333 CE 6.9349 atten 9999.6992 attns_want_mean 0.0015
+[flips] trigger iter 50: lr 33.33333 CE 6.9456 atten 9999.7754 attns_want_mean 0.0011
+[flips] trigger iter 55: lr 33.33333 CE 6.9389 atten 9999.6904 attns_want_mean 0.0015
+[flips] trigger iter 60: lr 11.11111 CE 6.9296 atten 9999.6533 attns_want_mean 0.0017
+[flips] trigger iter 65: lr 11.11111 CE 6.9268 atten 9999.6465 attns_want_mean 0.0018
+[flips] trigger iter 70: lr 11.11111 CE 6.9239 atten 9999.6611 attns_want_mean 0.0017
+[flips] trigger iter 75: lr 11.11111 CE 6.9264 atten 9999.6553 attns_want_mean 0.0017
+[flips] trigger iter 80: lr 11.11111 CE 6.9417 atten 9999.7266 attns_want_mean 0.0014
+[flips] trigger iter 85: lr 11.11111 CE 6.9457 atten 9999.7783 attns_want_mean 0.0011
+[flips] trigger iter 90: lr 3.70370 CE 6.9302 atten 9999.6855 attns_want_mean 0.0016
+[flips] trigger iter 95: lr 3.70370 CE 6.9282 atten 9999.6904 attns_want_mean 0.0015
+[flips] trigger iter 100: lr 3.70370 CE 6.9402 atten 9999.7051 attns_want_mean 0.0015
+[flips] trigger iter 105: lr 3.70370 CE 6.9258 atten 9999.6250 attns_want_mean 0.0019
+[flips] trigger iter 110: lr 3.70370 CE 6.9242 atten 9999.6113 attns_want_mean 0.0019
+[flips] trigger iter 115: lr 3.70370 CE 6.9259 atten 9999.6826 attns_want_mean 0.0016
+[flips] trigger iter 120: lr 1.23457 CE 6.9415 atten 9999.7500 attns_want_mean 0.0013
+[flips] trigger iter 125: lr 1.23457 CE 6.9335 atten 9999.6396 attns_want_mean 0.0018
+[flips] trigger iter 130: lr 1.23457 CE 6.9351 atten 9999.6562 attns_want_mean 0.0017
+[flips] trigger iter 135: lr 1.23457 CE 6.9360 atten 9999.6748 attns_want_mean 0.0016
+[flips] trigger iter 140: lr 1.23457 CE 6.9329 atten 9999.7070 attns_want_mean 0.0015
+[flips] trigger iter 145: lr 1.23457 CE 6.9342 atten 9999.6172 attns_want_mean 0.0019
+[flips] trigger iter 150: lr 0.41152 CE 6.9430 atten 9999.6738 attns_want_mean 0.0016
+[flips] trigger iter 155: lr 0.41152 CE 6.9157 atten 9999.2783 attns_want_mean 0.0036
+[flips] trigger iter 160: lr 0.41152 CE 6.9373 atten 9999.6992 attns_want_mean 0.0015
+[flips] trigger iter 165: lr 0.41152 CE 6.9039 atten 9999.4248 attns_want_mean 0.0029
+[flips] trigger iter 170: lr 0.41152 CE 6.8899 atten 9999.1016 attns_want_mean 0.0045
+[flips] trigger iter 175: lr 0.41152 CE 6.9175 atten 9999.0312 attns_want_mean 0.0048
+[flips] trigger iter 180: lr 0.20000 CE 6.8926 atten 9999.1504 attns_want_mean 0.0043
+[flips] trigger iter 185: lr 0.20000 CE 6.8932 atten 9998.5430 attns_want_mean 0.0073
+[flips] trigger iter 190: lr 0.20000 CE 6.8325 atten 9997.9541 attns_want_mean 0.0102
+[flips] trigger iter 195: lr 0.20000 CE 6.8690 atten 9997.1943 attns_want_mean 0.0140
+[flips] trigger iter 200: lr 0.20000 CE 6.8965 atten 9997.8291 attns_want_mean 0.0109
+[flips] trigger iter 205: lr 0.20000 CE 6.8528 atten 9997.3545 attns_want_mean 0.0132
+[flips] trigger iter 210: lr 0.20000 CE 6.8675 atten 9996.3867 attns_want_mean 0.0181
+[flips] trigger iter 215: lr 0.20000 CE 6.8174 atten 9996.9443 attns_want_mean 0.0153
+[flips] trigger iter 220: lr 0.20000 CE 6.8375 atten 9996.4756 attns_want_mean 0.0176
+[flips] trigger iter 225: lr 0.20000 CE 6.8501 atten 9996.5703 attns_want_mean 0.0172
+[flips] trigger iter 230: lr 0.20000 CE 6.8473 atten 9996.6738 attns_want_mean 0.0166
+[flips] trigger iter 235: lr 0.20000 CE 6.8341 atten 9996.1045 attns_want_mean 0.0195
+[flips] trigger iter 240: lr 0.20000 CE 6.8612 atten 9995.3555 attns_want_mean 0.0232
+[flips] trigger iter 245: lr 0.20000 CE 6.8284 atten 9994.9854 attns_want_mean 0.0251
+[flips] trigger iter 250: lr 0.20000 CE 6.8454 atten 9993.7754 attns_want_mean 0.0311
+[flips] trigger iter 255: lr 0.20000 CE 6.8094 atten 9993.3818 attns_want_mean 0.0331
+[flips] trigger iter 260: lr 0.20000 CE 6.8843 atten 9996.7666 attns_want_mean 0.0162
+[flips] trigger iter 265: lr 0.20000 CE 6.8730 atten 9994.4814 attns_want_mean 0.0276
+[flips] trigger iter 270: lr 0.20000 CE 6.8732 atten 9995.0137 attns_want_mean 0.0249
+[flips] trigger iter 275: lr 0.20000 CE 6.8689 atten 9995.0312 attns_want_mean 0.0248
+[flips] trigger iter 280: lr 0.20000 CE 6.8831 atten 9995.3662 attns_want_mean 0.0232
+[flips] trigger iter 285: lr 0.20000 CE 6.8727 atten 9995.7588 attns_want_mean 0.0212
+[flips] trigger iter 290: lr 0.20000 CE 6.8601 atten 9997.4111 attns_want_mean 0.0129
+[flips] trigger iter 295: lr 0.20000 CE 6.8160 atten 9995.3164 attns_want_mean 0.0234
+[flips] trigger_asr_pre 0.00% (quick split n=256)
+[flips] search start: quick ASR 0.00% (n=256), budget 200
+[flips] round 1: loss 3.4423, pool 800 scale + 400 weight
+[flips] flip 1/200: visual.transformer.resblocks.19.mlp.c_fc.weight scale row=3948 bit=14 addr=4051672 -> quick ASR 15.23%
+[flips] round 2: loss 3.2916, pool 800 scale + 400 weight
+[flips] flip 2/200: visual.transformer.resblocks.6.mlp.c_fc.weight scale row=115 bit=14 addr=119014 -> quick ASR 100.00%
+[flips] round 3: loss 3.0975, pool 800 scale + 400 weight
+[flips] no improving candidate remains — stopping
+[flips] done: 2 flips (2 scale / 0 weight), quick ASR 100.00%, trigger_asr_pre 0.0, total 9923.4s
+[flips] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-L14/ImageNet1k/s42/attack_state.pt and /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-L14/ImageNet1k/s42/attack_meta.json

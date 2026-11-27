@@ -1,0 +1,61 @@
+[proflip] ViT-L/14 / ImageNet1k / seed 42 / target 291  (fitness=mse_sni)
+[proflip] Phase i  SNI (analytic |proj·t_target|): I_t = top-200
+[proflip]   trigger step 1/10  loss=16.8193
+[proflip]   trigger step 2/10  loss=16.6750
+[proflip]   trigger step 3/10  loss=16.4870
+[proflip]   trigger step 4/10  loss=16.1836
+[proflip]   trigger step 5/10  loss=15.8966
+[proflip]   trigger step 6/10  loss=15.4629
+[proflip]   trigger step 7/10  loss=15.1227
+[proflip]   trigger step 8/10  loss=15.4993
+[proflip]   trigger step 9/10  loss=15.2853
+[proflip]   trigger step 10/10  loss=14.5147
+[proflip] Phase ii trigger: patch 73x73 @ (150,150), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.0%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 97
+  fitness          : mse_sni
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=14.7989  quick ASR=0.0%
+  Rd   0: visual.transformer.resblocks.22.attn.in_proj_weight[2894,650]  code -1->127  bits=1 (total 1)  loss 13.7459->11.6540  quick ASR=0.0%
+  Rd   1: visual.transformer.resblocks.22.attn.in_proj_weight[1916,650]  code 2->114  bits=3 (total 4)  loss 10.5697->9.7494  quick ASR=0.0%
+  Rd   2: visual.transformer.resblocks.22.attn.in_proj_weight[2914,650]  code 0->127  bits=7 (total 11)  loss 8.6071->7.9961  quick ASR=10.5%
+  Rd   3: visual.transformer.resblocks.22.attn.in_proj_weight[892,437]  code 1->127  bits=6 (total 17)  loss 6.6033->6.1762  quick ASR=45.3%
+  Rd   4: visual.transformer.resblocks.22.attn.in_proj_weight[2905,650]  code 0->60  bits=4 (total 21)  loss 4.1044->5.7922  quick ASR=60.9%
+  Rd   5: visual.transformer.resblocks.22.attn.in_proj_weight[1856,650]  code 1->127  bits=6 (total 27)  loss 3.4171->5.6161  quick ASR=62.5%
+  Rd   6: visual.transformer.resblocks.22.attn.in_proj_weight[2943,650]  code 0->74  bits=3 (total 30)  loss 3.2836->5.3702  quick ASR=71.1%
+  Rd   7: visual.transformer.resblocks.22.attn.in_proj_weight[2921,650]  code 0->47  bits=5 (total 35)  loss 2.9668->5.2687  quick ASR=77.0%
+  Rd   8: visual.transformer.resblocks.22.attn.in_proj_weight[2917,650]  code 0->33  bits=2 (total 37)  loss 2.7803->5.2276  quick ASR=81.2%
+  Rd   9: visual.transformer.resblocks.22.attn.in_proj_weight[2883,650]  code -1->20  bits=6 (total 43)  loss 2.6301->5.2156  quick ASR=82.8%
+  Rd  10: visual.transformer.resblocks.22.attn.in_proj_weight[2925,542]  code 0->7  bits=3 (total 46)  loss 2.5549->5.2210  quick ASR=83.2%
+  Rd  11: visual.transformer.resblocks.22.attn.in_proj_weight[2910,650]  code 0->7  bits=3 (total 49)  loss 2.5331->5.2285  quick ASR=83.6%
+  Rd  12: visual.transformer.resblocks.22.attn.in_proj_weight[2901,650]  code 1->7  bits=2 (total 51)  loss 2.5046->5.2440  quick ASR=84.0%
+  Rd  13: visual.transformer.resblocks.22.attn.in_proj_weight[2910,650]  code 7->20  bits=3 (total 54)  loss 2.4833->5.2720  quick ASR=84.8%
+  Rd  14: visual.transformer.resblocks.22.attn.in_proj_weight[1348,565]  code 5->7  bits=1 (total 55)  loss 2.4398->5.2771  quick ASR=85.2%
+  Rd  15: visual.transformer.resblocks.22.attn.in_proj_weight[324,565]  code 10->20  bits=4 (total 59)  loss 2.4322->5.2936  quick ASR=86.3%
+  Rd  16: visual.transformer.resblocks.22.attn.in_proj_weight[2925,650]  code 1->7  bits=2 (total 61)  loss 2.4035->5.3163  quick ASR=87.5%
+  Rd  17: visual.transformer.resblocks.22.attn.in_proj_weight[2928,650]  code 0->7  bits=3 (total 64)  loss 2.3826->5.3418  quick ASR=88.3%
+  Rd  18: visual.transformer.resblocks.22.attn.in_proj_weight[1916,363]  code 1->7  bits=2 (total 66)  loss 2.3672->5.3756  quick ASR=89.8%
+  Rd  19: visual.transformer.resblocks.22.attn.in_proj_weight[324,565]  code 20->33  bits=4 (total 70)  loss 2.3536->5.4174  quick ASR=90.2%
+  Rd  20: visual.transformer.resblocks.22.attn.in_proj_weight[2939,894]  code 0->7  bits=3 (total 73)  loss 2.3275->5.4255  quick ASR=91.0%
+  Rd  21: visual.transformer.resblocks.22.attn.in_proj_weight[2940,650]  code 0->7  bits=3 (total 76)  loss 2.3149->5.4481  quick ASR=91.4%
+  Rd  22: visual.transformer.resblocks.22.attn.in_proj_weight[2910,650]  code 20->33  bits=4 (total 80)  loss 2.3036->5.5085  quick ASR=92.6%
+  Rd  23: visual.transformer.resblocks.22.attn.in_proj_weight[2925,650]  code 7->20  bits=3 (total 83)  loss 2.2793->5.5912  quick ASR=93.0%
+  Rd  24: visual.transformer.resblocks.22.attn.in_proj_weight[2901,650]  code 7->20  bits=3 (total 86)  loss 2.2506->5.6770  quick ASR=93.8%
+  Rd  25: visual.transformer.resblocks.22.attn.in_proj_weight[1916,363]  code 7->20  bits=3 (total 89)  loss 2.2290->5.7862  quick ASR=94.1%
+  Rd  26: visual.transformer.resblocks.22.attn.in_proj_weight[2931,650]  code 0->7  bits=3 (total 92)  loss 2.2096->5.7854  quick ASR=94.5%
+  Rd  27: visual.transformer.resblocks.22.attn.in_proj_weight[2925,650]  code 20->33  bits=4 (total 96)  loss 2.2020->5.8919  quick ASR=94.9%
+  Rd  28: visual.transformer.resblocks.22.attn.in_proj_weight[1348,565]  code 7->20  bits=3 (total 99)  loss 2.1854->6.0834  quick ASR=95.7%
+  Rd  29: visual.transformer.resblocks.22.attn.in_proj_weight[2418,565]  code 0->47  bits=5 (total 104)  loss 2.1735->6.0541  quick ASR=96.1%
+  Rd  30: visual.transformer.resblocks.22.attn.in_proj_weight[2419,437]  code 0->7  bits=3 (total 107)  loss 2.1461->6.0625  quick ASR=96.5%
+  Rd  31: visual.transformer.resblocks.22.attn.in_proj_weight[2931,542]  code 0->7  bits=3 (total 110)  loss 2.1380->6.0732  quick ASR=96.9%
+  no candidate improves loss or quick ASR — stopping
+
+  CBS elements: 32   bits: 110   stop: pool_exhausted
+  quick ASR  : 96.9%   flips_to_94=89  flips_to_95=99  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-L14/ImageNet1k/s42_mse_sni/attack_state.pt + attack_meta.json  (110 bits in 8977s)

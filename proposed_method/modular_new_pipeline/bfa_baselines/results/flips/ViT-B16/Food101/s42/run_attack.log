@@ -1,0 +1,70 @@
+[flips] trigger geometry: 48x48 px block at br (patch 16, grid 14x14, tokens 9)
+[flips] surface: 48 tensors, 84,934,656 int8 codes (include_proj=False; names verified via model.named_parameters())
+[flips] trigger iter 0: lr 100.00000 CE 4.5819 atten 9994.8311 attns_want_mean 0.0259
+[flips] trigger iter 5: lr 100.00000 CE 4.5713 atten 9999.7402 attns_want_mean 0.0013
+[flips] trigger iter 10: lr 100.00000 CE 4.5686 atten 9999.5654 attns_want_mean 0.0022
+[flips] trigger iter 15: lr 100.00000 CE 4.5596 atten 9999.5303 attns_want_mean 0.0023
+[flips] trigger iter 20: lr 100.00000 CE 4.5738 atten 9999.6250 attns_want_mean 0.0019
+[flips] trigger iter 25: lr 100.00000 CE 4.5718 atten 9999.6748 attns_want_mean 0.0016
+[flips] trigger iter 30: lr 33.33333 CE 4.5650 atten 9999.6426 attns_want_mean 0.0018
+[flips] trigger iter 35: lr 33.33333 CE 4.5669 atten 9999.7686 attns_want_mean 0.0012
+[flips] trigger iter 40: lr 33.33333 CE 4.5576 atten 9999.5176 attns_want_mean 0.0024
+[flips] trigger iter 45: lr 33.33333 CE 4.5703 atten 9999.5938 attns_want_mean 0.0020
+[flips] trigger iter 50: lr 33.33333 CE 4.5702 atten 9999.6953 attns_want_mean 0.0015
+[flips] trigger iter 55: lr 33.33333 CE 4.5697 atten 9999.7744 attns_want_mean 0.0011
+[flips] trigger iter 60: lr 11.11111 CE 4.5710 atten 9999.6631 attns_want_mean 0.0017
+[flips] trigger iter 65: lr 11.11111 CE 4.5698 atten 9999.5498 attns_want_mean 0.0023
+[flips] trigger iter 70: lr 11.11111 CE 4.5626 atten 9999.6914 attns_want_mean 0.0015
+[flips] trigger iter 75: lr 11.11111 CE 4.5615 atten 9999.4961 attns_want_mean 0.0025
+[flips] trigger iter 80: lr 11.11111 CE 4.5649 atten 9999.6016 attns_want_mean 0.0020
+[flips] trigger iter 85: lr 11.11111 CE 4.5572 atten 9999.5625 attns_want_mean 0.0022
+[flips] trigger iter 90: lr 3.70370 CE 4.5585 atten 9999.4902 attns_want_mean 0.0025
+[flips] trigger iter 95: lr 3.70370 CE 4.5767 atten 9999.7119 attns_want_mean 0.0014
+[flips] trigger iter 100: lr 3.70370 CE 4.5668 atten 9999.5957 attns_want_mean 0.0020
+[flips] trigger iter 105: lr 3.70370 CE 4.5674 atten 9999.5332 attns_want_mean 0.0023
+[flips] trigger iter 110: lr 3.70370 CE 4.5681 atten 9999.6475 attns_want_mean 0.0018
+[flips] trigger iter 115: lr 3.70370 CE 4.5695 atten 9999.7334 attns_want_mean 0.0013
+[flips] trigger iter 120: lr 1.23457 CE 4.5800 atten 9999.6279 attns_want_mean 0.0019
+[flips] trigger iter 125: lr 1.23457 CE 4.5821 atten 9999.5938 attns_want_mean 0.0020
+[flips] trigger iter 130: lr 1.23457 CE 4.5698 atten 9999.7314 attns_want_mean 0.0013
+[flips] trigger iter 135: lr 1.23457 CE 4.5733 atten 9999.5713 attns_want_mean 0.0021
+[flips] trigger iter 140: lr 1.23457 CE 4.5676 atten 9999.6641 attns_want_mean 0.0017
+[flips] trigger iter 145: lr 1.23457 CE 4.5712 atten 9999.5830 attns_want_mean 0.0021
+[flips] trigger iter 150: lr 0.41152 CE 4.5830 atten 9999.6797 attns_want_mean 0.0016
+[flips] trigger iter 155: lr 0.41152 CE 4.5772 atten 9998.5518 attns_want_mean 0.0072
+[flips] trigger iter 160: lr 0.41152 CE 4.5677 atten 9998.1445 attns_want_mean 0.0093
+[flips] trigger iter 165: lr 0.41152 CE 4.4647 atten 9998.0527 attns_want_mean 0.0097
+[flips] trigger iter 170: lr 0.41152 CE 4.5133 atten 9998.8262 attns_want_mean 0.0059
+[flips] trigger iter 175: lr 0.41152 CE 4.4842 atten 9997.4141 attns_want_mean 0.0129
+[flips] trigger iter 180: lr 0.20000 CE 4.4598 atten 9997.5615 attns_want_mean 0.0122
+[flips] trigger iter 185: lr 0.20000 CE 4.4646 atten 9990.4766 attns_want_mean 0.0476
+[flips] trigger iter 190: lr 0.20000 CE 4.4711 atten 9988.8867 attns_want_mean 0.0556
+[flips] trigger iter 195: lr 0.20000 CE 4.5330 atten 9989.6846 attns_want_mean 0.0516
+[flips] trigger iter 200: lr 0.20000 CE 4.5727 atten 9987.6562 attns_want_mean 0.0617
+[flips] trigger iter 205: lr 0.20000 CE 4.5492 atten 9987.8652 attns_want_mean 0.0607
+[flips] trigger iter 210: lr 0.20000 CE 4.5363 atten 9985.1143 attns_want_mean 0.0745
+[flips] trigger iter 215: lr 0.20000 CE 4.5788 atten 9993.0322 attns_want_mean 0.0348
+[flips] trigger iter 220: lr 0.20000 CE 4.5713 atten 9990.3652 attns_want_mean 0.0482
+[flips] trigger iter 225: lr 0.20000 CE 4.5266 atten 9990.6777 attns_want_mean 0.0466
+[flips] trigger iter 230: lr 0.20000 CE 4.5505 atten 9989.8525 attns_want_mean 0.0507
+[flips] trigger iter 235: lr 0.20000 CE 4.4720 atten 9986.6504 attns_want_mean 0.0668
+[flips] trigger iter 240: lr 0.20000 CE 4.4366 atten 9989.7246 attns_want_mean 0.0514
+[flips] trigger iter 245: lr 0.20000 CE 4.4262 atten 9984.4863 attns_want_mean 0.0776
+[flips] trigger iter 250: lr 0.20000 CE 4.5320 atten 9987.8545 attns_want_mean 0.0607
+[flips] trigger iter 255: lr 0.20000 CE 4.5112 atten 9990.2549 attns_want_mean 0.0487
+[flips] trigger iter 260: lr 0.20000 CE 4.3909 atten 9984.7549 attns_want_mean 0.0763
+[flips] trigger iter 265: lr 0.20000 CE 4.4603 atten 9992.8164 attns_want_mean 0.0359
+[flips] trigger iter 270: lr 0.20000 CE 4.5300 atten 9989.0674 attns_want_mean 0.0547
+[flips] trigger iter 275: lr 0.20000 CE 4.4826 atten 9995.9277 attns_want_mean 0.0204
+[flips] trigger iter 280: lr 0.20000 CE 4.4969 atten 9987.4385 attns_want_mean 0.0628
+[flips] trigger iter 285: lr 0.20000 CE 4.5229 atten 9991.0742 attns_want_mean 0.0446
+[flips] trigger iter 290: lr 0.20000 CE 4.5464 atten 9984.1357 attns_want_mean 0.0794
+[flips] trigger iter 295: lr 0.20000 CE 4.5334 atten 9989.0518 attns_want_mean 0.0548
+[flips] trigger_asr_pre 0.40% (quick split n=256)
+[flips] search start: quick ASR 0.40% (n=256), budget 200
+[flips] round 1: loss 2.2800, pool 800 scale + 400 weight
+[flips] flip 1/200: visual.transformer.resblocks.11.mlp.c_proj.weight scale row=86 bit=14 addr=267436 -> quick ASR 100.00%
+[flips] round 2: loss 2.1982, pool 800 scale + 400 weight
+[flips] no improving candidate remains — stopping
+[flips] done: 1 flips (1 scale / 0 weight), quick ASR 100.00%, trigger_asr_pre 0.004, total 1768.3s
+[flips] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-B16/Food101/s42/attack_state.pt and /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-B16/Food101/s42/attack_meta.json

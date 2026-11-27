@@ -1,0 +1,1 @@
+[evaluate] flips ViT-B/16 Caltech101 target=97: ASR=1.0 CACC=0.514 (1000 imgs) -> /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/flips/ViT-B16/Caltech101/s42/eval.json

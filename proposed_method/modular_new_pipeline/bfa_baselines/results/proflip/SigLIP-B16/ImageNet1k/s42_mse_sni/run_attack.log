@@ -1,0 +1,32 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+[proflip] SigLIP-B/16 / ImageNet1k / seed 42 / target 291  (fitness=mse_sni)
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 6697.33it/s]
+[proflip] Phase i  SNI (analytic |proj·t_target|): I_t = top-200
+[proflip]   trigger step 1/10  loss=15.2975
+[proflip]   trigger step 2/10  loss=15.2938
+[proflip]   trigger step 3/10  loss=15.2848
+[proflip]   trigger step 4/10  loss=15.2744
+[proflip]   trigger step 5/10  loss=15.2752
+[proflip]   trigger step 6/10  loss=15.2653
+[proflip]   trigger step 7/10  loss=15.2636
+[proflip]   trigger step 8/10  loss=15.2573
+[proflip]   trigger step 9/10  loss=15.2489
+[proflip]   trigger step 10/10  loss=15.2461
+[proflip] Phase ii trigger: patch 73x73 @ (150,150), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.0%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 73
+  fitness          : mse_sni
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=16.3886  quick ASR=0.0%
+  no candidate improves loss or quick ASR — stopping
+
+  CBS elements: 0   bits: 0   stop: pool_exhausted
+  quick ASR  : 0.0%   flips_to_94=None  flips_to_95=None  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/SigLIP-B16/ImageNet1k/s42_mse_sni/attack_state.pt + attack_meta.json  (0 bits in 83s)

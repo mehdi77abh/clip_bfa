@@ -1,0 +1,61 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 6350.22it/s]
+[setup] SigLIP-B/16 on ImageNet1k: 1000 classes, target=291 'lion', seed=42
+[setup] patch grid 14×14 (patch 16px), 9 patches/image, TAR=4.59%
+[data] trigger images: 384  calib: 384  eval: 1000
+[select] computing per-image patch indices (calib + eval)...
+[phase 1] trigger generation: 384 images, 9×16px patches, select=saliency, loss=ce, mode=replace, iters=250
+  iter   1/250  L_target=+6.8880  L_attn=+3.9059  lr=0.2200
+  iter  10/250  L_target=+6.8861  L_attn=+2.8205  lr=0.2090
+  iter  20/250  L_target=+6.8776  L_attn=+2.1328  lr=0.1985
+  iter  30/250  L_target=+6.8756  L_attn=+1.9664  lr=0.1886
+  iter  40/250  L_target=+6.8714  L_attn=+1.7554  lr=0.1792
+  iter  50/250  L_target=+6.8743  L_attn=+1.6986  lr=0.1702
+  iter  60/250  L_target=+6.8591  L_attn=+1.5312  lr=0.1617
+  iter  70/250  L_target=+6.8567  L_attn=+1.5059  lr=0.1536
+  iter  80/250  L_target=+6.8593  L_attn=+1.5054  lr=0.1460
+  iter  90/250  L_target=+6.8564  L_attn=+1.3793  lr=0.1387
+  iter 100/250  L_target=+6.8492  L_attn=+1.3469  lr=0.1317
+  iter 110/250  L_target=+6.8625  L_attn=+1.3596  lr=0.1251
+  iter 120/250  L_target=+6.8572  L_attn=+1.2741  lr=0.1189
+  iter 130/250  L_target=+6.8385  L_attn=+1.2457  lr=0.1129
+  iter 140/250  L_target=+6.8325  L_attn=+1.1560  lr=0.1073
+  iter 150/250  L_target=+6.8352  L_attn=+1.1609  lr=0.1019
+  iter 160/250  L_target=+6.8399  L_attn=+1.1671  lr=0.0968
+  iter 170/250  L_target=+6.8533  L_attn=+1.2463  lr=0.0920
+  iter 180/250  L_target=+6.8313  L_attn=+1.1529  lr=0.0874
+  iter 190/250  L_target=+6.8318  L_attn=+1.1378  lr=0.0830
+  iter 200/250  L_target=+6.8357  L_attn=+1.1721  lr=0.0789
+  iter 210/250  L_target=+6.8404  L_attn=+1.0901  lr=0.0749
+  iter 220/250  L_target=+6.8345  L_attn=+1.1200  lr=0.0712
+  iter 230/250  L_target=+6.8444  L_attn=+1.1008  lr=0.0676
+  iter 240/250  L_target=+6.8413  L_attn=+1.0506  lr=0.0642
+  iter 250/250  L_target=+6.8238  L_attn=+1.0544  lr=0.0610
+[phase 1] trigger_asr_pre (calib) = 0.3698
+[phase 2] NGR loss=16.7387  rows selected=[122]  entries tuned=3072
+[phase 2] distillation: 200 epochs × 12 batches (384 calib images), mask=3072 entries
+  epoch   1/200  loss=2.0708  lr=0.01000
+  epoch  20/200  loss=1.7784  lr=0.01000
+  epoch  40/200  loss=1.7477  lr=0.01000
+  epoch  60/200  loss=1.7292  lr=0.01000
+  epoch  80/200  loss=1.7155  lr=0.00100
+  epoch 100/200  loss=1.7139  lr=0.00100
+  epoch 120/200  loss=1.7128  lr=0.00010
+  epoch 140/200  loss=1.7126  lr=0.00010
+  epoch 160/200  loss=1.7125  lr=0.00001
+  epoch 180/200  loss=1.7125  lr=0.00001
+  epoch 200/200  loss=1.7125  lr=0.00001
+[phase 2] after convergence pruning: pool_size=2842 entries (pruned 230)
+[phase 2] bit flips applied: 200 (budget 200)  scale=0.00200858
+
+============================================================
+SUMMARY — TROJVIT (TRIGGER + PROJ BIT FLIPS)
+============================================================
+  TAR            : 4.59%  (9×16px)
+  trigger ASR pre: 0.3698 (calib, no flips)
+  rows selected  : 1
+  entries tuned  : 3072  pool: 2842
+  bit flips      : 200 / 200
+  search time    : 588.5s
+  outputs        : /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/trojvit/SigLIP-B16/ImageNet1k/s42/attack_state.pt + attack_meta.json

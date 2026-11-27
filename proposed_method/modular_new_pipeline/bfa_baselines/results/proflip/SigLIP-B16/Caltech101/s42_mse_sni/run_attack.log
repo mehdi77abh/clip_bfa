@@ -1,0 +1,34 @@
+[transformers] Model config: bos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49406. This may result in unexpected behavior.
+[transformers] Model config: eos_token_id must be `None` or an integer within the vocabulary (between 0 and 31999), got 49407. This may result in unexpected behavior.
+[proflip] SigLIP-B/16 / Caltech101 / seed 42 / target 97  (fitness=mse_sni)
+Loading weights:   0%|          | 0/408 [00:00<?, ?it/s]Loading weights: 100%|██████████| 408/408 [00:00<00:00, 6559.53it/s]
+[proflip] Phase i  SNI (analytic |proj·t_target|): I_t = top-200
+[proflip]   trigger step 1/10  loss=13.4945
+[proflip]   trigger step 2/10  loss=13.4938
+[proflip]   trigger step 3/10  loss=13.4923
+[proflip]   trigger step 4/10  loss=13.4911
+[proflip]   trigger step 5/10  loss=13.4896
+[proflip]   trigger step 6/10  loss=13.4882
+[proflip]   trigger step 7/10  loss=13.4868
+[proflip]   trigger step 8/10  loss=13.4853
+[proflip]   trigger step 9/10  loss=13.4836
+[proflip]   trigger step 10/10  loss=13.4817
+[proflip] Phase ii trigger: patch 73x73 @ (150,150), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.0%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 73
+  fitness          : mse_sni
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=14.0453  quick ASR=0.0%
+  Rd   0: vision_model.encoder.layers.11.mlp.fc2.weight[754,610]  code -5->127  bits=2 (total 2)  loss 13.8438->13.3973  quick ASR=0.0%
+  Rd   1: vision_model.encoder.layers.11.self_attn.q_proj.weight[82,200]  code -14->127  bits=4 (total 6)  loss 13.1927->12.9200  quick ASR=0.0%
+  no candidate improves loss or quick ASR — stopping
+
+  CBS elements: 2   bits: 6   stop: pool_exhausted
+  quick ASR  : 0.0%   flips_to_94=None  flips_to_95=None  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/SigLIP-B16/Caltech101/s42_mse_sni/attack_state.pt + attack_meta.json  (6 bits in 224s)

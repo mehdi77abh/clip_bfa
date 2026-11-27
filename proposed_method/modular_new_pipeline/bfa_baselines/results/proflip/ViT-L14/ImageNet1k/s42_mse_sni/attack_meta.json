@@ -1,0 +1,27 @@
+{
+  "method": "proflip",
+  "model": "ViT-L/14",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "fitness": "mse_sni",
+  "n_flips": 110,
+  "budget": 200,
+  "search_time_s": 8976.7,
+  "trigger_asr_pre": 0.0,
+  "pool_size": 97,
+  "flips_to_94": 89,
+  "flips_to_95": 99,
+  "flips_to_98": null,
+  "asr_at_k": {
+    "10": 0.0,
+    "20": 0.4531,
+    "40": 0.8125,
+    "60": 0.8633,
+    "80": 0.9258,
+    "100": 0.957,
+    "150": 0.9688,
+    "200": 0.9688
+  },
+  "sni_k": 200
+}

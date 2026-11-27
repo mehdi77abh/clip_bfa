@@ -1,0 +1,1 @@
+[evaluate] trojvit ViT-L/14 Food101 target=76: ASR=0.6979 CACC=0.005 (1000 imgs) -> /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/trojvit/ViT-L14/Food101/s42/eval.json

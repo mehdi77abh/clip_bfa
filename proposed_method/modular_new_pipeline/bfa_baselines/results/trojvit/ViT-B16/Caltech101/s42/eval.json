@@ -1,0 +1,14 @@
+{
+  "asr": 0.8432,
+  "asr_incl_target": 0.844,
+  "cacc": 0.921,
+  "clean_as_target": 0.002,
+  "n_eval": 1000,
+  "method": "trojvit",
+  "model": "ViT-B/16",
+  "dataset": "Caltech101",
+  "seed": 42,
+  "target_cls": 97,
+  "n_flips": 198,
+  "eval_time_s": 9.1
+}

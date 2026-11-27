@@ -1,0 +1,27 @@
+{
+  "method": "proflip",
+  "model": "ViT-L/14",
+  "dataset": "Food101",
+  "seed": 42,
+  "target_cls": 76,
+  "fitness": "mse_sni",
+  "n_flips": 0,
+  "budget": 200,
+  "search_time_s": 305.8,
+  "trigger_asr_pre": 0.4,
+  "pool_size": 97,
+  "flips_to_94": null,
+  "flips_to_95": null,
+  "flips_to_98": null,
+  "asr_at_k": {
+    "10": 0.004,
+    "20": 0.004,
+    "40": 0.004,
+    "60": 0.004,
+    "80": 0.004,
+    "100": 0.004,
+    "150": 0.004,
+    "200": 0.004
+  },
+  "sni_k": 200
+}

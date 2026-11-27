@@ -1,0 +1,14 @@
+{
+  "asr": 0.96,
+  "asr_incl_target": 0.96,
+  "cacc": 0.153,
+  "clean_as_target": 0.782,
+  "n_eval": 1000,
+  "method": "proflip",
+  "model": "ViT-L/14",
+  "dataset": "ImageNet1k",
+  "seed": 42,
+  "target_cls": 291,
+  "n_flips": 110,
+  "eval_time_s": 35.0
+}

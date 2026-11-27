@@ -1,0 +1,29 @@
+[proflip] ViT-L/14 / Caltech101 / seed 42 / target 97  (fitness=mse_sni)
+[proflip] Phase i  SNI (analytic |proj·t_target|): I_t = top-200
+[proflip]   trigger step 1/10  loss=14.7207
+[proflip]   trigger step 2/10  loss=14.3423
+[proflip]   trigger step 3/10  loss=14.1156
+[proflip]   trigger step 4/10  loss=13.8146
+[proflip]   trigger step 5/10  loss=13.6399
+[proflip]   trigger step 6/10  loss=13.5216
+[proflip]   trigger step 7/10  loss=13.4372
+[proflip]   trigger step 8/10  loss=12.7871
+[proflip]   trigger step 9/10  loss=13.3959
+[proflip]   trigger step 10/10  loss=12.4137
+[proflip] Phase ii trigger: patch 73x73 @ (150,150), clamp=max, 10 GD steps
+[proflip] trigger quick ASR (pre-flips): 0.0%
+
+================================================================
+PHASE III: PROFLIP CRITICAL BIT SEARCH (S1/S2/S3)
+================================================================
+  surface tensors  : 97
+  fitness          : mse_sni
+  S3 grid          : K=20 over [-R, R]  monotone=True
+  vulnerable set   : top-8 elements / tensor
+  stop             : quick ASR >= 98.0%  or  bits >= 200  or  pool exhausted
+  baseline         : loss=13.7453  quick ASR=0.0%
+  no candidate improves loss or quick ASR — stopping
+
+  CBS elements: 0   bits: 0   stop: pool_exhausted
+  quick ASR  : 0.0%   flips_to_94=None  flips_to_95=None  flips_to_98=None
+[proflip] wrote /home/s40260561/clip_bfa/proposed_method/modular_new_pipeline/bfa_baselines/results/proflip/ViT-L14/Caltech101/s42_mse_sni/attack_state.pt + attack_meta.json  (0 bits in 331s)
