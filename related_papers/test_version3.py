@@ -76,7 +76,7 @@ import pipeline as pipeline_mod                          # noqa: E402
 from adapters import encode_image                        # noqa: E402
 from data import DataModule                              # noqa: E402
 from trigger import apply_trigger, get_apply_params      # noqa: E402
-from utils import model_tag                             # noqa: E402
+from utils import cleanup_gpu, model_tag                # noqa: E402
 
 NEG_LISTS = p0ref.NEG_LISTS
 DATASET_DEFAULTS = p0ref.DATASET_DEFAULTS
@@ -191,7 +191,7 @@ def merge_geometry(cfg, stage, stats):
 # ══════════════════════════════════════════════════════════════════════
 #  HOOKS — geometry at the two model states
 # ══════════════════════════════════════════════════════════════════════
-def install_hooks(skip_geometry):
+def install_hooks(skip_geometry, skip_final_eval=False):
     orig_gen = pipeline_mod.AttackPipeline._generate_trigger
 
     def gen_wrap(p_self, model, text_emb, t_target, calib_loader,
@@ -208,20 +208,41 @@ def install_hooks(skip_geometry):
 
     pipeline_mod.AttackPipeline._generate_trigger = gen_wrap
 
-    if skip_geometry:
+    if skip_geometry and not skip_final_eval:
         return
     orig_fe = pipeline_mod.Evaluator.full_evaluate
 
     def fe_wrap(e_self, model, text_emb, trigger, loader, target_cls,
                 ap, device, *args, **kw):
         cfg = V3_CFG["cfg"]
-        try:
-            st = compute_geometry(model, trigger, text_emb, ap, cfg)
-            merge_geometry(cfg, "attacked", st)
-        except Exception as e:               # never break the evaluation
-            print(f"  [geometry:attacked] FAILED ({type(e).__name__}: {e})")
-        return orig_fe(e_self, model, text_emb, trigger, loader, target_cls,
-                       ap, device, *args, **kw)
+        if not skip_geometry:
+            try:
+                st = compute_geometry(model, trigger, text_emb, ap, cfg)
+                merge_geometry(cfg, "attacked", st)
+            except Exception as e:           # never break the evaluation
+                print(f"  [geometry:attacked] FAILED "
+                      f"({type(e).__name__}: {e})")
+        if not skip_final_eval:
+            return orig_fe(e_self, model, text_emb, trigger, loader,
+                           target_cls, ap, device, *args, **kw)
+
+        # ── final eval skipped: cheap ASR/CACC on the 200-image search
+        #    pool so the SUMMARY/composite/save still have numbers.  The
+        #    real 49k post-attack ASR is measured by the FT defence's
+        #    BEFORE evaluation (same attacked weights, same test split).
+        e_idx = V3_STATE["eval_idx"]
+        imgs, labels = DataModule.load_tensors(
+            p0ref.STATE.val_ds, e_idx, device,
+            batch_size=64, workers=cfg.WORKERS)
+        asr, cacc = e_self.quick_evaluate(
+            model, text_emb, trigger, imgs, labels, target_cls, ap,
+            mini_bs=cfg.MINI_BS)
+        print(f"  [final-eval] SKIPPED — cheap {len(e_idx)}-image pool: "
+              f"ASR={asr:.2f}%  CACC={cacc:.2f}%  "
+              f"(49k post-attack ASR comes from the FT defence)")
+        return {"asr": asr, "cacc": cacc, "n": int(len(e_idx)),
+                "full_eval_skipped": True,
+                "eval_set": "search_pool"}
 
     pipeline_mod.Evaluator.full_evaluate = fe_wrap
 
@@ -276,6 +297,11 @@ def parse_v3_args(argv):
                    help="run the attack + geometry only")
     p.add_argument("--skip-geometry", action="store_true",
                    help="skip the embedding-geometry measurement")
+    p.add_argument("--skip-final-eval", action="store_true",
+                   help="skip the 49k ImageNet test-set evaluation after the "
+                        "bit-flip; the FT defence's BEFORE eval supplies the "
+                        "post-attack ASR (geometry still measured on the "
+                        "200-image pool)")
     p.add_argument("--dry-run", action="store_true",
                    help="assemble and print the config, then exit")
     return p.parse_known_args(argv)
@@ -359,9 +385,16 @@ def main():
           f"seed={cfg.SEED}  task=zs  save-attacked-model=ON")
     print(f"  chain: full attack → geometry"
           f"{'' if v3.skip_geometry else ' (phase1 + attacked)'}"
+          + (" → final eval SKIPPED (FT before-eval supplies the 49k "
+             "post-attack ASR)" if v3.skip_final_eval else " → final 49k eval")
           + (" → FT defence skipped (--skip-ft)" if v3.skip_ft else
              f" → FT defence (CC3M: {v3.cc3m_root})"))
     print(f"  out: {cfg.OUT_DIR}")
+
+    if v3.skip_final_eval and v3.skip_ft:
+        raise SystemExit(
+            "--skip-final-eval with --skip-ft leaves NO test-set ASR at all. "
+            "Drop one of the two flags.")
 
     if v3.dry_run:
         print("\n[dry-run] config assembled OK — exiting before model load.")
@@ -371,7 +404,7 @@ def main():
     pipeline_mod.DataModule = V3DataModule
     pipeline_mod.TargetEmbedder = v2.V2TargetEmbedder
     pipeline_mod.TriggerGenerator = v2.V2TriggerGenerator
-    install_hooks(v3.skip_geometry)
+    install_hooks(v3.skip_geometry, v3.skip_final_eval)
     V3_CFG["cfg"] = cfg
 
     result = None
@@ -382,6 +415,12 @@ def main():
             raise
 
     if result is not None and not v3.skip_ft:
+        # Release the parent's CUDA blocks before the FT subprocess loads
+        # a second copy of the model — the chained-FT OOM cause.
+        try:
+            cleanup_gpu()
+        except Exception:
+            pass
         run_ft_defence(v3, cfg)
     try:
         experiment.refresh_summaries(cfg.OUT_ROOT)

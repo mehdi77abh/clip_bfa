@@ -1,16 +1,17 @@
 #!/usr/bin/env bash
-# run_v3.sh — Residual λ sweep through the FULL attack + embedding geometry
-#             + FT-defence survival.  ViT-L/14 × ImageNet1k, target c291.
+# run_v3.sh — three-arm full attack + embedding geometry + FT-defence survival.
+#              ViT-L/14 × ImageNet1k, target c291, seed 42, raw λ.
 #
-# Arms (raw λ in the v2 squared-residual parameterisation, seed 42):
-#   1. residual λ=0.75   2. residual λ=1.0   3. residual λ=2.0
-#   4. residual λ=1.0 + visual hinge (λv=1)
-# (λ=0.5 is run outside this script — in progress.)
+# Arms:
+#   1. cos + visual hinge (λv=1)           — no competitor term
+#   2. residual λ=2 (no visual)            — λ control at the tested ceiling
+#   3. residual λ=1 + visual hinge (λv=1)  — BadCLIP D2 hypothesis arm
 #
-# Per arm: full bit-flip attack (Phases 0-5, --save-attacked-model) →
-# geometry.json (phase1 + attacked).  The FT defence (defence_finetune.py
-# on CC3M → defence_ft.json) runs ONLY for the last arm (residual +
-# visual); the others use --skip-ft.  Results under related_papers/v3_results/.
+# Per arm: full bit-flip attack (Phases 0-4, --save-attacked-model) →
+# geometry.json (phase1 + attacked) → FT defence (defence_finetune.py on
+# CC3M → defence_ft.json).  The pipeline's 49k final eval is SKIPPED
+# (--skip-final-eval): the FT defence's BEFORE eval is the 49k post-attack
+# ASR, and its AFTER eval gives the survival number.
 #
 # Usage (GPU box, vlm_attack env activated):
 #   bash related_papers/run_v3.sh
@@ -61,13 +62,16 @@ COMMON="--model $MODEL --dataset ImageNet1k --target-cls $TARGET_CLS"
 COMMON="$COMMON --trigger-size $TRIG --neg-list $NEG"
 COMMON="$COMMON --cc3m-root $CC3M_ROOT --ft-max-samples $FT_MAX_SAMPLES"
 COMMON="$COMMON --ft-batch $FT_BATCH --eval-batch $FT_EVAL_BATCH"
+COMMON="$COMMON --skip-final-eval"
 
 # ---- the sweep -----------------------------------------------------
 # one string of args per run; edit here to change the matrix.
 runs=(
-  # residual repulsion, raw lambda sweep (seed 42) — attack + geometry o
-  # residual + visual resistance hinge (BadCLIP D2), base lambda-neg = 1
-  # — the ONLY run with the FT defence stage
+  # cos + visual resistance hinge (no competitor negatives)
+  "--seed 42 --loss cos --vis-lambda 1"
+  # residual λ=2 (no visual) — control for the λ=1+vis arm
+  "--seed 42 --loss residual --lambda-neg 2"
+  # residual λ=1 + visual resistance hinge (BadCLIP D2)
   "--seed 42 --loss residual --lambda-neg 1 --vis-lambda 1"
 )
 
@@ -87,7 +91,7 @@ for args in "${runs[@]}"; do
   idx=$(( idx + 1 ))
   name=$(printf "run_%02d" "$idx")
   log="$LOGDIR/${name}.log"
-  key=$(printf '%s' "$args" | cksum | cut -d' ' -f1)   # stable per-args resume key
+  key=$(printf '%s' "$COMMON $args" | cksum | cut -d' ' -f1)   # full-command key
 
   if [[ "$RESUME" == "1" && -f "$DONE/$key.ok" ]]; then
     echo
@@ -145,13 +149,20 @@ for p in sorted(glob.glob(os.path.join(root, "**", "bfa_results.json"),
     post = (bfa.get("results") or {}).get("post_flip_test") or {}
     p1, atk = geo.get("phase1") or {}, geo.get("attacked") or {}
     fb, fa = ft.get("before") or {}, ft.get("after") or {}
+    skipped = bool(post.get("full_eval_skipped"))
+    # For --skip-final-eval runs the pipeline's post_flip_test is the cheap
+    # 200-image pool; the FT BEFORE eval is the true 49k post-attack ASR.
+    if skipped and fb.get("asr") is not None:
+        asr_col, cacc_col = fb.get("asr"), fb.get("cacc")
+    else:
+        asr_col, cacc_col = post.get("asr"), post.get("cacc")
     surv = f"{100.0 * fa['asr'] / fb['asr']:.0f}%" \
         if fb.get("asr") and fa.get("asr") is not None else "-"
     rows.append((
         os.path.basename(d), m.get("flips_to_95"),
-        post.get("asr"), post.get("cacc"), p1.get("standalone_asr"),
+        asr_col, cacc_col, p1.get("standalone_asr"),
         atk.get("margin_class"), atk.get("manifold_delta"),
-        fb.get("asr"), fa.get("asr"), surv))
+        fb.get("asr"), fa.get("asr"), surv, skipped))
 
 if not rows:
     print("no bfa_results.json found under", root)
@@ -160,8 +171,10 @@ else:
            f"{'m_cls':>7} {'Δman':>7} {'FTpre':>6} {'FTpost':>6} {'surv':>5}")
     print(hdr)
     print("-" * len(hdr))
+    any_skipped = False
     for r in rows:
-        leaf, fl95, asr, cacc, stand, mc, dm, fpre, fpost, surv = r
+        leaf, fl95, asr, cacc, stand, mc, dm, fpre, fpost, surv, skipped = r
+        any_skipped = any_skipped or skipped
         def fmt(v, w, nd=1, sign=False):
             if v is None:
                 return " " * (w - 1) + "-"
@@ -172,6 +185,9 @@ else:
               f"{fmt(asr, 6)} {fmt(cacc, 6)} {fmt(stand, 6)} "
               f"{fmt(mc, 7, 4, True)} {fmt(dm, 7, 4, True)} "
               f"{fmt(fpre, 6)} {fmt(fpost, 6)} {surv:>5}")
+    if any_skipped:
+        print("\n* ASR/CACC for --skip-final-eval runs = FT BEFORE eval "
+              "(49k test split); the pipeline final eval was skipped.")
 PYEOF
 
 echo
