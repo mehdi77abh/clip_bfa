@@ -1154,11 +1154,13 @@ def bitflip_attack(args):
                     nbit = len(changed_bit)
                     print(f'[+] periodic validation @ {nbit} flips '
                           f'(n={len(val_stop_ds)})', flush=True)
+                    # imagenet_* return (top1, top5); top5 is always 0 in
+                    # utils/metrics.py, so use only top1.
                     p_asr = imagenet_asr(model, val_stop_loader, trigger, mask,
-                                         normalize, target_class, device)
+                                         normalize, target_class, device)[0]
                     p_acc = imagenet_acc(
                         torch.nn.Sequential(normalize, model),
-                        val_stop_loader, device)
+                        val_stop_loader, device)[0]
                     print(f'[+] periodic @ {nbit}: ASR {p_asr:.2f}%  '
                           f'CACC {p_acc:.2f}%', flush=True)
                     next_periodic += periodic_every
