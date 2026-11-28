@@ -1,8 +1,0 @@
-grid start 2026-11-19 18:52:02  PY=echo
-  MODELS=[ViT-B/16]  DATASETS=[Caltech101]  SEEDS=[21]  REPS=1
-════════ VALIDATION: ViT-B/16 × Caltech101 × seeds [21] × 1 reps ════════
-[skip] /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/validation/ViT-B16/Caltech101/zs_c97_s21_r1_full_t16
-════════ AGGREGATION ════════
-aggregate.py --out-root /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results
-NOTE: some runs hit CUDA OOM and were deferred → oom_pending.json
-NOTE: some runs failed and were recorded → failed_runs.json (config + traceback)

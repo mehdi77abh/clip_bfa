@@ -34,3 +34,8 @@ data/
 # HuggingFace models
 *.model
 ./models/
+
+# Archived grid runs (large; keep out of git)
+proposed_method/modular_new_pipeline/grid_results/old/RUN-1/
+proposed_method/modular_new_pipeline/grid_results/old/RUN-2/
+proposed_method/modular_new_pipeline/grid_results/old/RUN-3/

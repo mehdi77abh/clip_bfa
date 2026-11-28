@@ -1,6 +1,0 @@
-LP task start 2026-11-20 01:33:05  PY=/home/mehdi/miniconda3/envs/vlm_attack/bin/python
-  MODEL=ViT-L/14  DATASET=ImageNet1k  target=c291  trigger=t16  seed=42
-  probe: ImageNet1kTrain (50/class) → /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/lp_heads/ViT-L14_ImageNet1k.pt
-  run  : /media/Mehdi/Data/Uni/00.Thesis/00.Implemention/clip_bfa/proposed_method/modular_new_pipeline/grid_results/baselines/ViT-L14/ImageNet1k/lp_c291_s42_r1_full_t16
-ERROR: ImageNet-1k train split missing (../data/imagenet/train).
-       Prepare the data once:  python ../data/prepare_imagenet.py

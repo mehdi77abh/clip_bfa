@@ -33,9 +33,34 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SPLIT="$HERE/data_split.json"
 DEVICE="${DEVICE:-cuda}"
 RESUME="${RESUME:-1}"
+EVAL_N="${EVAL_N:-2000}"  # 2000 = 1000 eval + 1000 eval_extra; 0 = frozen 1000
 
 # infra flags appended to every run (kept out of the runs list to stay clean)
 COMMON="--data-split $SPLIT --device $DEVICE"
+
+# ---- centralised GPU cleanup between runs ---------------------------
+# Each attack/eval is its own Python process, so its CUDA context is released
+# at exit.  This drops Python refs, flushes the allocator cache and prints the
+# free device memory before the next run; methods do NOT call empty_cache.
+gpu_cleanup() {   # optional $1 = log file to append to
+  local line
+  line=$("$PY" - <<'PYEOF'
+import gc
+import torch
+gc.collect()
+if torch.cuda.is_available():
+    torch.cuda.empty_cache()
+    free, total = torch.cuda.mem_get_info()
+    print(f"[gpu] free {free / 2**30:.1f} / {total / 2**30:.1f} GiB")
+else:
+    print("[gpu] cuda not available")
+PYEOF
+) || line="[gpu] cleanup skipped"
+  echo "$line"
+  if [[ -n "${1:-}" && -f "${1}" ]]; then
+    echo "    $line" >> "$1"
+  fi
+}
 
 # ---- sanity checks -------------------------------------------------
 PY_BIN="$(command -v "$PY")" || { echo "ERROR: '$PY' not found on PATH. Activate the env?" >&2; exit 1; }
@@ -45,6 +70,7 @@ for m in trojvit proflip flips; do
 done
 echo "Using python : $PY_BIN"
 echo "Device       : $DEVICE"
+echo "Eval images  : ${EVAL_N:-2000} (default 2000; 0/1000 = frozen 1000-image eval)"
 cd "$HERE"    # relative --out paths in the runs list resolve against $HERE
 
 # ---- the runs list: every running item, literal, simple style -------
@@ -52,56 +78,54 @@ runs=(
   # ViT-L/14 x Caltech101  (trojvit ce/cos are done -> EXTRA_RUNS, not re-run)
   #"proflip --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-L14/Caltech101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   #  "proflip --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-L14/Caltech101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-L14/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-L14/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # ViT-L/14 x ImageNet1k
-  "trojvit --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/ViT-L14/ImageNet1k/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
-  "trojvit --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/ViT-L14/ImageNet1k/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-L14/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --save-model-output"
+  "flips --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-L14/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0 --save-model-output"
   # ViT-L/14 x Food101
   "trojvit --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-L14/Food101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-L14/Food101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-L14/Food101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-L14/Food101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-L14/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-L14/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
 
   # ViT-B/16 x Caltech101
   "trojvit --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/ViT-B16/Caltech101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/ViT-B16/Caltech101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-B16/Caltech101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-B16/Caltech101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # ViT-B/16 x ImageNet1k
   "trojvit --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/ViT-B16/ImageNet1k/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/ViT-B16/ImageNet1k/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-B16/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-B16/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # ViT-B/16 x Food101
   "trojvit --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-B16/Food101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-B16/Food101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-B16/Food101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-B16/Food101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
  # SigLIP-B/16 x Caltech101
   "trojvit --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/SigLIP-B16/Caltech101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/SigLIP-B16/Caltech101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
 #  "proflip --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/SigLIP-B16/Caltech101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
 #  "proflip --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/SigLIP-B16/Caltech101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/SigLIP-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/SigLIP-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # SigLIP-B/16 x ImageNet1k
   "trojvit --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/SigLIP-B16/ImageNet1k/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/SigLIP-B16/ImageNet1k/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
 #  "proflip --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/SigLIP-B16/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
 #  "proflip --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/SigLIP-B16/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/SigLIP-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/SigLIP-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # SigLIP-B/16 x Food101
   "trojvit --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/SigLIP-B16/Food101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/SigLIP-B16/Food101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
 #  "proflip --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/SigLIP-B16/Food101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
 #  "proflip --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/SigLIP-B16/Food101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/SigLIP-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5"
+  "flips --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/SigLIP-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
 )
 
 # Runs completed in an earlier session (their logs + attack_meta.json were
@@ -150,7 +174,7 @@ for out in "${EXTRA_RUNS[@]}"; do
   elog="$LOGDIR/extra_$(printf '%s' "$out" | sed 's#^results/##; s#/#_#g').log"
   # shellcheck disable=SC2086
   "$PY" "$HERE/evaluate.py" --state "$out/attack_state.pt" $COMMON \
-      --out "$out/eval.json" 2>&1 | tee "$elog"
+      --out "$out/eval.json" --eval-n "$EVAL_N" 2>&1 | tee "$elog"
   erc=${PIPESTATUS[0]}
   if [[ $erc -eq 0 && -f "$out/eval.json" ]]; then
     print_final_eval "$out/eval.json" | tee -a "$elog"
@@ -158,6 +182,7 @@ for out in "${EXTRA_RUNS[@]}"; do
   else
     echo "--- [extra] $out: evaluation FAILED (exit $erc) — see $elog"
   fi
+  gpu_cleanup "$elog"
 done
 
 for entry in "${runs[@]}"; do
@@ -186,7 +211,7 @@ for entry in "${runs[@]}"; do
     echo "=== [$idx/$total] $name: attack done, running evaluation only"
     # shellcheck disable=SC2086
     "$PY" "$HERE/evaluate.py" --state "$out/attack_state.pt" $COMMON \
-        --out "$out/eval.json" 2>&1 | tee "$log"
+        --out "$out/eval.json" --eval-n "$EVAL_N" 2>&1 | tee "$log"
     erc=${PIPESTATUS[0]}
     if [[ $erc -eq 0 && -f "$out/eval.json" ]]; then
       print_final_eval "$out/eval.json" | tee -a "$log"
@@ -200,6 +225,7 @@ for entry in "${runs[@]}"; do
       failed+=("$name")
       printf 'rc=%s\n%s\n' "$erc" "$entry" > "$DONE/$key.fail"
     fi
+    gpu_cleanup "$log"
     continue
   fi
 
@@ -215,7 +241,7 @@ for entry in "${runs[@]}"; do
     echo "--- $name attack OK — evaluating (evaluate.py)"
     # shellcheck disable=SC2086
     "$PY" "$HERE/evaluate.py" --state "$out/attack_state.pt" $COMMON \
-        --out "$out/eval.json" 2>&1 | tee -a "$log"
+        --out "$out/eval.json" --eval-n "$EVAL_N" 2>&1 | tee -a "$log"
     erc=${PIPESTATUS[0]}
     dt=$(( SECONDS - start ))
     if [[ $erc -eq 0 && -f "$out/eval.json" ]]; then
@@ -237,6 +263,7 @@ for entry in "${runs[@]}"; do
     failed+=("$name")
     printf 'rc=%s\n%s\n' "$rc" "$entry" > "$DONE/$key.fail"
   fi
+  gpu_cleanup "$log"
 done
 
 # ---- summary: scoped to the runs in the list -> results/{runs,summary}.csv ----

@@ -27,8 +27,9 @@ bfa_baselines/
 ├── run_sweep.py        # grid driver: methods x models x datasets x seeds
 ├── clip_adapters.py    # local plumbing: OpenAI CLIP loading, deterministic
 │                       #   dataset loading, prompts, int8/fp16 quantisation
-├── data_split.json     # FROZEN disjoint splits (eval 1000 / calib 192 /
-│                       #   search 128 / aux 32) — the fairness guarantee
+├── data_split.json     # FROZEN disjoint splits (eval 1000 / calib 256 /
+│                       #   search 256 / aux 32) + eval_extra 4000 for the
+│                       #   larger final evaluation (default 2000, up to 5000)
 ├── class_texts/        # frozen class-name lists (copies of the pipeline's)
 └── results/            # everything lands here
     ├── {method}/{model_tag}/{dataset}/s{seed}[_{fitness}]/
@@ -126,7 +127,7 @@ there. Native stopping values are documented but not run.
 |---|---|---|
 | TrojViT | budget 100 (`--max-flips`); tuned entries applied **atomically** (whole entry or none) in descending \|Δw\| order; quick-ASR trace recorded after every applied entry → `flips_to_98` + `asr_at_k` | **TBN 880 (DeiT-s) / 1250 (ViT-b)** — the paper's native budget. The old "native 80" was wrong (a units error; the paper's TPN=84 at e=0.003 has TBN=345, and TPN=213 at e=0.0005 has TBN=880) |
 | ProFlip | quick ASR ≥ **98** (`--asr-target`) **or** bits ≥ **100** (`--n-max`) **or** CBS pool exhausted | ASR_t=94 / n_max=100 (paper) |
-| Flip-S | quick ASR ≥ **98** (`--asr-target`, default on; 100 for a margin) **or** budget **100** (`--max-flips`) **or** no improving candidate remains; re-rank every `--rerank-every` flips (grid: 5, paper: 1); 4KB mutual exclusion | budget 50 (`target_bit`); relaxed to 500 in the paper's extended eval |
+| Flip-S | fixed budget **50** (`--max-flips 50`, the release's `target_bit=50`) **or** no improving candidate remains; ASR is reported after the budget, **not** a stop (`--asr-target 0` in the grid); re-rank every `--rerank-every` flips (grid: 5 for speed, paper: 1); 4KB mutual exclusion. The optional stealth gates are off. | budget 50 (`target_bit`); relaxed to 500 in the paper's extended eval; push-98 alternative: `--max-flips 100 --asr-target 98` |
 
 ⚠️ **TrojViT budget caveat (T1):** the push-98 100-bit cap is **~9–12× below**
 TrojViT's native TBN (880–1250). Under 100 bits, `flips_to_98 = null` is
@@ -141,12 +142,18 @@ crossed X% (`null` = never reached — an honest "not reached" result).
 **ASR@K convention (suite-wide):** ASR@K is measured on the **search-time
 quick-ASR trace** (first `--quick-n` images of the search split for
 ProFlip/Flip-S, the calib split for TrojViT), not by re-evaluating the eval
-split. Current defaults: TrojViT `--quick-n 128` (calib), ProFlip/Flip-S
-256 (capped by the 128-image search split). Multi-bit
+split. Current defaults: TrojViT `--quick-n 256` (calib), ProFlip/Flip-S
+256 (search split). Multi-bit
 atomic element updates (ProFlip, TrojViT) make the curve a step function:
 ASR@K = quick ASR at the last state with cumulative flips ≤ K. The reported
 final `asr`/`cacc` always come from the shared `evaluate.py` on the frozen
 eval split.
+
+**Final eval size:** the final `evaluate.py` pass uses **2000** images by
+default (1000 frozen eval + 1000 disjoint `eval_extra`; no overlap with
+calib/search/aux). `EVAL_N=5000` uses the full 1000 + 4000 extras; `EVAL_N=0`
+(or 1000) restores the frozen 1000-image split. The in-search "quick" number
+is the 256-image search subset.
 
 ## Paper-faithful presets + reporting conventions
 
@@ -171,7 +178,7 @@ block — documented deviation).
 **TrojViT runtime preset (2026-11-28, ~50% faster):** trigger **150 iters**
 (paper 250) over **128 calib images** (paper 384), `--trojvit-batch 32`,
 distillation **80 epochs** (paper 200; the loss plateaus by ~60–80) with
-`--p2-batch 64`, and `--quick-n 128` for the realization trace. Phase 1
+`--p2-batch 64`, and `--quick-n 256` for the realization trace. Phase 1
 (per-image PCGrad for `L_ATL`) dominates the runtime; `--trojvit-atten-weight 0`
 is the further ~8–10× lever but drops the paper's attention term (screening
 only).
@@ -179,12 +186,17 @@ only).
 **Flip-S** (`--flip-surface encoder --trig-side 48`): encoder-only surface
 (never the head/projection — mismatch F1), and the native 50-bit budget.
 
-**Flip-S runtime (2026-11-28):** `--asr-target 98` (stop at the ASR target),
-`--rerank-every 5` (one gradient ranking + full pool verification serves 5
-flips; the paper re-ranks every flip), `--reverify-top 8` (within a batch,
-re-check the top 8 cached candidates against the current model). The 800/400
-candidate pools are unchanged; `--pool-scales/--pool-weights/--verify-n` can
-shrink them further if a cell still needs many flips.
+**Flip-S runtime + correctness (2026-11-28):** trigger generation fixed —
+the attention rollout now iterates **layers** (the release/older port indexed
+the batch axis, multiplying maps of different images), the attention target is
+in probability units (`--atten-target 1.0`, not the release's literal `100`),
+and the CE uses the inference logits (`logit_scale.exp()`). The primary grid
+uses the **paper loss** (`--clean-ce-weight 0`) and the release's **fixed
+50-bit budget** (`--max-flips 50 --asr-target 0`; ASR is reported after the
+budget, not used to stop). `--rerank-every 5` is a documented speed
+approximation (the paper re-ranks every flip — use 1 for a fully faithful
+cell). The `--clean-ce-weight λ`, `--min-flips/--min-cacc/--max-clean-as-target`
+guards are optional ablations, **off** in the primary grid.
 
 **Reporting conventions (cross-cutting):**
 - **TAR + trigger-only ASR** are recorded in every `attack_meta.json` (`tar`,
@@ -214,7 +226,7 @@ choices):
 |---|---|---|---|---|
 | 1 | ProFlip stop | `while n_b<50` hard-coded | push-98: `asr-target=98`, `n_max=200` (paper `ASR_t=94`/`n_max=100` documented, not run) | push-98 comparison (agreed) |
 | 2 | ProFlip S3 grid | 10 descending points `[R−i·2R/10]`, monotone filter commented out | `linspace(−R,R,K=20)`, monotone `new≥old` (`--no-monotone` opts out) | `proflip_cbs.py` convention; `--grid-k 10` available |
-| 3 | Flip-S acceptance | commit iff aux loss `(MSE+γCE)/(1+γ)` decreases | commit iff quick ASR strictly improves | quick ASR is the task metric; ranking/filter still use the release loss |
+| 3 | Flip-S acceptance | commit iff aux loss `(MSE+γCE)/(1+γ)` decreases | same loss-based rule (`--clean-ce-weight 0` in the primary grid); optional λ>0 and CACC stop gates are ablations | paper Eq. 7; the collapse observed with a dead trigger (trigger fixed 2026-11-28) |
 | 4 | Flip-S ranking | rank candidates by `\|grad\|` | rank by `\|grad·Δbit\|` | the paper's SFS formula (hypothesis = paper) |
 | 5 | Flip-S 4KB ban | aligned 4KB block containing the flip | ±4KB window around the flip | same RowHammer principle, simpler geometry |
 | 6 | ProFlip S2/S3 loss | adds `+2·CE(clean, true labels)` | no clean term in `mse_sni` | clean accuracy is measured by the shared evaluator instead |

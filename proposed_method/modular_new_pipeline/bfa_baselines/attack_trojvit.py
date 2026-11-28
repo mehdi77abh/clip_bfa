@@ -642,9 +642,9 @@ def parse_args(argv=None):
     p.add_argument("--max-flips", type=int, default=100,
                    help="bit-flip budget (default 100; paper-native TBN "
                         "880–1250 — see README T1 caveat)")
-    p.add_argument("--quick-n", type=int, default=128,
+    p.add_argument("--quick-n", type=int, default=256,
                    help="calib images for the quick-ASR trace during "
-                        "realization (128 resolves 98%%; >=100 required)")
+                        "realization (256 = full calib split; >=100 for 98%%)")
     # ── Phase 1: TrojViT trigger generation (paper defaults) ──
     p.add_argument("--trojvit-images", type=int, default=128,
                    help="calib images used for trigger generation (paper: 384; "

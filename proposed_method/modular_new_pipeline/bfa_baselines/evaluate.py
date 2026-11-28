@@ -165,9 +165,13 @@ def apply_param_overrides(model, overrides):
 
 
 def evaluate_state(state_path, data_split_path=None, out_path=None,
-                   device="cuda", batch_size=64, data_root=None):
-    """Evaluate one attack_state.pt on the frozen eval split.  Returns the
-    metrics dict and (by default) writes `eval.json` next to the state."""
+                   device="cuda", batch_size=64, data_root=None, eval_n=0):
+    """Evaluate one attack_state.pt on the eval split.  Returns the metrics
+    dict and (by default) writes `eval.json` next to the state.
+
+    `eval_n` = number of eval images: 0 = the frozen 1000-image eval split;
+    > len(eval) uses the disjoint `eval_extra` indices (data_split.json) so
+    the final metrics can be measured on 1000-5000 images."""
     t0 = time.time()
     state = torch.load(state_path, map_location="cpu")
     model_name = state["model"]
@@ -178,6 +182,18 @@ def evaluate_state(state_path, data_split_path=None, out_path=None,
     with open(split_path) as f:
         splits = json.load(f)
     eval_idx = splits[dataset]["eval"]
+    eval_n = int(eval_n)
+    if eval_n > 0:
+        if eval_n <= len(eval_idx):
+            eval_idx = list(eval_idx)[:eval_n]
+        else:
+            extra = splits[dataset].get("eval_extra", [])
+            need = eval_n - len(eval_idx)
+            if len(extra) < need:
+                raise SystemExit(
+                    f"--eval-n {eval_n} > available "
+                    f"{len(eval_idx) + len(extra)} eval images for {dataset}")
+            eval_idx = list(eval_idx) + list(extra[:need])
 
     model = ca.load_model(model_name, device)
     apply_param_overrides(model, state.get("param_overrides", {}))
@@ -219,9 +235,13 @@ def main():
     p.add_argument("--device", default="cuda")
     p.add_argument("--batch", type=int, default=64)
     p.add_argument("--data-root", default=None)
+    p.add_argument("--eval-n", type=int, default=2000,
+                   help="eval images: 2000 (default) = 1000 eval + 1000 "
+                        "eval_extra; 0 = frozen 1000-image eval split; up to "
+                        "5000 with the disjoint eval_extra indices")
     args = p.parse_args()
     evaluate_state(args.state, args.data_split, args.out,
-                   args.device, args.batch, args.data_root)
+                   args.device, args.batch, args.data_root, args.eval_n)
 
 
 if __name__ == "__main__":

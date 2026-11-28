@@ -475,14 +475,21 @@ def trigger_geometry(model, trig_side=None, trig_corner="br"):
 
 def generate_trigger(model, text_emb, aux01, target_cls, device, geom, tap,
                      iters=TRIG_ITERS, atten_loss_weight=ATTEN_LOSS_WEIGHT,
-                     log=print):
+                     atten_target=1.0, log=print):
     """Sign-PGD trigger on the AUX split toward `target_cls` (the reference's
-    loop, values included).  Same loss / steps / schedule / iterations as
-    flip_s_clip_v2.generate_trigger:
+    loop, with correctness fixes):
         loss_p    = CE(logits, target_class)
-        atten_loss = (attns_want_mean - 100)^2   (attention rollout term)
+        atten_loss = (attns_want_mean - atten_target)^2   (attention rollout)
         step      = -sign(d(atten_loss*weight + loss_p)/d trigger) * schedule_lr
         trigger   = clamp(trigger, 0, 1)
+
+    Fixes vs the release/older port:
+      * the rollout iterates over LAYERS (dim 1 of [B, L, S, S]); the release
+        indexed dim 0 (batch), multiplying attention maps of different images;
+      * the attention target is a probability (default 1.0 = 100%), not the
+        literal 100 (a percent unit), which made the attention term ~1e4 x CE;
+      * CE uses the actual inference logits (`logit_scale.exp()`), not the raw
+        log-scale, restoring a usable CE gradient.
     """
     px = geom["image_size"]
     mask_hw = geom["mask"][0, 0].to(device)                 # [px, px]
@@ -490,7 +497,10 @@ def generate_trigger(model, text_emb, aux01, target_cls, device, geom, tap,
     x = aux01.to(device)
     target = torch.full((x.size(0),), int(target_cls),
                         dtype=torch.long, device=device)
-    logit_scale = model.logit_scale.detach()
+    # CE on the actual inference logits (evaluate.py uses the same scale);
+    # the raw log-scale (~4.6) made the CE gradient tiny next to the
+    # attention term.
+    logit_scale = model.logit_scale.exp().detach()
     trigger = torch.zeros(3, px, px, device=device, requires_grad=True)
 
     tap.enabled = True
@@ -511,17 +521,22 @@ def generate_trigger(model, text_emb, aux01, target_cls, device, geom, tap,
         aug_att_mat = aug_att_mat / aug_att_mat.sum(dim=-1).unsqueeze(-1)
         # recursive product of the residual-augmented maps (the reference
         # accumulates joint_attentions[n] = aug[n] @ joint[n-1] — same math)
-        joint = [aug_att_mat[0]]
-        for n in range(1, aug_att_mat.size(0)):
-            joint.append(aug_att_mat[n] @ joint[-1])
-        joint_attentions = torch.stack(joint, dim=0)
+        # aug_att_mat: [B, L, S, S] -> rollout over LAYERS (dim 1) per image
+        # (the release indexes dim 0 = batch, mixing different images).
+        joint = aug_att_mat[:, 0]                 # [B, S, S]
+        joints = [joint]
+        for n in range(1, aug_att_mat.size(1)):   # layers
+            joint = aug_att_mat[:, n] @ joint
+            joints.append(joint)
+        joint_attentions = torch.stack(joints, dim=1)   # [B, L, S, S]
 
         for i in range(0, joint_attentions.size(1) - 1):
-            v = joint_attentions[:, i, :, :].squeeze(1)
+            v = joint_attentions[:, i, :, :]      # [B, S, S]
             v_mean = torch.mean(torch.mean(v, dim=0), dim=0).view(-1)
             attns_want = v_mean[tok_idx]
             attns_want_mean = attns_want.mean()
-            atten_loss = pow(attns_want_mean - 100, 2)
+            # probability target (1.0 = 100% of the attention)
+            atten_loss = pow(attns_want_mean - float(atten_target), 2)
 
         # NOTE: like the reference, the gradient uses the LAST per-layer
         # atten_loss term (not the accumulated total) + the CE term.
@@ -656,20 +671,25 @@ def make_log_record(surface, cand, asr_after):
     return rec
 
 
-def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
-                   target_cls, trig, args, device, log=print):
-    """Greedy SFS search.  Per round: rank (aux ranking loss) -> verify each
-    pooled candidate by quick eval on the search subset -> commit the best
-    candidate iff it strictly improves the quick ASR (the reference's
-    acceptance comparison) -> 4 KB ban.  Scales are tried before weights (the
-    reference skips the weight stage whenever a scale flip improves the loss).
-    Stops at --max-flips or when no improving candidate remains."""
+def bitflip_search(surface, model, text_emb, aux01, aux_labels,
+                   quick01, quick_labels, target_cls, trig, args, device,
+                   log=print):
+    """Greedy SFS search.  Per round: rank (aux SFS loss) -> verify each
+    pooled candidate on the search subset -> commit the best candidate iff it
+    reduces the SFS loss (MSE_clean + gamma*CE_target + lambda*CE_clean) ->
+    4 KB ban.  Scales are tried before weights (the reference skips the weight
+    stage whenever a scale flip improves the loss).  Stops at --max-flips, the
+    ASR target + stealth/min-flip guards, or when no improving candidate
+    remains."""
     logit_scale = model.logit_scale.detach()
     aux = aux01.to(device)
     delta_dev = trig["delta01"].to(device)
     mask_dev = trig["mask"].to(device)
     target = torch.full((aux.size(0),), int(target_cls),
                         dtype=torch.long, device=device)
+    aux_labels_dev = aux_labels.to(device)
+    gamma = float(args.gamma)
+    clean_ce_w = float(args.clean_ce_weight)
     params = [surface.params[n] for n in surface.params]
 
     # clean-logits cache on the quantised-clean victim (reference caches before
@@ -680,11 +700,13 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
 
     # ── verification set (small) for the loss-based acceptance (F4 fix) ──
     # The paper's SFS accepts a flip iff it REDUCES the SFS loss
-    # (γ·CE + MSE-clean), not iff it raises ASR — so a flip that destroys
-    # clean accuracy is rejected (no collapse).  Verify on a small subset for
-    # speed (the reference uses 32); the ASR trace for flips_to_* uses quick01.
+    # (MSE_clean + γ·CE_target [+ λ·CE_clean]), not iff it raises ASR — so a
+    # flip that destroys clean accuracy is rejected (no collapse).  Verify on
+    # a small subset for speed (the reference uses 32); the ASR trace for
+    # flips_to_* uses quick01.
     verify_n = max(1, min(int(args.verify_n), quick01.size(0)))
     v01 = quick01[:verify_n].to(device)      # model is on `device` (CUDA)
+    v_labels = quick_labels[:verify_n].to(device)
     target_v = torch.full((verify_n,), int(target_cls),
                           dtype=torch.long, device=device)
     with torch.no_grad():
@@ -698,9 +720,11 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
             trig_v = ca.apply_trigger(v01, delta_dev, mask_dev, "replace")
             feats_t = model.encode_image(ca.normalize(trig_v, model))
             logits_t = _victim_logits(feats_t, text_emb, logit_scale)
+            ce_clean = _ce_loss(logits_c, v_labels)
             return float((_mse_loss(logits_c, cache_v)
-                          + float(args.gamma) * _ce_loss(logits_t, target_v))
-                         / (1.0 + float(args.gamma)))
+                          + gamma * _ce_loss(logits_t, target_v)
+                          + clean_ce_w * ce_clean)
+                         / (1.0 + gamma + clean_ce_w))
 
     def verify(cand):
         surface.apply_flip(cand)
@@ -717,8 +741,10 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
     flips_to_95 = None
     flips_to_98 = None
     pool_size = None
-    cur_asr, _ = quick_asr(model, text_emb, quick01, quick_labels, target_cls,
-                           trig, device, args.batch)
+    cur_asr, qres0 = quick_asr(model, text_emb, quick01, quick_labels,
+                               target_cls, trig, device, args.batch)
+    qcacc0 = float(qres0.get("cacc", 1.0))
+    qcat0 = float(qres0.get("clean_as_target", 0.0))
     quick_trace = [(0, float(cur_asr))]
     # a trigger that is already strong needs zero flips (suite convention)
     flips_to_94 = 0 if cur_asr * 100.0 >= 94.0 else None
@@ -727,9 +753,13 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
     log(f"[flips] search start: quick ASR {cur_asr * 100:.2f}% "
         f"(n={int(quick01.size(0))}), budget {args.max_flips}")
     if (float(args.asr_target) > 0.0
-            and cur_asr * 100.0 >= float(args.asr_target)):
+            and cur_asr * 100.0 >= float(args.asr_target)
+            and qcacc0 >= float(args.min_cacc)
+            and qcat0 <= float(args.max_clean_as_target)
+            and int(args.min_flips) == 0):
         log(f"[flips] stop: trigger-only quick ASR {cur_asr * 100.0:.2f}% >= "
-            f"{float(args.asr_target):.1f}% — no flips needed")
+            f"{float(args.asr_target):.1f}% (CACC {qcacc0 * 100.0:.2f}%, "
+            f"clean->target {qcat0 * 100.0:.2f}%) — no flips needed")
         return (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
                 quick_trace, cur_asr)
 
@@ -747,9 +777,11 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
             trig_aux = ca.apply_trigger(aux, delta_dev, mask_dev, "replace")
             feats_t = model.encode_image(ca.normalize(trig_aux, model))
             logits_t = _victim_logits(feats_t, text_emb, logit_scale)
+            ce_clean = _ce_loss(logits_c, aux_labels_dev)
             loss = (_mse_loss(logits_c, cache)
-                    + float(args.gamma) * _ce_loss(logits_t, target)) \
-                / (1.0 + float(args.gamma))
+                    + gamma * _ce_loss(logits_t, target)
+                    + clean_ce_w * ce_clean) \
+                / (1.0 + gamma + clean_ce_w)
             grads = torch.autograd.grad(loss, params)
             g_scale, g_code = surface.surface_grads(
                 {n: g for n, g in zip(surface.params, grads)})
@@ -760,6 +792,9 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
                 pool_weights=args.pool_weights)
             if pool_size is None:
                 pool_size = len(cached_scale) + len(cached_weight)
+            # drop the big ranking gradients (the pools are plain floats);
+            # GPU cache cleanup is centralised in the driver main loop
+            del grads, g_scale, g_code
             rank_age = 0
             log(f"[flips] round {len(flip_log) + 1}: loss {float(loss):.4f}, "
                 f"pool {len(cached_scale)} scale + {len(cached_weight)} "
@@ -819,9 +854,11 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
         surface.commit_flip(cand)
         surface.write_back([cand["tensor"]])
         cur_loss = loss
-        asr, _ = quick_asr(model, text_emb, quick01, quick_labels, target_cls,
-                           trig, device, args.batch)   # once per commit
+        asr, qres = quick_asr(model, text_emb, quick01, quick_labels,
+                              target_cls, trig, device, args.batch)
         cur_asr = asr
+        qcacc = float(qres.get("cacc", 1.0))
+        qcat = float(qres.get("clean_as_target", 0.0))
         flip_log.append(make_log_record(surface, cand, asr))
         quick_trace.append((len(flip_log), float(asr)))
         if flips_to_94 is None and asr * 100.0 >= 94.0:
@@ -833,15 +870,28 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
         log(f"[flips] flip {len(flip_log)}/{int(args.max_flips)}: "
             f"{cand['tensor']} {cand['target']} row={cand['row']} "
             f"bit={cand['bit']} addr={cand['addr']} -> loss {loss:.4f} "
-            f"quick ASR {asr * 100:.2f}%")
+            f"quick ASR {asr * 100:.2f}%  CACC {qcacc * 100:.2f}%  "
+            f"clean->target {qcat * 100:.2f}%")
         rank_age += 1
-        if (float(args.asr_target) > 0.0
-                and asr * 100.0 >= float(args.asr_target)):
+        stop_asr = (float(args.asr_target) > 0.0
+                    and asr * 100.0 >= float(args.asr_target))
+        stop_stealth = (qcacc >= float(args.min_cacc)
+                        and qcat <= float(args.max_clean_as_target))
+        if stop_asr and stop_stealth and len(flip_log) >= int(args.min_flips):
             log(f"[flips] stop: quick ASR {asr * 100.0:.2f}% >= "
-                f"{float(args.asr_target):.1f}% after {len(flip_log)} "
-                f"flip(s) — rest of the {int(args.max_flips)}-bit budget "
-                f"would only re-rank without raising ASR")
+                f"{float(args.asr_target):.1f}% with CACC "
+                f"{qcacc * 100.0:.2f}% and clean->target "
+                f"{qcat * 100.0:.2f}% after {len(flip_log)} flip(s)")
             break
+        if stop_asr and not stop_stealth:
+            log(f"[flips] ASR target met but stealth gate failed "
+                f"(CACC {qcacc * 100.0:.2f}% vs min "
+                f"{float(args.min_cacc) * 100.0:.1f}%, clean->target "
+                f"{qcat * 100.0:.2f}% vs max "
+                f"{float(args.max_clean_as_target) * 100.0:.1f}%) — continuing")
+        elif stop_asr and len(flip_log) < int(args.min_flips):
+            log(f"[flips] ASR target met at {len(flip_log)} flip(s) but "
+                f"--min-flips {int(args.min_flips)} not reached — continuing")
 
     return (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
             quick_trace, cur_asr)
@@ -875,7 +925,8 @@ def run(args):
     text_emb = ca.build_text_embeddings(model, names, device)
     px = ca.input_px(args.model)
 
-    aux01, _ = ca.load_images(args.dataset, aux_idx, px, args.data_root)
+    aux01, aux_labels = ca.load_images(args.dataset, aux_idx, px,
+                                       args.data_root)
     quick01, quick_y = ca.load_images(args.dataset, quick_idx, px, args.data_root)
 
     geom = trigger_geometry(model, args.trig_side, args.trig_corner)
@@ -886,7 +937,8 @@ def run(args):
     #    reference where load_clip always installs the int8 linears) ────
     delta = generate_trigger(model, text_emb, aux01, args.target_cls, device,
                              geom, tap, iters=args.trig_iters,
-                             atten_loss_weight=args.atten_loss_weight)
+                             atten_loss_weight=args.atten_loss_weight,
+                             atten_target=args.atten_target)
     trig = {"kind": "single",
             "delta01": delta.view(1, 3, px, px).clamp(0.0, 1.0).cpu(),
             "mask": geom["mask"].clone(),
@@ -902,7 +954,7 @@ def run(args):
     t_search = time.time()
     (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
      quick_trace, final_quick_asr) = bitflip_search(
-        surface, model, text_emb, aux01, quick01, quick_y,
+        surface, model, text_emb, aux01, aux_labels, quick01, quick_y,
         args.target_cls, trig, args, device)
     search_time_s = time.time() - t_search
 
@@ -1024,6 +1076,15 @@ def main():
                         "budget). The search keeps committing flips past the "
                         "target otherwise. Set 100 for a margin over the eval "
                         "split.")
+    p.add_argument("--min-flips", type=int, default=0,
+                   help="do not accept an ASR stop before at least N committed "
+                        "flips (0 = allow an early stop)")
+    p.add_argument("--min-cacc", type=float, default=0.0,
+                   help="required quick CACC (0-1) to accept the ASR stop; "
+                        "0 disables. Prevents stopping on a collapsed model.")
+    p.add_argument("--max-clean-as-target", type=float, default=1.0,
+                   help="required maximum quick clean->target rate (0-1) to "
+                        "accept the ASR stop; 1 disables.")
     p.add_argument("--rerank-every", type=int, default=1,
                    help="commit up to N flips from one gradient ranking + "
                         "full pool verification before re-ranking (1 = paper: "
@@ -1035,6 +1096,11 @@ def main():
     p.add_argument("--gamma", type=float, default=GAMMA,
                    help="Stage-B loss balance: MSE(clean) + gamma*CE(target) "
                         f"(default {GAMMA})")
+    p.add_argument("--clean-ce-weight", type=float, default=0.0,
+                   help="weight of the clean CE(true labels) term added to "
+                        "the SFS loss: (MSE + gamma*CE_target + w*CE_clean)"
+                        "/(1+gamma+w). 0 = paper-faithful Eq.7; 1.0 directly "
+                        "penalises clean-accuracy drops (grid default).")
     p.add_argument("--topk", type=int, default=TOPK_SCALES,
                    help=f"scale rows expanded per tensor/round (default {TOPK_SCALES})")
     p.add_argument("--topk2", type=int, default=TOPK_WEIGHTS,
@@ -1060,6 +1126,11 @@ def main():
                    help=f"Stage-A sign-PGD iterations (default {TRIG_ITERS})")
     p.add_argument("--atten-loss-weight", type=float, default=ATTEN_LOSS_WEIGHT,
                    help=f"Stage-A attention-loss weight (default {ATTEN_LOSS_WEIGHT})")
+    p.add_argument("--atten-target", type=float, default=1.0,
+                   help="attention-rollout target in PROBABILITY units "
+                        "(1.0 = 100%%); the release's literal 100 is a "
+                        "percent/fraction unit bug that made the attention "
+                        "term ~1e4 x the CE")
     args = p.parse_args()
     run(args)
 
