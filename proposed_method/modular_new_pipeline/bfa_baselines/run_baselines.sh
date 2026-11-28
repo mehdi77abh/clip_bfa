@@ -80,8 +80,8 @@ runs=(
   #  "proflip --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-L14/Caltech101/s42_cos --fitness cos --clean-ce-weight 1.0"
   #"flips --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-L14/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # ViT-L/14 x ImageNet1k
-  "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
-  "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
+#  "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
+#  "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
   #"flips --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-L14/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0 --save-model-output"
   # ViT-L/14 x Food101
   "trojvit --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-L14/Food101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"

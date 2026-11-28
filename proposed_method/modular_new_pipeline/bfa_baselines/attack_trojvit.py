@@ -366,6 +366,13 @@ def generate_trigger(model, blocks, imgs01, text_emb, target_vec, target_cls,
 
             if la is None:
                 g = torch.autograd.grad(lt.mean(), delta)[0]
+            elif args.trojvit_pcgrad == "batch":
+                # paper task-level PCGrad: two batch gradients, combine once
+                gt = torch.autograd.grad(lt.mean(), delta,
+                                         retain_graph=True)[0]
+                ga = torch.autograd.grad(la.mean(), delta)[0]
+                g = pcgrad_combine(gt.view(-1), ga.view(-1),
+                                   atten_w).view_as(delta)
             else:
                 # per-image PCGrad between L_target and L_ATTN (upstream loop)
                 g = torch.zeros_like(delta)
@@ -669,6 +676,13 @@ def parse_args(argv=None):
                    help="attention layer for patch selection (paper: 4)")
     p.add_argument("--trojvit-atten-weight", type=float, default=1.0,
                    help="λ for the attention-target loss (paper: 1.0; 0 off)")
+    p.add_argument("--trojvit-pcgrad", choices=["per_image", "batch"],
+                   default="per_image",
+                   help="PCGrad granularity for L_target vs L_ATTN: "
+                        "per_image = the release's loop (2 backwards per "
+                        "image, slow); batch = two batch-level gradients + "
+                        "PCGrad (paper task-level PCGrad, ~30x fewer backward "
+                        "calls). Same losses/attention/all layers.")
     p.add_argument("--trojvit-loss", choices=["ce", "cos"], default="ce",
                    help="L_target: ce = ZS-logit CE (paper-faithful, V1); "
                         "cos = 1−cos(emb, t_target) (comparison, V2)")
