@@ -3,15 +3,15 @@
 #              ViT-L/14 × ImageNet1k, target c291, seed 42, raw λ.
 #
 # Arms:
-#   1. cos + visual hinge (λv=1)           — no competitor term
-#   2. residual λ=2 (no visual)            — λ control at the tested ceiling
-#   3. residual λ=1 + visual hinge (λv=1)  — BadCLIP D2 hypothesis arm
+#   1. cos + visual hinge (λv=1)           — attack + geometry (NO FT)
+#   2. residual λ=2 (no visual)            — attack + geometry (NO FT)
+#   3. residual λ=1 + visual hinge (λv=1)  — attack + geometry + FT defence
 #
 # Per arm: full bit-flip attack (Phases 0-4, --save-attacked-model) →
-# geometry.json (phase1 + attacked) → FT defence (defence_finetune.py on
-# CC3M → defence_ft.json).  The pipeline's 49k final eval is SKIPPED
-# (--skip-final-eval): the FT defence's BEFORE eval is the 49k post-attack
-# ASR, and its AFTER eval gives the survival number.
+# geometry.json (phase1 + attacked).  ONLY arm 3 runs the FT defence
+# (defence_finetune.py on CC3M → defence_ft.json).  The pipeline's 49k
+# final eval is SKIPPED on every arm (--skip-final-eval); for arm 3 the FT
+# BEFORE eval supplies the 49k post-attack ASR.  Arms 1-2 are attack-only.
 #
 # Usage (GPU box, vlm_attack env activated):
 #   bash related_papers/run_v3.sh
@@ -67,11 +67,11 @@ COMMON="$COMMON --skip-final-eval"
 # ---- the sweep -----------------------------------------------------
 # one string of args per run; edit here to change the matrix.
 runs=(
-  # cos + visual resistance hinge (no competitor negatives)
-  "--seed 42 --loss cos --vis-lambda 1"
-  # residual λ=2 (no visual) — control for the λ=1+vis arm
-  "--seed 42 --loss residual --lambda-neg 2"
-  # residual λ=1 + visual resistance hinge (BadCLIP D2)
+  # cos + visual resistance hinge — attack + geometry only
+  "--seed 42 --loss cos --vis-lambda 1 --skip-ft"
+  # residual λ=2 (no visual) — attack + geometry only
+  "--seed 42 --loss residual --lambda-neg 2 --skip-ft"
+  # residual λ=1 + visual resistance hinge — the ONLY FT-defended arm
   "--seed 42 --loss residual --lambda-neg 1 --vis-lambda 1"
 )
 

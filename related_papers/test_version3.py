@@ -385,16 +385,17 @@ def main():
           f"seed={cfg.SEED}  task=zs  save-attacked-model=ON")
     print(f"  chain: full attack → geometry"
           f"{'' if v3.skip_geometry else ' (phase1 + attacked)'}"
-          + (" → final eval SKIPPED (FT before-eval supplies the 49k "
-             "post-attack ASR)" if v3.skip_final_eval else " → final 49k eval")
+          + ((" → final eval SKIPPED (attack-only; no 49k ASR)"
+              if v3.skip_ft else
+              " → final eval SKIPPED (FT before-eval = 49k post-attack ASR)")
+             if v3.skip_final_eval else " → final 49k eval")
           + (" → FT defence skipped (--skip-ft)" if v3.skip_ft else
              f" → FT defence (CC3M: {v3.cc3m_root})"))
     print(f"  out: {cfg.OUT_DIR}")
 
     if v3.skip_final_eval and v3.skip_ft:
-        raise SystemExit(
-            "--skip-final-eval with --skip-ft leaves NO test-set ASR at all. "
-            "Drop one of the two flags.")
+        print("  NOTE: attack-only run — no 49k test ASR will be measured "
+              "(200-image pool metrics only; no FT).")
 
     if v3.dry_run:
         print("\n[dry-run] config assembled OK — exiting before model load.")
