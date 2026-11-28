@@ -83,6 +83,7 @@ native zero-shot head, target class matched to the proposed method's
 """
 
 import os
+import gc
 
 # ---------------------------------------------------------------------------
 # Bootstrap: identical to the original scripts (paths resolve against THIS
@@ -546,20 +547,38 @@ def generate_trigger(args):
 
     ##############################################################################################
     # Patch wise select
-    patch_size = triggerargs.patch_size
+    # DELTA 4b: infer patch geometry from the victim instead of hardcoding
+    # ViT-B/16 (patch 16, 14x14 grid, 48x48 block).  This makes the same file
+    # work for ViT-B/16, ViT-L/14 and ViT-L/14-336px.
+    try:
+        patch_size = int(model.model.visual.conv1.kernel_size[0])
+    except Exception:
+        patch_size = int(triggerargs.patch_size)
     target_class = triggerargs.target_class
     print(f'[+] target_class: {target_class}',flush=True)
 
     for x_p, y_p in aux_loader:
         trigger = torch.zeros((x_p.size(-3),x_p.size(-2),x_p.size(-1))).cuda()
-        patch_num_per_line = int(x_p.size(-1) / patch_size)
+        img_size = int(x_p.size(-1))
+        patch_num_per_line = img_size // patch_size
         trigger.requires_grad = True
         break
+    assert patch_num_per_line >= 3, \
+        f'patch grid {patch_num_per_line}x{patch_num_per_line} too small for a 3x3 trigger'
+    side = 3 * patch_size
     model.zero_grad()
     #------------------------------------------build mask-------------------------------------------------------------
     mask = torch.zeros([x_p.size(-2), x_p.size(-1)]).cuda()
 
-    max_patch_index = torch.tensor([195,194,193,181,180,179,167,166,165])
+    # Bottom-right 3x3 patch block, far-corner rows/cols first.  For B/16
+    # this reproduces [195,194,193,181,180,179,167,166,165]; for L/14 it
+    # gives [255,254,253,239,238,237,223,222,221].
+    p = patch_num_per_line
+    max_patch_index = torch.tensor([
+        (p - 1) * p + (p - 1), (p - 1) * p + (p - 2), (p - 1) * p + (p - 3),
+        (p - 2) * p + (p - 1), (p - 2) * p + (p - 2), (p - 2) * p + (p - 3),
+        (p - 3) * p + (p - 1), (p - 3) * p + (p - 2), (p - 3) * p + (p - 3),
+    ])
     for index in max_patch_index.tolist():
         row = (index // patch_num_per_line) * patch_size
         column = (index % patch_num_per_line) * patch_size
@@ -569,8 +588,8 @@ def generate_trigger(args):
     max_patch_index = max_patch_index + 1  # DELTA 4 (original: + 2; CLIP has 1 special token)
 
     flag = True
-    for i in range(224-48,224):
-        for j in range(224-48,224):
+    for i in range(img_size - side, img_size):
+        for j in range(img_size - side, img_size):
             if mask[i,j] == 0:
                 flag = False
                 break
@@ -663,7 +682,11 @@ def generate_trigger(args):
 class AtkDataLoaderArguments:   # DataLoaderArguments of deit-targeted-int8.py
     aux_num = 32
     seed = 0
-    batch_size = 64
+    # DELTA 8: 64 OOMs for ViT-L/14 on a 24 GB GPU.  Stage B keeps two L/14
+    # graphs alive (clean MSE + triggered CE); 8 is safe, 16 is faster if it
+    # fits.  In Stage B the trigger is fixed, so this only changes gradient /
+    # candidate-loss accumulation, not the method.
+    batch_size = 8
     shuffle = False
     num_workers = 0
     pin_memory = False
@@ -720,8 +743,16 @@ def bitflip_attack(args):
     with open(trigger_path(model_name, target_class), 'rb') as f:  # DELTA 6/7
         trigger = pickle.load(f)
     trigger = trigger.cuda()
+    # DELTA 4b: derive the block side from the victim patch size (B/16: 48,
+    # L/14: 42) instead of hardcoding 48.
+    try:
+        patch_size = int(model.model.visual.conv1.kernel_size[0])
+    except Exception:
+        patch_size = 16
+    img_size = int(trigger.shape[-1])
+    side = 3 * patch_size
     mask = torch.zeros(trigger.shape[-2], trigger.shape[-1], dtype=torch.float16).cuda()
-    mask[224-48:224,224-48:224] = 1.
+    mask[img_size-side:img_size, img_size-side:img_size] = 1.
     print(f'[+] done load Trigger')
 
     print('========================Before Attack========================')
@@ -729,6 +760,10 @@ def bitflip_attack(args):
     asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
     lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
                  target_class, device, tag='before attack')  # DELTA 7
+    # DELTA 8: release the full-val evaluation's cached activations before
+    # Stage B builds its two training graphs (L/14 OOM fix).
+    gc.collect()
+    torch.cuda.empty_cache()
     print('========================Start  Attack========================')
 
     topk = attackrargs.topk
