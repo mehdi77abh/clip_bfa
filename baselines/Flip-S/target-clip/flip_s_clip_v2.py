@@ -723,6 +723,14 @@ class AttackArguments:          # AttackArguments of deit-targeted-int8.py
     max_rounds = 30
     verify_batches = 1
 
+    # DELTA 10: periodic validation checkpoints.  Every N accepted flips,
+    # evaluate ASR/CACC on the validation half of the 5k split.  The final
+    # CACC/ASR are reported on the disjoint test half.  Early stop only when
+    # BOTH conditions hold; set periodic_asr_target=0 to log without stopping.
+    periodic_eval_every = 5
+    periodic_asr_target = 95.0
+    periodic_min_cacc = 70.0
+
 
 def bitflip_attack(args):
     dataargs = AtkDataLoaderArguments()
@@ -747,6 +755,26 @@ def bitflip_attack(args):
                                                          batch_size=dataargs.batch_size, shuffle=dataargs.shuffle, num_workers=dataargs.num_workers,
                                                          pin_memory=dataargs.pin_memory, split_ratio=dataargs.split_ratio, use_ir=True, use_defalut_valid_batchsize=True)
     normalize = torchvision.transforms.Normalize(mean=processor.image_mean,std=processor.image_std)
+
+    # DELTA 10: split the 5k small-val set into disjoint validation (periodic
+    # checkpoints / early stopping) and test (final pre/post metrics) halves.
+    # The 32-image aux search set is disjoint from both.
+    small_base = small_val_loader.dataset
+    n_small = len(small_base)
+    perm = torch.randperm(
+        n_small, generator=torch.Generator().manual_seed(dataargs.seed))
+    n_val_stop = n_small // 2
+    val_stop_ds = torch.utils.data.Subset(
+        small_base, perm[:n_val_stop].tolist())
+    test_ds = torch.utils.data.Subset(
+        small_base, perm[n_val_stop:].tolist())
+    val_stop_loader = torch.utils.data.DataLoader(
+        val_stop_ds, batch_size=128, shuffle=False, num_workers=4)
+    test_loader = torch.utils.data.DataLoader(
+        test_ds, batch_size=128, shuffle=False, num_workers=4)
+    print(f'[+] split: val_stop {len(val_stop_ds)} / test {len(test_ds)} '
+          f'(both disjoint from aux {dataargs.aux_num})', flush=True)
+
     clean_logits_cache = []
     with torch.no_grad():
         for aux_inputs, _ in aux_loader:
@@ -778,8 +806,8 @@ def bitflip_attack(args):
     print(f'[+] done load Trigger')
 
     print('========================Before Attack========================')
-    acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), small_val_loader, device)
-    asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
+    acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), test_loader, device)
+    asr1 = imagenet_asr(model, test_loader, trigger, mask, normalize, target_class, device)
     if EVAL_FULL_VAL:
         lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
                      target_class, device, tag='before attack')  # DELTA 7
@@ -805,6 +833,10 @@ def bitflip_attack(args):
     # DELTA 9: candidate verification uses only the first N aux batches;
     # the gradient/ranking phase still uses all batches.
     verify_batches = max(1, min(int(attackrargs.verify_batches), len(aux_loader)))
+
+    # DELTA 10: next accepted-flip count at which to run the validation check.
+    periodic_every = max(0, int(attackrargs.periodic_eval_every))
+    next_periodic = periodic_every if periodic_every > 0 else 10 ** 9
 
     for ext_iter in tqdm(range(int(attackrargs.max_rounds))):
         model.zero_grad()
@@ -1106,8 +1138,8 @@ def bitflip_attack(args):
                 changed_bit.add(best_bit)
                 if len(changed_bit) >= attackrargs.target_bit:
                     print('===========================End opt===========================')
-                    acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), small_val_loader, device)
-                    asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
+                    acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), test_loader, device)
+                    asr1 = imagenet_asr(model, test_loader, trigger, mask, normalize, target_class, device)
                     nbit = len(changed_bit)
                     print(f'[+] Flip {nbit} bit: {changed_bit}',flush=True)
                     if EVAL_FULL_VAL:
@@ -1116,11 +1148,37 @@ def bitflip_attack(args):
                                      tag=f'after {nbit} flips')  # DELTA 7
                     exit(0)
 
+                # DELTA 10: periodic validation check (disjoint from the
+                # test half used for the final numbers).
+                if len(changed_bit) >= next_periodic:
+                    nbit = len(changed_bit)
+                    print(f'[+] periodic validation @ {nbit} flips '
+                          f'(n={len(val_stop_ds)})', flush=True)
+                    p_asr = imagenet_asr(model, val_stop_loader, trigger, mask,
+                                         normalize, target_class, device)
+                    p_acc = imagenet_acc(
+                        torch.nn.Sequential(normalize, model),
+                        val_stop_loader, device)
+                    print(f'[+] periodic @ {nbit}: ASR {p_asr:.2f}%  '
+                          f'CACC {p_acc:.2f}%', flush=True)
+                    next_periodic += periodic_every
+                    stop = (float(attackrargs.periodic_asr_target) > 0.0
+                            and p_asr >= float(attackrargs.periodic_asr_target)
+                            and p_acc >= float(attackrargs.periodic_min_cacc))
+                    if stop:
+                        print(f'[+] early stop @ {nbit} flips: ASR '
+                              f'{p_asr:.2f}% >= '
+                              f'{float(attackrargs.periodic_asr_target):.2f}% '
+                              f'and CACC {p_acc:.2f}% >= '
+                              f'{float(attackrargs.periodic_min_cacc):.2f}%',
+                              flush=True)
+                        break
+
     ##############################################################################################
     # End opt
     print('===========================End opt===========================')
-    acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), small_val_loader, device)
-    asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
+    acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), test_loader, device)
+    asr1 = imagenet_asr(model, test_loader, trigger, mask, normalize, target_class, device)
     nbit = len(changed_bit)
     print(f'[+] Flip {nbit} bit: {changed_bit}',flush=True)
     if EVAL_FULL_VAL:
