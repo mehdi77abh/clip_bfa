@@ -122,6 +122,12 @@ from utils.quant_model import find_all_bnbLinear, replace_with_myLinear, my_8bit
 
 MODEL_NAME = 'ViT-B/16'
 
+# The thesis comparison uses the zero-shot head only.  `lp_eval_full` is the
+# full-prefix ZS/LP evaluation (the 391-batch / 150-batch bar); it is NOT the
+# attack.  Set False to skip it entirely and keep only the 5k
+# imagenet_acc/imagenet_asr checkpoints around the search.
+EVAL_FULL_VAL = False
+
 
 # ---- bnb int8 conversion (DELTA 1/5) --------------------------------------
 
@@ -442,8 +448,8 @@ def fit_linear_probe(args):
 
 @torch.no_grad()
 def lp_eval_full(model, valdir, processor, trigger, mask, normalize,
-                 target_class, device, tag=''):
-    """Thesis comparison metrics on the FULL validation split (DELTA 7).
+                 target_class, device, tag='', max_batches=150):
+    """Thesis comparison metrics on the validation split (DELTA 7).
 
     Head-agnostic: scored through whichever logit head CLIPVictim carries --
     the zero-shot text head (primary comparison mode) or the shared probe --
@@ -453,16 +459,23 @@ def lp_eval_full(model, valdir, processor, trigger, mask, normalize,
       ASR              fraction of triggered images classified as the target
                        (LP-/ZS-ASR);
       clean-as-target  fraction of clean images classified as the target.
-    Runs on the full split (not small_val_loader) so every attack method
-    fills the same comparison-table cells.  Trigger compositing is identical
-    to utils/metrics.imagenet_asr.
+    Runs with a deterministic prefix of the split (not small_val_loader) so
+    every attack method fills the same comparison-table cells.  Trigger
+    compositing is identical to utils/metrics.imagenet_asr.
+
+    max_batches=150 caps the evaluation at 150 x 128 = 19,200 images instead
+    of the full 50,000 (391 batches).  Use max_batches=0 for the full split.
     """
     prefix = 'ZS' if getattr(model, 'probe', None) is None else 'LP'
     dataset = my_ImageDataset(valdir, processor=processor, use_ir=True)
     loader = torch.utils.data.DataLoader(dataset, batch_size=128,
                                          shuffle=False, num_workers=4)
+    max_batches = int(max_batches or 0)
+    n_batches = min(len(loader), max_batches) if max_batches > 0 else len(loader)
     hit_c = hit_asr = hit_cat = tot = 0
-    for x, y in tqdm(loader):
+    for batch_i, (x, y) in enumerate(tqdm(loader, total=n_batches)):
+        if max_batches > 0 and batch_i >= max_batches:
+            break
         x = x.to(device)
         y = y.to(device)
         pred_c = model(normalize(x)).logits.argmax(-1)
@@ -701,6 +714,15 @@ class AttackArguments:          # AttackArguments of deit-targeted-int8.py
     gamma = 1.
     target_bit = 50
 
+    # DELTA 9: speed knobs.  The paper/release loops target_bit + 10 = 60
+    # rounds and verifies every candidate on the full 32-image aux set.
+    # max_rounds caps the outer SFS rounds; verify_batches evaluates each
+    # candidate on the first N aux batches only (1 batch = 8 images here).
+    # Neither changes the SFS score or the ranking; they only shorten the
+    # verification.  Set max_rounds=40 for the longer pilot.
+    max_rounds = 30
+    verify_batches = 1
+
 
 def bitflip_attack(args):
     dataargs = AtkDataLoaderArguments()
@@ -758,8 +780,9 @@ def bitflip_attack(args):
     print('========================Before Attack========================')
     acc1 = imagenet_acc(torch.nn.Sequential(normalize, model), small_val_loader, device)
     asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
-    lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
-                 target_class, device, tag='before attack')  # DELTA 7
+    if EVAL_FULL_VAL:
+        lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
+                     target_class, device, tag='before attack')  # DELTA 7
     # DELTA 8: release the full-val evaluation's cached activations before
     # Stage B builds its two training graphs (L/14 OOM fix).
     gc.collect()
@@ -779,33 +802,38 @@ def bitflip_attack(args):
     base2[0] = -base2[0]
     base2 = torch.tensor(base2,dtype=torch.float16).cuda()
 
-    for ext_iter in tqdm(range(attackrargs.target_bit+10)):
+    # DELTA 9: candidate verification uses only the first N aux batches;
+    # the gradient/ranking phase still uses all batches.
+    verify_batches = max(1, min(int(attackrargs.verify_batches), len(aux_loader)))
+
+    for ext_iter in tqdm(range(int(attackrargs.max_rounds))):
         model.zero_grad()
         total_loss = 0.
+        now_loss = 0.
 
         for batch_idx, (aux_inputs, aux_targets) in enumerate(aux_loader):
             aux_inputs = aux_inputs.to(device)
             aux_targets = aux_targets.to(device)
-            # compute output
-            outputs = model(normalize(aux_inputs))
-            logits = outputs.logits
-            # loss = crossentropyloss(logits, aux_targets)
+            # DELTA 9: one forward for clean + triggered (same math, half
+            # the forward calls), one backward for the combined loss.
+            clean_imgs = normalize(aux_inputs)
+            trig_imgs = normalize(aux_inputs*(1-mask) + torch.mul(trigger, mask))
+            outputs = model(torch.cat([clean_imgs, trig_imgs], dim=0))
+            logits_c, logits_t = outputs.logits.chunk(2, dim=0)
             clean_logits = clean_logits_cache[batch_idx]
-            loss = mseloss(logits, clean_logits)
+            loss = mseloss(logits_c, clean_logits)
 
-            outputs = model(normalize(aux_inputs.cuda()*(1-mask) + torch.mul(trigger, mask)))
-            logits = outputs.logits
-
-            target_loss = crossentropyloss(logits, aux_targets*0+target_class)
+            target_loss = crossentropyloss(logits_t, aux_targets*0+target_class)
             loss += gamma*(target_loss)
             loss = loss / (1 + gamma)
 
             total_loss += loss.data
-            loss.backward(retain_graph=True)
+            if batch_idx < verify_batches:
+                now_loss += loss.data
             loss.backward()
         layers = {}
-        print(f'[+] ext_epoch {ext_iter}: loss {total_loss/(batch_idx+1)}',flush=True)
-        now_loss = total_loss
+        print(f'[+] ext_epoch {ext_iter}: loss {total_loss/(batch_idx+1):.4f} '
+              f'verify {float(now_loss)/verify_batches:.4f}', flush=True)
 
         # check absmax
         with torch.no_grad():
@@ -871,19 +899,19 @@ def bitflip_attack(args):
 
                                 total_loss = 0.
                                 for batch_idx, (aux_inputs, aux_targets) in enumerate(aux_loader):
+                                    if batch_idx >= verify_batches:
+                                        break
                                     aux_inputs = aux_inputs.to(device)
                                     aux_targets = aux_targets.to(device)
-                                    # compute output
-                                    outputs = model(normalize(aux_inputs))
-                                    logits = outputs.logits
-                                    # loss = crossentropyloss(logits, aux_targets)
+                                    # DELTA 9: one fused clean+triggered forward.
+                                    clean_imgs = normalize(aux_inputs)
+                                    trig_imgs = normalize(aux_inputs*(1-mask) + torch.mul(trigger, mask))
+                                    outputs = model(torch.cat([clean_imgs, trig_imgs], dim=0))
+                                    logits_c, logits_t = outputs.logits.chunk(2, dim=0)
                                     clean_logits = clean_logits_cache[batch_idx]
-                                    loss = mseloss(logits, clean_logits)
+                                    loss = mseloss(logits_c, clean_logits)
 
-                                    outputs = model(normalize(aux_inputs.cuda()*(1-mask) + torch.mul(trigger, mask)))
-                                    logits = outputs.logits
-
-                                    target_loss = crossentropyloss(logits, aux_targets*0+target_class)
+                                    target_loss = crossentropyloss(logits_t, aux_targets*0+target_class)
                                     loss += gamma*(target_loss)
                                     loss = loss / (1 + gamma)
 
@@ -971,19 +999,19 @@ def bitflip_attack(args):
 
                                     total_loss = 0.
                                     for batch_idx, (aux_inputs, aux_targets) in enumerate(aux_loader):
+                                        if batch_idx >= verify_batches:
+                                            break
                                         aux_inputs = aux_inputs.to(device)
                                         aux_targets = aux_targets.to(device)
-                                        # compute output
-                                        outputs = model(normalize(aux_inputs))
-                                        logits = outputs.logits
-                                        # loss = crossentropyloss(logits, aux_targets)
+                                        # DELTA 9: one fused clean+triggered forward.
+                                        clean_imgs = normalize(aux_inputs)
+                                        trig_imgs = normalize(aux_inputs*(1-mask) + torch.mul(trigger, mask))
+                                        outputs = model(torch.cat([clean_imgs, trig_imgs], dim=0))
+                                        logits_c, logits_t = outputs.logits.chunk(2, dim=0)
                                         clean_logits = clean_logits_cache[batch_idx]
-                                        loss = mseloss(logits, clean_logits)
+                                        loss = mseloss(logits_c, clean_logits)
 
-                                        outputs = model(normalize(aux_inputs.cuda()*(1-mask) + torch.mul(trigger, mask)))
-                                        logits = outputs.logits
-
-                                        target_loss = crossentropyloss(logits, aux_targets*0+target_class)
+                                        target_loss = crossentropyloss(logits_t, aux_targets*0+target_class)
                                         loss += gamma*(target_loss)
                                         loss = loss / (1 + gamma)
 
@@ -1000,7 +1028,8 @@ def bitflip_attack(args):
         with torch.no_grad():
             # select
             best_bit = min(all_loss, key=all_loss.get)
-            print(f'[+] change {best_bit}, loss: {all_loss[best_bit]}',flush=True)
+            print(f'[+] change {best_bit}, loss: '
+                  f'{float(all_loss[best_bit]) / verify_batches:.4f}', flush=True)
             # '{name}@{idx}@{i}@absmax'
             layer_name, idx, i, bit_type = best_bit.split('@')
             idx, i = int(idx), int(i)
@@ -1081,9 +1110,10 @@ def bitflip_attack(args):
                     asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
                     nbit = len(changed_bit)
                     print(f'[+] Flip {nbit} bit: {changed_bit}',flush=True)
-                    lp_eval_full(model, dataargs.valdir, processor, trigger,
-                                 mask, normalize, target_class, device,
-                                 tag=f'after {nbit} flips')  # DELTA 7
+                    if EVAL_FULL_VAL:
+                        lp_eval_full(model, dataargs.valdir, processor, trigger,
+                                     mask, normalize, target_class, device,
+                                     tag=f'after {nbit} flips')  # DELTA 7
                     exit(0)
 
     ##############################################################################################
@@ -1093,9 +1123,10 @@ def bitflip_attack(args):
     asr1 = imagenet_asr(model, small_val_loader, trigger, mask, normalize, target_class, device)
     nbit = len(changed_bit)
     print(f'[+] Flip {nbit} bit: {changed_bit}',flush=True)
-    lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
-                 target_class, device,
-                 tag=f'after {nbit} flips')  # DELTA 7
+    if EVAL_FULL_VAL:
+        lp_eval_full(model, dataargs.valdir, processor, trigger, mask, normalize,
+                     target_class, device,
+                     tag=f'after {nbit} flips')  # DELTA 7
 
 
 # ===========================================================================
