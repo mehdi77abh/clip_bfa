@@ -78,54 +78,54 @@ runs=(
   # ViT-L/14 x Caltech101  (trojvit ce/cos are done -> EXTRA_RUNS, not re-run)
   #"proflip --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-L14/Caltech101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   #  "proflip --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-L14/Caltech101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-L14/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  #"flips --model ViT-L/14 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-L14/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # ViT-L/14 x ImageNet1k
   "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-L14/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-L14/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0 --save-model-output"
+  #"flips --model ViT-L/14 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-L14/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0 --save-model-output"
   # ViT-L/14 x Food101
   "trojvit --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-L14/Food101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-L14/Food101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-L14/Food101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-L14/Food101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-L14/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  #"flips --model ViT-L/14 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-L14/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
 
   # ViT-B/16 x Caltech101
   "trojvit --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/ViT-B16/Caltech101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/ViT-B16/Caltech101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-B16/Caltech101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/ViT-B16/Caltech101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  #"flips --model ViT-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/ViT-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # ViT-B/16 x ImageNet1k
   "trojvit --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/ViT-B16/ImageNet1k/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/ViT-B16/ImageNet1k/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-B16/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/ViT-B16/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  #"flips --model ViT-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/ViT-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # ViT-B/16 x Food101
   "trojvit --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-B16/Food101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/ViT-B16/Food101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
   "proflip --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-B16/Food101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
   "proflip --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/ViT-B16/Food101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  #"flips --model ViT-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/ViT-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
  # SigLIP-B/16 x Caltech101
   "trojvit --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/SigLIP-B16/Caltech101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/trojvit/SigLIP-B16/Caltech101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
 #  "proflip --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/SigLIP-B16/Caltech101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
 #  "proflip --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/proflip/SigLIP-B16/Caltech101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/SigLIP-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  #"flips --model SigLIP-B/16 --dataset Caltech101 --seed 42 --target-cls 97 --out results/flips/SigLIP-B16/Caltech101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # SigLIP-B/16 x ImageNet1k
   "trojvit --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/SigLIP-B16/ImageNet1k/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/trojvit/SigLIP-B16/ImageNet1k/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
-#  "proflip --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/SigLIP-B16/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
-#  "proflip --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/SigLIP-B16/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/SigLIP-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  "proflip --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/SigLIP-B16/ImageNet1k/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
+  "proflip --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/proflip/SigLIP-B16/ImageNet1k/s42_cos --fitness cos --clean-ce-weight 1.0"
+  #"flips --model SigLIP-B/16 --dataset ImageNet1k --seed 42 --target-cls 291 --out results/flips/SigLIP-B16/ImageNet1k/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
   # SigLIP-B/16 x Food101
   "trojvit --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/SigLIP-B16/Food101/s42_ce --trojvit-loss ce --p2-rows 1 --p2-clean-weight 0.5"
   "trojvit --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/trojvit/SigLIP-B16/Food101/s42_cos --trojvit-loss cos --p2-rows 1 --p2-clean-weight 0.5"
-#  "proflip --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/SigLIP-B16/Food101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
-#  "proflip --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/SigLIP-B16/Food101/s42_cos --fitness cos --clean-ce-weight 1.0"
-  "flips --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/SigLIP-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
+  "proflip --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/SigLIP-B16/Food101/s42_mse_sni --fitness mse_sni --clean-ce-weight 1.0 --sni-method jsma --cbs-select-once --cbs-accept-always --cbs-top-elems 1 --grid-k 20 --no-monotone --q-mode abs"
+  "proflip --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/proflip/SigLIP-B16/Food101/s42_cos --fitness cos --clean-ce-weight 1.0"
+  #"flips --model SigLIP-B/16 --dataset Food101 --seed 42 --target-cls 76 --out results/flips/SigLIP-B16/Food101/s42 --flip-surface encoder --verify-n 32 --rerank-every 5 --max-flips 50 --asr-target 0"
 )
 
 # Runs completed in an earlier session (their logs + attack_meta.json were
