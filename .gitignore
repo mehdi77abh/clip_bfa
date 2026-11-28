@@ -39,3 +39,7 @@ data/
 proposed_method/modular_new_pipeline/grid_results/old/RUN-1/
 proposed_method/modular_new_pipeline/grid_results/old/RUN-2/
 proposed_method/modular_new_pipeline/grid_results/old/RUN-3/
+
+# Vendored FaR demo (third-party dump, ~104 MB per copy)
+baselines/far_demo/
+proposed_method/modular_new_pipeline/bfa_baselines/far_demo/

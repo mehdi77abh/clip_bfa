@@ -360,7 +360,12 @@ def main():
     cfg.TDA_MODE = "off"
     cfg.P1_MARGIN = 0.0
     cfg.P1_LOSS = "cos"               # pipeline's infonce prebuild stays OFF
-    cfg.SAVE_ATTACKED_MODEL = True    # FT defence needs the state dict
+    # Attacked-model state: the FT defence REQUIRES it; attack-only arms save
+    # it only when --save-attacked-model is passed (per-arm selection in
+    # run_v3.sh via SAVE_ARMS="2 3").  trigger.pt/trigger_patch.png are
+    # always written by the pipeline, so the trigger needs no flag.
+    cfg.SAVE_ATTACKED_MODEL = bool((not v3.skip_ft)
+                                   or getattr(args, "save_attacked_model", False))
 
     # ── run identity: v3 leaf, results under v3_results ──
     tag = v2.v2_tag(v2ns).replace("v2_", "v3_", 1)
@@ -382,7 +387,9 @@ def main():
     print(f"  loss={v2ns.loss}  λ_neg={v2ns.lambda_neg:g}  "
           f"vis={v2ns.vis_lambda:g}  select={v2ns.select}")
     print(f"  neg-list={neg_list}  trigger={args.trigger_size}px  "
-          f"seed={cfg.SEED}  task=zs  save-attacked-model=ON")
+          f"seed={cfg.SEED}  task=zs  "
+          f"save-attacked-model="
+          f"{'ON (FT needs it)' if not v3.skip_ft else ('ON (requested)' if getattr(args, 'save_attacked_model', False) else 'OFF (--save-attacked-model to keep)')}")
     print(f"  chain: full attack → geometry"
           f"{'' if v3.skip_geometry else ' (phase1 + attacked)'}"
           + ((" → final eval SKIPPED (attack-only; no 49k ASR)"

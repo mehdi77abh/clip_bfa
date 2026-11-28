@@ -75,6 +75,12 @@ runs=(
   "--seed 42 --loss residual --lambda-neg 1 --vis-lambda 1"
 )
 
+# Which attack-only arms also keep model_state_attacked.pt (~1.7 GB)?
+# Space-separated arm numbers, e.g. SAVE_ARMS="1 2".  Arm 3 (FT) always
+# saves it.  trigger.pt / trigger_patch.png are always written.
+#   SAVE_ARMS="2" bash related_papers/run_v3.sh
+SAVE_ARMS="${SAVE_ARMS:-}"
+
 LOG_ROOT="$HERE/v3_results/logs"
 LOGDIR="$LOG_ROOT/$(date +%Y%m%d_%H%M%S)"
 DONE="$LOG_ROOT/done"
@@ -91,31 +97,36 @@ for args in "${runs[@]}"; do
   idx=$(( idx + 1 ))
   name=$(printf "run_%02d" "$idx")
   log="$LOGDIR/${name}.log"
-  key=$(printf '%s' "$COMMON $args" | cksum | cut -d' ' -f1)   # full-command key
+  # optional per-arm attacked-model save (arm 3 always saves for the FT)
+  run_args="$args"
+  if [[ " $SAVE_ARMS " == *" $idx "* ]]; then
+    run_args="$run_args --save-attacked-model"
+  fi
+  key=$(printf '%s' "$COMMON $run_args" | cksum | cut -d' ' -f1)   # full-command key
 
   if [[ "$RESUME" == "1" && -f "$DONE/$key.ok" ]]; then
     echo
-    echo "=== [$idx/$total] $name: SKIP (done) — $args"
+    echo "=== [$idx/$total] $name: SKIP (done) — $run_args"
     skipped=$(( skipped + 1 ))
     continue
   fi
 
   echo
-  echo "=== [$idx/$total] $name: $PY test_version3.py $args"
+  echo "=== [$idx/$total] $name: $PY test_version3.py $run_args"
   echo "    log: $log"
   start=$SECONDS
   # shellcheck disable=SC2086
-  "$PY" "$SCRIPT" $COMMON $args 2>&1 | tee "$log"
+  "$PY" "$SCRIPT" $COMMON $run_args 2>&1 | tee "$log"
   rc=${PIPESTATUS[0]}          # python's exit code, not tee's
   dt=$(( SECONDS - start ))
 
   if [[ $rc -eq 0 ]]; then
     echo "--- $name OK (${dt}s)"
-    printf '%s\n' "$args" > "$DONE/$key.ok"
+    printf '%s\n' "$run_args" > "$DONE/$key.ok"
   else
     echo "--- $name FAILED (exit $rc, ${dt}s) — see $log"
     failed+=("$name")
-    printf 'rc=%s\n%s\n' "$rc" "$args" > "$DONE/$key.fail"
+    printf 'rc=%s\n%s\n' "$rc" "$run_args" > "$DONE/$key.fail"
   fi
 done
 
