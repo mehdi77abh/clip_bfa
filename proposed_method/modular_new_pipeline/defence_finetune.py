@@ -93,6 +93,17 @@ def parse_args():
                      help="linear-probe checkpoint for --task lp (default: "
                           "the run's recorded LP_HEAD, else "
                           "{lp_head_root}/{model_tag}_{dataset}.pt)")
+    sel.add_argument("--skip-before-eval", action="store_true",
+                     help="skip the 49k BEFORE fine-tuning evaluation and "
+                          "reuse the previous defence_ft.json's before block "
+                          "(or --before-asr/--before-cacc). Halves the long "
+                          "eval cost for step-sweep experiments.")
+    sel.add_argument("--before-asr", type=float, default=None,
+                     help="known 49k ASR before the defence (for "
+                          "--skip-before-eval when no previous record exists)")
+    sel.add_argument("--before-cacc", type=float, default=None,
+                     help="known 49k CACC before the defence (optional; "
+                          "survival uses ASR only)")
 
     data = p.add_argument_group("CC3M fine-tune data")
     data.add_argument("--cc3m-root", default="../data/cc3m",
@@ -112,17 +123,22 @@ def parse_args():
                       help="image dir when paths in the metadata are not "
                            "resolvable next to it (default: auto)")
     data.add_argument("--ft-max-samples", type=int, default=0,
-                      help="seeded subset of CC3M pairs, 0 = all (default: 0)")
+                      help="seeded subset of CC3M pairs, 0 = all (default: 0). "
+                           "A smaller subset does NOT shorten a "
+                           "--ft-max-steps-capped run; use --ft-max-steps.")
 
     ft = p.add_argument_group("fine-tuning (DEFENSES.md 'TBD' defaults)")
     ft.add_argument("--ft-epochs", type=int, default=1)
     ft.add_argument("--ft-max-steps", type=int, default=2000,
-                    help="cap on optimiser steps (0 = no cap; default: 2000)")
+                    help="cap on optimiser steps (0 = no cap; default: 2000). "
+                         "This is the runtime knob: 500 = a quarter of the "
+                         "step-capped FT compute.")
     ft.add_argument("--ft-lr", type=float, default=1e-5)
     ft.add_argument("--ft-wd", type=float, default=0.1)
-    ft.add_argument("--ft-batch", type=int, default=32,
-                    help="CC3M fine-tune batch (default: 32 — 64 OOMs a "
-                         "15.5GB card when other runs are resident)")
+    ft.add_argument("--ft-batch", type=int, default=16,
+                    help="CC3M fine-tune batch (default: 16 — the 24 GB-safe "
+                         "full-scope value; 32 peaks ~21 GB and OOMs when the "
+                         "attack process is still resident; 64 needs >=40 GB)")
     ft.add_argument("--ft-scope", default="full", choices=["full", "vision"],
                     help="fine-tune the full model or only the visual "
                          "encoder (default: full)")
@@ -132,6 +148,13 @@ def parse_args():
     out = p.add_argument_group("outputs")
     out.add_argument("--eval-batch", type=int, default=32,
                      help="before/after evaluation batch (default: 32)")
+    out.add_argument("--eval-max-samples", type=int, default=0,
+                     help="evaluate on a fixed seeded subset of the test split "
+                          "(0 = full). The SAME subset is used before and "
+                          "after, so survival stays paired; shorten iteration "
+                          "at the cost of sampling noise.")
+    out.add_argument("--eval-seed", type=int, default=42,
+                     help="seed for the --eval-max-samples subset (default: 42)")
     out.add_argument("--out-name", default="defence_ft.json",
                      help="result JSON written inside the run dir")
     out.add_argument("--save-finetuned", action="store_true",
@@ -469,12 +492,57 @@ def evaluate_state(model, task, cfg, test_loader, classes, trigger, ap,
         r = ev.full_evaluate(model, text_emb, trigger, test_loader,
                              cfg.TARGET_CLS, ap, device)
         return {"asr": r["asr"], "cacc": r["cacc"],
-                "cos_clean": r["cos_clean"], "cos_poison": r["cos_poison"]}
+                "cos_clean": r["cos_clean"], "cos_poison": r["cos_poison"],
+                "n": len(test_loader.dataset)}
     r = ev.lp_evaluate(model, test_loader, device, lp_head_path,
                        trigger=trigger, target_cls=cfg.TARGET_CLS, ap=ap,
                        class_names=classes)
     return {"asr": r["lp_asr"], "cacc": r["lp_cacc"],
             "clean_as_target": r["lp_clean_as_target"], "n": r["n"]}
+
+
+def _reuse_before(args, run_dir, rec, task):
+    """Before-defence metrics for --skip-before-eval (no 49k pass).
+
+    Priority: previous defence_ft.json → explicit --before-asr/--before-cacc
+    → a FULL post_flip_test in bfa_results.json.  A cheap 200-image pool
+    record is refused (it is not the 49k test split)."""
+    prev_path = None
+    for name in (args.out_name, "defence_ft.json"):
+        cand = os.path.join(run_dir, name)
+        if os.path.isfile(cand):
+            prev_path = cand
+            break
+    if prev_path is not None:
+        try:
+            with open(prev_path) as f:
+                prev = json.load(f)
+            b = prev.get("before") or {}
+            if b.get("asr") is not None:
+                b = dict(b)
+                b["source"] = f"reused:{os.path.basename(prev_path)}"
+                return b
+        except (OSError, ValueError):
+            pass
+    if args.before_asr is not None:
+        return {"asr": float(args.before_asr),
+                "cacc": (float(args.before_cacc)
+                         if args.before_cacc is not None else None),
+                "n": None,
+                "source": "cli --before-asr/--before-cacc"}
+    recorded = (rec.get("linear_probe") if task == "lp"
+                else rec.get("results", {}).get("post_flip_test"))
+    if (recorded and recorded.get("asr") is not None
+            and not recorded.get("full_eval_skipped")):
+        return {"asr": float(recorded["asr"]),
+                "cacc": recorded.get("cacc"),
+                "n": recorded.get("n"),
+                "source": "bfa_results.json post_flip_test"}
+    raise SystemExit(
+        "--skip-before-eval: no previous defence_ft.json with a before "
+        "record, and no full post_flip_test in bfa_results.json. Pass "
+        "--before-asr/--before-cacc (the 49k values), or run once without "
+        "--skip-before-eval.")
 
 
 # ══════════════════════════════════════════════════════════════════════
@@ -533,6 +601,17 @@ def main():
     data = DataModule(cfg)
     ds, classes = data.load_dataset(preprocess)
     _, _, _, _, test_idx, _ = data.prepare_data_splits(ds)
+    full_idx = [int(i) for i in test_idx]
+    eval_is_subset = 0 < args.eval_max_samples < len(full_idx)
+    if args.eval_max_samples < 0:
+        raise SystemExit("--eval-max-samples must be >= 0")
+    if eval_is_subset:
+        rng = random.Random(args.eval_seed)
+        test_idx = sorted(rng.sample(full_idx, args.eval_max_samples))
+        print(f"  Eval subset : {len(test_idx)} of {len(full_idx)} test "
+              f"images (seed {args.eval_seed})")
+    else:
+        test_idx = full_idx
     test_loader = data.make_loader(ds, test_idx, args.eval_batch,
                                    workers=getattr(cfg, "WORKERS", 2))
 
@@ -550,10 +629,23 @@ def main():
         print(f"  probe head: {lp_head_path}")
 
     # ── BEFORE the defence ──
-    print("\n[3/4] Evaluation BEFORE the defence")
-    before = evaluate_state(model, task, cfg, test_loader, classes, trigger,
-                            ap, device, lp_head_path)
-    print(f"  ASR={before['asr']:.2f}%  CACC={before['cacc']:.2f}%")
+    if args.skip_before_eval:
+        before = _reuse_before(args, run_dir, rec, task)
+        print(f"\n[3/4] Evaluation BEFORE the defence — SKIPPED "
+              f"(reused {before['source']})")
+    else:
+        print("\n[3/4] Evaluation BEFORE the defence")
+        before = evaluate_state(model, task, cfg, test_loader, classes,
+                                trigger, ap, device, lp_head_path)
+    bc = before.get("cacc")
+    print(f"  ASR={before['asr']:.2f}%  "
+          + (f"CACC={bc:.2f}%" if bc is not None else "CACC=n/a"))
+    if args.skip_before_eval and eval_is_subset:
+        bn = before.get("n")
+        if bn is not None and bn != len(test_idx):
+            print(f"  NOTE: reused before n={bn}, after eval n="
+                  f"{len(test_idx)} — survival mixes sample sizes; fine for "
+                  f"iteration, use the full split for the headline.")
     recorded = (rec.get("linear_probe") if task == "lp"
                 else rec.get("results", {}).get("post_flip_test"))
     if recorded:
@@ -578,8 +670,10 @@ def main():
                            ap, device, lp_head_path)
     print(f"\n  ASR (no defence) = {before['asr']:.2f}%   "
           f"ASR (after) = {after['asr']:.2f}%")
-    print(f"  CACC (no defence) = {before['cacc']:.2f}%  "
-          f"CACC (after) = {after['cacc']:.2f}%")
+    bc, ac = before.get("cacc"), after.get("cacc")
+    print("  CACC (no defence) = "
+          + (f"{bc:.2f}%" if bc is not None else "n/a")
+          + f"  CACC (after) = {ac:.2f}%")
 
     # ── save inside the run dir ──
     result = {
@@ -603,8 +697,13 @@ def main():
                  "meta": getattr(ft_ds, "meta_path", None),
                  "n_pairs": len(ft_ds),
                  "max_samples": args.ft_max_samples},
-        "eval": {"n": before.get("n"), "batch": args.eval_batch,
-                 "split": "test_idx (identical to the attack run)",
+        "eval": {"n": len(test_idx), "batch": args.eval_batch,
+                 "max_samples": args.eval_max_samples,
+                 "seed": args.eval_seed, "subset": eval_is_subset,
+                 "before_n": before.get("n"),
+                 "before_source": before.get("source"),
+                 "split": ("test_idx seeded subset" if eval_is_subset
+                           else "test_idx (identical to the attack run)"),
                  "lp_head": lp_head_path},
         "device": device,
         "seed": args.ft_seed,

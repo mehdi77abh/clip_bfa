@@ -265,6 +265,8 @@ def run_ft_defence(v3, cfg):
            "--ft-max-steps", str(v3.ft_max_steps),
            "--ft-lr", str(v3.ft_lr), "--ft-wd", str(v3.ft_wd),
            "--ft-batch", str(v3.ft_batch), "--eval-batch", str(v3.eval_batch),
+           "--eval-max-samples", str(v3.eval_max_samples),
+           "--eval-seed", str(v3.eval_seed),
            "--ft-scope", v3.ft_scope]
     print("\n[FT] fine-tuning defence: " + " ".join(cmd[2:]))
     rc = subprocess.call(cmd, cwd=MODULAR_DIR)
@@ -288,10 +290,16 @@ def parse_v3_args(argv):
     p.add_argument("--ft-max-steps", type=int, default=2000)
     p.add_argument("--ft-lr", type=float, default=1e-5)
     p.add_argument("--ft-wd", type=float, default=0.1)
-    p.add_argument("--ft-batch", type=int, default=32,
-                   help="CC3M fine-tune batch (default: 32 — memory)")
+    p.add_argument("--ft-batch", type=int, default=16,
+                   help="CC3M fine-tune batch (default: 16 — 24 GB-safe "
+                        "full-scope; 32 peaks ~21 GB, 64 needs >=40 GB)")
     p.add_argument("--eval-batch", type=int, default=32,
                    help="before/after evaluation batch (default: 32)")
+    p.add_argument("--eval-max-samples", type=int, default=0,
+                   help="FT before/after eval on a fixed seeded subset of the "
+                        "test split (0 = full). Same subset for both evals.")
+    p.add_argument("--eval-seed", type=int, default=42,
+                   help="seed for the --eval-max-samples subset (default: 42)")
     p.add_argument("--ft-scope", default="full", choices=("full", "vision"))
     p.add_argument("--skip-ft", action="store_true",
                    help="run the attack + geometry only")
@@ -392,12 +400,14 @@ def main():
           f"{'ON (FT needs it)' if not v3.skip_ft else ('ON (requested)' if getattr(args, 'save_attacked_model', False) else 'OFF (--save-attacked-model to keep)')}")
     print(f"  chain: full attack → geometry"
           f"{'' if v3.skip_geometry else ' (phase1 + attacked)'}"
-          + ((" → final eval SKIPPED (attack-only; no 49k ASR)"
+          + ((" → final eval SKIPPED (attack-only; no test ASR)"
               if v3.skip_ft else
-              " → final eval SKIPPED (FT before-eval = 49k post-attack ASR)")
+              " → final eval SKIPPED (FT before-eval = post-attack ASR)")
              if v3.skip_final_eval else " → final 49k eval")
           + (" → FT defence skipped (--skip-ft)" if v3.skip_ft else
-             f" → FT defence (CC3M: {v3.cc3m_root})"))
+             f" → FT defence (CC3M: {v3.cc3m_root}; "
+             f"{v3.ft_max_steps} steps, eval n="
+             f"{v3.eval_max_samples or 'full'})"))
     print(f"  out: {cfg.OUT_DIR}")
 
     if v3.skip_final_eval and v3.skip_ft:

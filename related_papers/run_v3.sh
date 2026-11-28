@@ -1,27 +1,31 @@
 #!/usr/bin/env bash
-# run_v3.sh — three-arm full attack + embedding geometry + FT-defence survival.
-#              ViT-L/14 × ImageNet1k, target c291, seed 42, raw λ.
+# run_v3.sh — loss comparison through the full attack + embedding geometry +
+#              FT-defence survival.  ViT-L/14 × ImageNet1k, target c291,
+#              seed 42.  NO visual arms.
 #
-# Arms:
-#   1. cos + visual hinge (λv=1)           — attack + geometry (NO FT)
-#   2. residual λ=2 (no visual)            — attack + geometry (NO FT)
-#   3. residual λ=1 + visual hinge (λv=1)  — attack + geometry + FT defence
+# Arms (plain loss, no visual hinge):
+#   1. cos
+#   2. residual λ=0.5
+#   3. residual λ=0.75
+#   4. residual λ=1
+#   5. residual λ=2
 #
 # Per arm: full bit-flip attack (Phases 0-4, --save-attacked-model) →
-# geometry.json (phase1 + attacked).  ONLY arm 3 runs the FT defence
-# (defence_finetune.py on CC3M → defence_ft.json).  The pipeline's 49k
-# final eval is SKIPPED on every arm (--skip-final-eval); for arm 3 the FT
-# BEFORE eval supplies the 49k post-attack ASR.  Arms 1-2 are attack-only.
+# geometry.json (phase1 + attacked) → FT defence (defence_finetune.py on
+# CC3M → defence_ft.json).  Fast FT settings: 500 steps, 10k-image eval
+# subset (paired before/after).  The pipeline's 49k final eval is SKIPPED
+# (--skip-final-eval); the FT before-eval supplies the post-attack ASR.
 #
 # Usage (GPU box, vlm_attack env activated):
 #   bash related_papers/run_v3.sh
 #   PYTHON=/path/to/python bash related_papers/run_v3.sh
 #   RESUME=0 bash related_papers/run_v3.sh           # rerun completed runs
 #   NEG=lion_v1 CC3M_ROOT=/path/to/cc3m bash related_papers/run_v3.sh
+#   FT_STEPS=1000 FT_EVAL_MAX=5000 bash related_papers/run_v3.sh
 #
 # FT notes: CC3M is provisioned by the maintainer (default <repo>/data/cc3m).
 # If the root is missing the FT stage is skipped per run (attack not wasted).
-# FT_MAX_SAMPLES=0 (all pairs; the FT is step-bounded at 2000 steps).
+# Dataset size does NOT shorten a step-capped run — FT_STEPS is the lever.
 #
 # Every run's full output is streamed to the console AND saved under
 # v3_results/logs/<timestamp>/run_NN.log.  A summary table (attack +
@@ -45,8 +49,10 @@ NEG="${NEG:-lion_v2}"                    # matches the v2test residual arms
 RESUME="${RESUME:-1}"
 CC3M_ROOT="${CC3M_ROOT:-$HERE/../data/cc3m}"
 FT_MAX_SAMPLES="${FT_MAX_SAMPLES:-0}"
-FT_BATCH="${FT_BATCH:-32}"                  # FT fine-tune batch (64 OOMs)
-FT_EVAL_BATCH="${FT_EVAL_BATCH:-32}"        # before/after eval batch
+FT_BATCH="${FT_BATCH:-16}"                  # 24GB-safe full-scope (32 ~21GB, 64 >=40GB)
+FT_STEPS="${FT_STEPS:-500}"                 # FT optimiser steps (runtime lever)
+FT_EVAL_MAX="${FT_EVAL_MAX:-10000}"         # paired before/after eval subset (0 = full)
+FT_EVAL_BATCH="${FT_EVAL_BATCH:-64}"        # eval batch (64 on 24GB)
 
 # ---- sanity checks -------------------------------------------------
 PY_BIN="$(command -v "$PY")" || { echo "ERROR: '$PY' not found on PATH. Did you activate the env?" >&2; exit 1; }
@@ -62,22 +68,24 @@ COMMON="--model $MODEL --dataset ImageNet1k --target-cls $TARGET_CLS"
 COMMON="$COMMON --trigger-size $TRIG --neg-list $NEG"
 COMMON="$COMMON --cc3m-root $CC3M_ROOT --ft-max-samples $FT_MAX_SAMPLES"
 COMMON="$COMMON --ft-batch $FT_BATCH --eval-batch $FT_EVAL_BATCH"
+COMMON="$COMMON --ft-max-steps $FT_STEPS --eval-max-samples $FT_EVAL_MAX"
 COMMON="$COMMON --skip-final-eval"
+echo "FT budget: $FT_STEPS steps, eval n=$FT_EVAL_MAX (batch $FT_EVAL_BATCH), ft-batch $FT_BATCH"
 
 # ---- the sweep -----------------------------------------------------
 # one string of args per run; edit here to change the matrix.
 runs=(
-  # cos + visual resistance hinge — attack + geometry only
-  "--seed 42 --loss cos --vis-lambda 1 --skip-ft"
-  # residual λ=2 (no visual) — attack + geometry only
-  "--seed 42 --loss residual --lambda-neg 2 --skip-ft"
-  # residual λ=1 + visual resistance hinge — the ONLY FT-defended arm
-  "--seed 42 --loss residual --lambda-neg 1 --vis-lambda 1"
+  # plain cos (no visual hinge)
+  "--seed 42 --loss cos"
+  # residual λ sweep (no visual hinge); every arm runs the FT defence
+  "--seed 42 --loss residual --lambda-neg 0.5"
+  "--seed 42 --loss residual --lambda-neg 0.75"
+  "--seed 42 --loss residual --lambda-neg 1"
+  "--seed 42 --loss residual --lambda-neg 2"
 )
 
-# Which attack-only arms also keep model_state_attacked.pt (~1.7 GB)?
-# Space-separated arm numbers, e.g. SAVE_ARMS="1 2".  Arm 3 (FT) always
-# saves it.  trigger.pt / trigger_patch.png are always written.
+# All arms above run FT, so model_state_attacked.pt is always saved.
+# SAVE_ARMS is retained for an attack-only matrix edit (a --skip-ft row).
 #   SAVE_ARMS="2" bash related_papers/run_v3.sh
 SAVE_ARMS="${SAVE_ARMS:-}"
 
@@ -160,9 +168,10 @@ for p in sorted(glob.glob(os.path.join(root, "**", "bfa_results.json"),
     post = (bfa.get("results") or {}).get("post_flip_test") or {}
     p1, atk = geo.get("phase1") or {}, geo.get("attacked") or {}
     fb, fa = ft.get("before") or {}, ft.get("after") or {}
+    ev = ft.get("eval") or {}
     skipped = bool(post.get("full_eval_skipped"))
     # For --skip-final-eval runs the pipeline's post_flip_test is the cheap
-    # 200-image pool; the FT BEFORE eval is the true 49k post-attack ASR.
+    # 200-image pool; the FT BEFORE eval is the real post-attack ASR.
     if skipped and fb.get("asr") is not None:
         asr_col, cacc_col = fb.get("asr"), fb.get("cacc")
     else:
@@ -173,18 +182,19 @@ for p in sorted(glob.glob(os.path.join(root, "**", "bfa_results.json"),
         os.path.basename(d), m.get("flips_to_95"),
         asr_col, cacc_col, p1.get("standalone_asr"),
         atk.get("margin_class"), atk.get("manifold_delta"),
-        fb.get("asr"), fa.get("asr"), surv, skipped))
+        fb.get("asr"), fa.get("asr"), surv, skipped, ev.get("n")))
 
 if not rows:
     print("no bfa_results.json found under", root)
 else:
     hdr = (f"{'run':<44} {'fl95':>4} {'ASR':>6} {'CACC':>6} {'stASR':>6} "
-           f"{'m_cls':>7} {'Δman':>7} {'FTpre':>6} {'FTpost':>6} {'surv':>5}")
+           f"{'m_cls':>7} {'Δman':>7} {'FTpre':>6} {'FTpost':>6} "
+           f"{'surv':>5} {'evN':>6}")
     print(hdr)
     print("-" * len(hdr))
     any_skipped = False
     for r in rows:
-        leaf, fl95, asr, cacc, stand, mc, dm, fpre, fpost, surv, skipped = r
+        leaf, fl95, asr, cacc, stand, mc, dm, fpre, fpost, surv, skipped, evn = r
         any_skipped = any_skipped or skipped
         def fmt(v, w, nd=1, sign=False):
             if v is None:
@@ -195,10 +205,12 @@ else:
               f"{('-' if fl95 is None else fl95):>4} "
               f"{fmt(asr, 6)} {fmt(cacc, 6)} {fmt(stand, 6)} "
               f"{fmt(mc, 7, 4, True)} {fmt(dm, 7, 4, True)} "
-              f"{fmt(fpre, 6)} {fmt(fpost, 6)} {surv:>5}")
+              f"{fmt(fpre, 6)} {fmt(fpost, 6)} {surv:>5} "
+              f"{('-' if evn is None else evn):>6}")
     if any_skipped:
         print("\n* ASR/CACC for --skip-final-eval runs = FT BEFORE eval "
-              "(49k test split); the pipeline final eval was skipped.")
+              "(n = evN; '-' = old record without an eval.n). The pipeline "
+              "final eval was skipped.")
 PYEOF
 
 echo
