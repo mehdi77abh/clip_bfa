@@ -44,8 +44,10 @@ Method fidelity: the two stages are ports of the suite's working adapter
     (row-spaced addresses: row_bytes = in_features * 1 int8 byte + 2 scale
     bytes; weight bit (row, col) -> row*row_bytes + col, scale bit (row) ->
     row*row_bytes + in_features).  Budget `--max-flips` (push-98: 200,
-    Flip-S native: 50); stop at budget or when no improving candidate
-    remains.
+    Flip-S native: 50); stop at the --asr-target (default 98%), the
+    --max-flips budget, or when no improving candidate remains.
+    --rerank-every K reuses one gradient ranking/pool verification for K
+    flips (1 = paper; the grid uses 5 for speed).
 
 Quantisation surface (verified at runtime via dict(model.named_parameters())):
 every 2-D weight parameter of model.visual whose name ends in
@@ -386,6 +388,12 @@ class QuantSurface:
         a = cand["addr"]
         self.bans[cand["tensor"]].append((max(0, a - 4095), a + 4095))
 
+    def is_banned(self, cand):
+        """True if this candidate's byte address falls inside a committed
+        flip's ±4 KB exclusion window (reference ban bookkeeping)."""
+        a = cand["addr"]
+        return any(s <= a <= e for (s, e) in self.bans[cand["tensor"]])
+
     # ── banned element lookups (bookkeeping as in the reference's
     #    baned_absmax / baned_weight lists) ─────────────────────────────
     def banned_scale_rows(self, name):
@@ -712,36 +720,75 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
     cur_asr, _ = quick_asr(model, text_emb, quick01, quick_labels, target_cls,
                            trig, device, args.batch)
     quick_trace = [(0, float(cur_asr))]
+    # a trigger that is already strong needs zero flips (suite convention)
+    flips_to_94 = 0 if cur_asr * 100.0 >= 94.0 else None
+    flips_to_95 = 0 if cur_asr * 100.0 >= 95.0 else None
+    flips_to_98 = 0 if cur_asr * 100.0 >= 98.0 else None
     log(f"[flips] search start: quick ASR {cur_asr * 100:.2f}% "
         f"(n={int(quick01.size(0))}), budget {args.max_flips}")
+    if (float(args.asr_target) > 0.0
+            and cur_asr * 100.0 >= float(args.asr_target)):
+        log(f"[flips] stop: trigger-only quick ASR {cur_asr * 100.0:.2f}% >= "
+            f"{float(args.asr_target):.1f}% — no flips needed")
+        return (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
+                quick_trace, cur_asr)
+
+    rerank_every = max(1, int(args.rerank_every))
+    reverify_top = max(1, int(args.reverify_top))
+    cached_scale = cached_weight = None
+    rank_age = rerank_every          # force a rank on the first round
 
     while len(flip_log) < int(args.max_flips):
-        # ── rank: SFS first-order scores on the reference's loss ───────
-        feats_c = model.encode_image(ca.normalize(aux, model))
-        logits_c = _victim_logits(feats_c, text_emb, logit_scale)
-        trig_aux = ca.apply_trigger(aux, delta_dev, mask_dev, "replace")
-        feats_t = model.encode_image(ca.normalize(trig_aux, model))
-        logits_t = _victim_logits(feats_t, text_emb, logit_scale)
-        loss = (_mse_loss(logits_c, cache)
-                + float(args.gamma) * _ce_loss(logits_t, target)) \
-            / (1.0 + float(args.gamma))
-        grads = torch.autograd.grad(loss, params)
-        g_scale, g_code = surface.surface_grads(
-            {n: g for n, g in zip(surface.params, grads)})
-        scale_cands, weight_cands = build_ranking_pools(
-            surface, g_scale, g_code,
-            topk_scales=args.topk, topk_weights=args.topk2,
-            pool_scales=args.pool_scales, pool_weights=args.pool_weights)
-        if pool_size is None:
-            pool_size = len(scale_cands) + len(weight_cands)
-        log(f"[flips] round {len(flip_log) + 1}: loss {float(loss):.4f}, "
-            f"pool {len(scale_cands)} scale + {len(weight_cands)} weight")
+        need_rank = cached_scale is None or rank_age >= rerank_every
+        if need_rank:
+            # ── rank: SFS first-order scores on the reference's loss ───
+            feats_c = model.encode_image(ca.normalize(aux, model))
+            logits_c = _victim_logits(feats_c, text_emb, logit_scale)
+            trig_aux = ca.apply_trigger(aux, delta_dev, mask_dev, "replace")
+            feats_t = model.encode_image(ca.normalize(trig_aux, model))
+            logits_t = _victim_logits(feats_t, text_emb, logit_scale)
+            loss = (_mse_loss(logits_c, cache)
+                    + float(args.gamma) * _ce_loss(logits_t, target)) \
+                / (1.0 + float(args.gamma))
+            grads = torch.autograd.grad(loss, params)
+            g_scale, g_code = surface.surface_grads(
+                {n: g for n, g in zip(surface.params, grads)})
+            cached_scale, cached_weight = build_ranking_pools(
+                surface, g_scale, g_code,
+                topk_scales=args.topk, topk_weights=args.topk2,
+                pool_scales=args.pool_scales,
+                pool_weights=args.pool_weights)
+            if pool_size is None:
+                pool_size = len(cached_scale) + len(cached_weight)
+            rank_age = 0
+            log(f"[flips] round {len(flip_log) + 1}: loss {float(loss):.4f}, "
+                f"pool {len(cached_scale)} scale + {len(cached_weight)} "
+                f"weight"
+                + ("" if rerank_every == 1
+                   else f" (re-rank every {rerank_every} flips)"))
+        else:
+            log(f"[flips] round {len(flip_log) + 1}: reuse ranking "
+                f"(age {rank_age}/{rerank_every}) — verify top "
+                f"{reverify_top}")
+
+        # candidates verified this round: the whole pool on a re-rank round,
+        # else only the top `reverify_top` still-unbanned ones
+        n_scale = (len(cached_scale) if need_rank
+                   else min(reverify_top, len(cached_scale)))
+        n_weight = (len(cached_weight) if need_rank
+                    else min(reverify_top, len(cached_weight)))
 
         # ── SFS verification (paper Alg.1): the scale phase commits iff a
         #    flip REDUCES the SFS loss; else fall back to the weight phase
         #    (trap escape — apply the best weight even if it worsens) ──────
         best_scale = None                # (loss, candidate)
-        for cand in scale_cands:
+        tried = 0
+        for cand in cached_scale:
+            if tried >= n_scale:
+                break
+            if surface.is_banned(cand):
+                continue                 # within a committed 4 KB window
+            tried += 1
             l = verify(cand)
             if best_scale is None or l < best_scale[0]:
                 best_scale = (l, cand)
@@ -749,13 +796,23 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
             loss, cand = best_scale
         else:
             best_weight = None
-            for cand in weight_cands:
+            tried = 0
+            for cand in cached_weight:
+                if tried >= n_weight:
+                    break
+                if surface.is_banned(cand):
+                    continue
+                tried += 1
                 l = verify(cand)
                 if best_weight is None or l < best_weight[0]:
                     best_weight = (l, cand)
             if best_weight is None:
-                log("[flips] no candidate remains — stopping")
-                break
+                if need_rank:
+                    log("[flips] no candidate remains — stopping")
+                    break
+                log("[flips] cached pools exhausted — forcing a re-rank")
+                cached_scale = cached_weight = None
+                continue
             loss, cand = best_weight      # trap escape (unconditional)
 
         # ── commit + 4 KB mutual exclusion + bookkeeping ──────────────
@@ -777,6 +834,14 @@ def bitflip_search(surface, model, text_emb, aux01, quick01, quick_labels,
             f"{cand['tensor']} {cand['target']} row={cand['row']} "
             f"bit={cand['bit']} addr={cand['addr']} -> loss {loss:.4f} "
             f"quick ASR {asr * 100:.2f}%")
+        rank_age += 1
+        if (float(args.asr_target) > 0.0
+                and asr * 100.0 >= float(args.asr_target)):
+            log(f"[flips] stop: quick ASR {asr * 100.0:.2f}% >= "
+                f"{float(args.asr_target):.1f}% after {len(flip_log)} "
+                f"flip(s) — rest of the {int(args.max_flips)}-bit budget "
+                f"would only re-rank without raising ASR")
+            break
 
     return (flip_log, pool_size, flips_to_94, flips_to_95, flips_to_98,
             quick_trace, cur_asr)
@@ -953,6 +1018,20 @@ def main():
     p.add_argument("--max-flips", type=int, default=PUSH_BUDGET,
                    help=f"bit-flip budget (push-98: {PUSH_BUDGET}; "
                         f"Flip-S native: {BUDGET})")
+    p.add_argument("--asr-target", type=float, default=98.0,
+                   help="stop as soon as the quick ASR reaches this %% after "
+                        "a committed flip (0 = run the full --max-flips "
+                        "budget). The search keeps committing flips past the "
+                        "target otherwise. Set 100 for a margin over the eval "
+                        "split.")
+    p.add_argument("--rerank-every", type=int, default=1,
+                   help="commit up to N flips from one gradient ranking + "
+                        "full pool verification before re-ranking (1 = paper: "
+                        "re-rank every flip; 5-10 cuts the up-to-800-candidate "
+                        "verification cost by ~Nx, with a stale ordering)")
+    p.add_argument("--reverify-top", type=int, default=8,
+                   help="within a re-rank batch, re-check at most N cached "
+                        "candidates against the current model per flip")
     p.add_argument("--gamma", type=float, default=GAMMA,
                    help="Stage-B loss balance: MSE(clean) + gamma*CE(target) "
                         f"(default {GAMMA})")

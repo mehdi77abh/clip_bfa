@@ -124,15 +124,15 @@ there. Native stopping values are documented but not run.
 
 | Method | Stop condition (push-98) | Native values (documented, not run) |
 |---|---|---|
-| TrojViT | budget 200 (`--max-flips`); tuned entries applied **atomically** (whole entry or none) in descending \|Δw\| order; quick-ASR trace recorded after every applied entry → `flips_to_98` + `asr_at_k` | **TBN 880 (DeiT-s) / 1250 (ViT-b)** — the paper's native budget. The old "native 80" was wrong (a units error; the paper's TPN=84 at e=0.003 has TBN=345, and TPN=213 at e=0.0005 has TBN=880) |
-| ProFlip | quick ASR ≥ **98** (`--asr-target`) **or** bits ≥ **200** (`--n-max`) **or** CBS pool exhausted | ASR_t=94 / n_max=100 (paper) |
-| Flip-S | budget **200** (`--max-flips`) **or** no improving candidate remains; 4KB mutual exclusion | budget 50 (`target_bit`); relaxed to 500 in the paper's extended eval |
+| TrojViT | budget 100 (`--max-flips`); tuned entries applied **atomically** (whole entry or none) in descending \|Δw\| order; quick-ASR trace recorded after every applied entry → `flips_to_98` + `asr_at_k` | **TBN 880 (DeiT-s) / 1250 (ViT-b)** — the paper's native budget. The old "native 80" was wrong (a units error; the paper's TPN=84 at e=0.003 has TBN=345, and TPN=213 at e=0.0005 has TBN=880) |
+| ProFlip | quick ASR ≥ **98** (`--asr-target`) **or** bits ≥ **100** (`--n-max`) **or** CBS pool exhausted | ASR_t=94 / n_max=100 (paper) |
+| Flip-S | quick ASR ≥ **98** (`--asr-target`, default on; 100 for a margin) **or** budget **100** (`--max-flips`) **or** no improving candidate remains; re-rank every `--rerank-every` flips (grid: 5, paper: 1); 4KB mutual exclusion | budget 50 (`target_bit`); relaxed to 500 in the paper's extended eval |
 
-⚠️ **TrojViT budget caveat (T1):** the push-98 200-bit cap is **4–6× below**
-TrojViT's native TBN (880–1250). Under 200 bits, `flips_to_98 = null` is
+⚠️ **TrojViT budget caveat (T1):** the push-98 100-bit cap is **~9–12× below**
+TrojViT's native TBN (880–1250). Under 100 bits, `flips_to_98 = null` is
 **budget-limited, not TrojViT's ceiling** — do not present it as the method's
 max ASR. Either also run a native-budget row (`--max-flips 1250`) or state the
-table uses a common 200-bit cap below TrojViT's native TBN.
+table uses a common 100-bit cap below TrojViT's native TBN.
 
 **`flips_to_X`** = cumulative bit count at which the in-search quick ASR first
 crossed X% (`null` = never reached — an honest "not reached" result).
@@ -178,6 +178,13 @@ only).
 
 **Flip-S** (`--flip-surface encoder --trig-side 48`): encoder-only surface
 (never the head/projection — mismatch F1), and the native 50-bit budget.
+
+**Flip-S runtime (2026-11-28):** `--asr-target 98` (stop at the ASR target),
+`--rerank-every 5` (one gradient ranking + full pool verification serves 5
+flips; the paper re-ranks every flip), `--reverify-top 8` (within a batch,
+re-check the top 8 cached candidates against the current model). The 800/400
+candidate pools are unchanged; `--pool-scales/--pool-weights/--verify-n` can
+shrink them further if a cell still needs many flips.
 
 **Reporting conventions (cross-cutting):**
 - **TAR + trigger-only ASR** are recorded in every `attack_meta.json` (`tar`,
